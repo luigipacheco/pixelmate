@@ -43,6 +43,7 @@ typedef enum {
     APP_OVERLAY_STYLE,     /**< Pick owned pixel style and color. */
     APP_OVERLAY_STORE,     /**< Buy colors, styles and animations with sparks. */
     APP_OVERLAY_GOAL,      /**< Adjust the daily step goal. */
+    APP_OVERLAY_WIFI,      /**< Wi-Fi status and first-time setup. */
     APP_OVERLAY_COUNT,
 } app_overlay_t;
 
@@ -98,12 +99,17 @@ enum {
 /** Network state reported by the runtime (display only). */
 typedef enum {
     APP_NET_OFF = 0,       /**< No Wi-Fi hardware or not started (Host). */
-    APP_NET_NO_CONFIG,     /**< No Wi-Fi set in Vibe Mode. */
+    APP_NET_NO_CONFIG,     /**< No network saved (app setup or Vibe Mode). */
     APP_NET_CONNECTING,
     APP_NET_ONLINE,
+    APP_NET_FAILED,        /**< Saved network unreachable for a while; still retrying. */
+    APP_NET_SETUP,         /**< Setup hotspot running; see snapshot setup_ap. */
 } app_net_state_t;
 
-enum { APP_HISTORY_DAYS = 7 };
+enum {
+    APP_HISTORY_DAYS = 7,
+    APP_SETUP_AP_MAX = 24,       /**< Setup hotspot name buffer, NUL included. */
+};
 
 /** Unlockable animations, bought in the store and toggled on/off. */
 typedef enum {
@@ -251,6 +257,8 @@ enum {
     APP_EVENT_ARCADE = 1U << 25,      /**< A cabinet was opened or exited. */
     APP_EVENT_GRID_FLIP = 1U << 26,   /**< See snapshot grid.last_flip. */
     APP_EVENT_GRID_DONE = 1U << 27,   /**< Round over; see grid.result and payout. */
+    APP_EVENT_WIFI_SETUP = 1U << 28,  /**< Runtime: start the Wi-Fi setup hotspot. */
+    APP_EVENT_WIFI_STOP = 1U << 29,   /**< Runtime: stop the setup hotspot. */
 };
 
 /** Events that change spendable or configured data and deserve a prompt save. */
@@ -307,6 +315,7 @@ typedef struct {
     int32_t day;                /**< Current calendar day key, 0 = clock unknown. */
     app_net_state_t net;
     uint32_t ipv4;              /**< Address in network byte order when ONLINE. */
+    char setup_ap[APP_SETUP_AP_MAX];  /**< Hotspot to join while net is SETUP, else "". */
     uint16_t friendship;        /**< 0..999; hearts = friendship / 100. */
     app_pixel_style_t pixel_style;
     uint8_t color_index;        /**< 0..APP_COLOR_COUNT-1. */
@@ -382,6 +391,9 @@ void app_game_set_day(app_game_handle_t handle, int32_t day);
 void app_game_set_battery(app_game_handle_t handle, int percent, bool charging);
 /** Report network state and IPv4 address (network byte order) for display. */
 void app_game_set_network(app_game_handle_t handle, app_net_state_t state, uint32_t ipv4);
+/** Report the setup hotspot name shown while the state is APP_NET_SETUP
+ * (copied, truncated to APP_SETUP_AP_MAX-1; NULL clears it). */
+void app_game_set_setup_ap(app_game_handle_t handle, const char *name);
 /** Wake the screen (button press, external event). No-op when awake. */
 void app_game_wake(app_game_handle_t handle);
 /** Advance one 30 Hz tick unless paused. No rendering or hardware access. */

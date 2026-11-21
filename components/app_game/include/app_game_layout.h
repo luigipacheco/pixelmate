@@ -39,6 +39,7 @@ static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay, int arcad
     case 2: return (app_eye_anchor_t) {240, 160, 0.72f};   /* style preview */
     case 3: return (app_eye_anchor_t) {240, 140, 0.0f};    /* store: hidden */
     case 4: return (app_eye_anchor_t) {240, 400, 0.42f};   /* goal: watching the number */
+    case 5: return (app_eye_anchor_t) {240, 140, 0.0f};    /* wifi: hidden */
     default: break;
     }
     switch (screen) {
@@ -141,6 +142,18 @@ static inline app_rect_t app_menu_style_rect(void)
 static inline app_rect_t app_menu_goal_rect(void)
 {
     return (app_rect_t) {40, 220, 400, 66};
+}
+
+/* Network line under the menu buttons: opens the Wi-Fi panel. */
+static inline app_rect_t app_menu_wifi_rect(void)
+{
+    return (app_rect_t) {40, 290, 400, 30};
+}
+
+/* Wi-Fi panel: one action button (SET UP / STOP / CHANGE WIFI). */
+static inline app_rect_t app_wifi_action_rect(void)
+{
+    return (app_rect_t) {100, 376, 280, 64};
 }
 
 /* Daily goal panel. */

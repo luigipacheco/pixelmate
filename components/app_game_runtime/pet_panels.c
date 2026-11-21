@@ -43,6 +43,37 @@ static void draw_grabber(int y, Color color)
 
 /* ---- Menu ------------------------------------------------------------ */
 
+static void format_ip(char *out, size_t cap, const char *prefix, uint32_t ipv4)
+{
+    snprintf(out, cap, "%s%lu.%lu.%lu.%lu", prefix, (unsigned long)(ipv4 & 0xFF),
+             (unsigned long)((ipv4 >> 8) & 0xFF), (unsigned long)((ipv4 >> 16) & 0xFF),
+             (unsigned long)(ipv4 >> 24));
+}
+
+/* Network line: where to open the stats page, or a SET UP button when there
+ * is nothing to join. Any state but OFF opens the Wi-Fi panel on tap. */
+static void draw_menu_wifi(const draw_ctx_t *d, int oy)
+{
+    const app_game_snapshot_t *s = d->snap;
+    const app_rect_t r = app_menu_wifi_rect();
+    const int y = r.y + oy + (r.h - 14) / 2;
+    char text[40];
+    switch (s->net) {
+    case APP_NET_ONLINE:
+        format_ip(text, sizeof(text), "WEB ", s->ipv4);
+        px_text_center(text, 240, y, 2, d->color, false);
+        break;
+    case APP_NET_CONNECTING: px_text_center("WIFI CONNECTING", 240, y, 2, d->dim, false); break;
+    case APP_NET_NO_CONFIG: screens_button(d, r, 0, oy, "SET UP WIFI", 2, d->color, false); break;
+    case APP_NET_FAILED: screens_button(d, r, 0, oy, "WIFI LOST - SET UP", 2, d->color, false); break;
+    case APP_NET_SETUP:
+        snprintf(text, sizeof(text), "JOIN %s", s->setup_ap);
+        px_text_center(text, 240, y, 2, d->accent, false);
+        break;
+    default: break;
+    }
+}
+
 static void draw_menu(const draw_ctx_t *d, int oy)
 {
     const app_game_snapshot_t *s = d->snap;
@@ -70,18 +101,7 @@ static void draw_menu(const draw_ctx_t *d, int oy)
     px_icon(PX_ICON_SHOE, goal.x + 22, goal.y + oy + 21, 4, d->color, d->accent, d->gap);
 
     char text[40];
-    /* Network line: where to open the stats page. */
-    switch (s->net) {
-    case APP_NET_ONLINE:
-        snprintf(text, sizeof(text), "WEB %lu.%lu.%lu.%lu", (unsigned long)(s->ipv4 & 0xFF),
-                 (unsigned long)((s->ipv4 >> 8) & 0xFF), (unsigned long)((s->ipv4 >> 16) & 0xFF),
-                 (unsigned long)(s->ipv4 >> 24));
-        px_text_center(text, 240, oy + 298, 2, d->color, false);
-        break;
-    case APP_NET_CONNECTING: px_text_center("WIFI CONNECTING", 240, oy + 298, 2, d->dim, false); break;
-    case APP_NET_NO_CONFIG: px_text_center("WIFI NOT SET IN VIBE MODE", 240, oy + 298, 2, d->dim, false); break;
-    default: break;
-    }
+    draw_menu_wifi(d, oy);
     const app_store_item_t *next = screens_next_unlock(s);
     if (!next) {
         snprintf(text, sizeof(text), "YOU OWN EVERYTHING");
@@ -91,7 +111,7 @@ static void draw_menu(const draw_ctx_t *d, int oy)
         snprintf(text, sizeof(text), "%s IN %lu STEPS", next->name,
                  (unsigned long)(next->cost - s->sparks) * APP_STEPS_PER_SPARK);
     }
-    px_text_center(text, 240, oy + 322, 2, d->accent, false);
+    px_text_center(text, 240, oy + 326, 2, d->accent, false);
     draw_grabber(oy + APP_MENU_H - 18, d->dim);
 }
 
@@ -287,6 +307,55 @@ static void draw_goal(const draw_ctx_t *d, int oy)
     px_text_center(text, 240, oy + 326, 3, s->steps_today >= s->step_goal ? d->accent : d->dim, d->gap);
 }
 
+/* ---- Wi-Fi ----------------------------------------------------------- */
+
+static void draw_wifi(const draw_ctx_t *d, int oy)
+{
+    const app_game_snapshot_t *s = d->snap;
+    const app_rect_t action = app_wifi_action_rect();
+    const Color soft = px_scale(d->color, 0.6f);   /* Instructions: brighter than dim. */
+    char text[40];
+    draw_header(d, oy, "WIFI");
+    switch (s->net) {
+    case APP_NET_SETUP:
+        px_text_center("ON YOUR PHONE JOIN", 240, oy + 84, 2, soft, false);
+        px_text_center(s->setup_ap, 240, oy + 112, 4, d->color, d->gap);
+        px_text_center("A SETUP PAGE OPENS. IF NOT GO TO", 240, oy + 176, 2, soft, false);
+        px_text_center("192.168.4.1", 240, oy + 204, 4, d->color, d->gap);
+        px_text_center("PICK YOUR WIFI AND SAVE", 240, oy + 270, 2, d->accent, false);
+        px_text_center("NO PASSWORD FOR THIS HOTSPOT", 240, oy + 300, 2, soft, false);
+        screens_button(d, action, 0, oy, "STOP", 3, soft, false);
+        return;
+    case APP_NET_ONLINE:
+        px_text_center("ONLINE", 240, oy + 96, 4, d->accent, d->gap);
+        px_text_center("STATS ON YOUR PHONE", 240, oy + 160, 2, soft, false);
+        format_ip(text, sizeof(text), "", s->ipv4);
+        px_text_center(text, 240, oy + 190, 4, d->color, d->gap);
+        px_text_center("PIXELPAL.LOCAL", 240, oy + 246, 3, d->color, d->gap);
+        screens_button(d, action, 0, oy, "CHANGE WIFI", 3, soft, false);
+        return;
+    case APP_NET_CONNECTING:
+        px_text_center("CONNECTING", 240, oy + 140, 4, d->color, d->gap);
+        px_text_center("TO THE SAVED WIFI", 240, oy + 196, 2, soft, false);
+        screens_button(d, action, 0, oy, "CHANGE WIFI", 3, soft, false);
+        return;
+    case APP_NET_FAILED:
+        px_text_center("WIFI NOT FOUND", 240, oy + 120, 4, d->color, d->gap);
+        px_text_center("STILL TRYING THE SAVED ONE", 240, oy + 180, 2, soft, false);
+        px_text_center("OR SET UP A NEW ONE", 240, oy + 206, 2, soft, false);
+        screens_button(d, action, 0, oy, "SET UP", 3, d->color, true);
+        return;
+    case APP_NET_NO_CONFIG:
+        px_text_center("NO WIFI YET", 240, oy + 120, 4, d->color, d->gap);
+        px_text_center("SET IT UP WITH YOUR PHONE", 240, oy + 180, 2, soft, false);
+        screens_button(d, action, 0, oy, "SET UP", 3, d->color, true);
+        return;
+    default:
+        px_text_center("WIFI OFF", 240, oy + 140, 4, d->dim, d->gap);
+        return;
+    }
+}
+
 void screens_draw_overlay(const draw_ctx_t *d, app_overlay_t overlay, int oy)
 {
     switch (overlay) {
@@ -294,6 +363,7 @@ void screens_draw_overlay(const draw_ctx_t *d, app_overlay_t overlay, int oy)
     case APP_OVERLAY_STYLE: draw_style(d, oy); break;
     case APP_OVERLAY_STORE: draw_store(d, oy); break;
     case APP_OVERLAY_GOAL: draw_goal(d, oy); break;
+    case APP_OVERLAY_WIFI: draw_wifi(d, oy); break;
     default: break;
     }
 }

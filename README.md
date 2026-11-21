@@ -32,7 +32,11 @@ react to how much you walk, what you feed it and how you play with it.
   the menu does it at once. Steps keep counting; tap the screen to wake.
 - **Battery:** percentage in the pull-down menu; a top-bar icon appears while
   charging or when the battery is low.
-- **Wi-Fi stats:** joins the Wi-Fi set in Vibe Mode, syncs the clock, and
+- **Wi-Fi setup:** first time, pull down the menu and tap **SET UP WIFI**. The
+  board shows a hotspot name (`PIXELPAL-XXXX`); join it from a phone, pick your
+  Wi-Fi on the page that opens (or go to `192.168.4.1`) and save. The Wi-Fi set
+  in Vibe Mode is used when nothing was saved here.
+- **Wi-Fi stats:** joins the saved Wi-Fi, syncs the clock, and
   serves a stats page at `http://pixelpal.local` (or the IP in the menu):
   today, food, health, 7-day chart, streak, sparks and battery. Opening it once
   sets the pet's timezone.

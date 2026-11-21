@@ -52,6 +52,16 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
 - A downward drag (>= 70 px) starting in the top 90 px opens the menu overlay;
   an upward drag closes any overlay. The menu leads to Store, Style and Goal; their
   BACK button returns to the menu. In the store, left/right swipes change page.
+- Wi-Fi: the menu's network line (`app_menu_wifi_rect`) opens the Wi-Fi panel
+  unless the state is OFF. With nothing saved (`APP_NET_NO_CONFIG`) or a lost
+  network (`APP_NET_FAILED`) it is a SET UP button and the tap also raises
+  `APP_EVENT_WIFI_SETUP`. In the panel, the action button
+  (`app_wifi_action_rect`) raises `APP_EVENT_WIFI_STOP` while setup runs and
+  `APP_EVENT_WIFI_SETUP` otherwise (SET UP / CHANGE WIFI). The model never
+  touches Wi-Fi: the runtime acts on these events and reports back through
+  `app_game_set_network()` and `app_game_set_setup_ap()` (hotspot name, shown
+  while `APP_NET_SETUP`). While that panel shows a running setup the screen
+  does not dim or doze, so the hotspot name stays readable.
 - Store: colors, pixel styles and animations cost sparks (see `s_store` in
   `app_game.c`). Lime and chunky are free. Buying deducts sparks and equips the
   item; tapping an owned color/style selects it, an owned animation toggles.

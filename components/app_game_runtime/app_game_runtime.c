@@ -55,7 +55,7 @@ enum {
     HOST_BATTERY_PCT = 76,
     HOST_FIRST_DAY = 20000,
 };
-#define HOST_LOOPBACK_IPV4 0x0100007FUL   /* 127.0.0.1 in network byte order. */
+#define HOST_SETUP_AP "PIXELPAL-SIM"   /* Host: stand-in setup hotspot name. */
 
 typedef struct {
     app_game_handle_t game;
@@ -295,6 +295,20 @@ static int build_stats_json(const app_game_snapshot_t *s, char *out, size_t cap)
     return n > 0 && (size_t)n < cap ? n : -1;
 }
 
+static void report_network(host_state_t *state)
+{
+    static const app_net_state_t map[] = {
+        [APP_NET_STATUS_OFF] = APP_NET_OFF, [APP_NET_STATUS_NO_CONFIG] = APP_NET_NO_CONFIG,
+        [APP_NET_STATUS_CONNECTING] = APP_NET_CONNECTING, [APP_NET_STATUS_ONLINE] = APP_NET_ONLINE,
+        [APP_NET_STATUS_FAILED] = APP_NET_FAILED, [APP_NET_STATUS_SETUP] = APP_NET_SETUP,
+    };
+    uint32_t ip = 0;
+    const app_net_status_t status = app_net_status(&ip);
+    const bool known = (size_t)status < sizeof(map) / sizeof(map[0]);
+    app_game_set_network(state->game, known ? map[status] : APP_NET_OFF, ip);
+    app_game_set_setup_ap(state->game, status == APP_NET_STATUS_SETUP ? app_net_setup_name() : NULL);
+}
+
 static void poll_net(host_state_t *state)
 {
     ++state->net_timer;
@@ -314,16 +328,34 @@ static void poll_net(host_state_t *state)
     if (state->net_timer % NET_POLL_TICKS) {
         return;
     }
-    uint32_t ip = 0;
-    static const app_net_state_t map[] = {APP_NET_OFF, APP_NET_NO_CONFIG, APP_NET_CONNECTING, APP_NET_ONLINE};
-    const app_net_status_t status = app_net_status(&ip);
-    app_game_set_network(state->game, map[status <= APP_NET_STATUS_ONLINE ? status : 0], ip);
+    report_network(state);
     const app_game_snapshot_t snapshot = app_game_read(state->game);
     if (build_stats_json(&snapshot, state->stats_json, sizeof(state->stats_json)) > 0) {
         app_net_publish(state->stats_json);
     }
 }
 #endif
+
+/* Menu/panel taps ask for the setup hotspot; the model never touches Wi-Fi.
+ * The Host build stands in with a fake hotspot so the panels can be tried. */
+static void handle_wifi_events(host_state_t *state, uint32_t events)
+{
+    if (!(events & (APP_EVENT_WIFI_SETUP | APP_EVENT_WIFI_STOP))) {
+        return;
+    }
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    const esp_err_t err = (events & APP_EVENT_WIFI_STOP) ? app_net_setup_stop() : app_net_setup_start();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "wifi setup %s: %s", (events & APP_EVENT_WIFI_STOP) ? "stop" : "start",
+                 esp_err_to_name(err));
+    }
+    report_network(state);   /* Show SETUP on this frame, not a second later. */
+#else
+    const bool start = !(events & APP_EVENT_WIFI_STOP);
+    app_game_set_network(state->game, start ? APP_NET_SETUP : APP_NET_NO_CONFIG, 0);
+    app_game_set_setup_ap(state->game, start ? HOST_SETUP_AP : NULL);
+#endif
+}
 
 static int initialize(void *value, const char *asset_root)
 {
@@ -343,7 +375,7 @@ static int initialize(void *value, const char *asset_root)
     load_timezone();
 #else
     app_game_set_battery(state->game, HOST_BATTERY_PCT, false);
-    app_game_set_network(state->game, APP_NET_ONLINE, HOST_LOOPBACK_IPV4);
+    app_game_set_network(state->game, APP_NET_NO_CONFIG, 0);   /* First run: nothing saved. */
     state->host_day = HOST_FIRST_DAY;
     app_game_set_day(state->game, state->host_day);
 #endif
@@ -431,6 +463,7 @@ static void update(void *value)
 #endif
     app_game_update(state->game);
     const uint32_t events = app_game_take_events(state->game);
+    handle_wifi_events(state, events);
     const app_game_snapshot_t snapshot = app_game_read(state->game);
     pet_view_update(&state->view, &snapshot, events);
 #if defined(RAYLIB_LITE_GAME_NATIVE)
@@ -499,7 +532,8 @@ static int state_json(const void *value, char *output, size_t capacity)
         return -1;
     }
     static const char *const screens[APP_SCREEN_COUNT] = {"home", "steps", "feed", "arcade"};
-    static const char *const overlays[APP_OVERLAY_COUNT] = {"none", "menu", "style", "store", "goal"};
+    static const char *const overlays[APP_OVERLAY_COUNT] = {"none", "menu", "style", "store", "goal", "wifi"};
+    static const char *const nets[] = {"off", "no_config", "connecting", "online", "failed", "setup"};
     static const char *const moods[APP_MOOD_COUNT] = {
         "idle", "happy", "sleepy", "hungry", "sad", "walk", "eating", "thinking", "surprised", "grumpy",
         "fainted"
@@ -508,7 +542,7 @@ static int state_json(const void *value, char *output, size_t capacity)
     int size = snprintf(output, capacity,
                         "{\"phase\":\"%s\",\"tick\":%lu,\"screen\":\"%s\",\"overlay\":\"%s\","
                         "\"store_page\":%u,\"owned\":%lu,\"anims_on\":%u,\"mood\":\"%s\","
-                        "\"power\":%d,\"battery\":%d,\"charging\":%s,"
+                        "\"power\":%d,\"battery\":%d,\"charging\":%s,\"net\":\"%s\",\"setup_ap\":\"%s\","
                         "\"hp\":%u,\"fainted\":%s,\"fed_today\":%s,\"food_need\":%lu,"
                         "\"steps_total\":%lu,\"steps_today\":%lu,\"sparks\":%lu,\"hunger\":%u,"
                         "\"happiness\":%u,\"friendship\":%u,\"pixel_style\":%d,\"color\":%u,"
@@ -521,6 +555,7 @@ static int state_json(const void *value, char *output, size_t capacity)
                         s.store_page, (unsigned long)s.owned, s.anims_on,
                         moods[s.mood < APP_MOOD_COUNT ? s.mood : 0],
                         (int)s.power, s.battery_pct, s.battery_charging ? "true" : "false",
+                        nets[(size_t)s.net < sizeof(nets) / sizeof(nets[0]) ? s.net : 0], s.setup_ap,
                         s.hp, s.fainted ? "true" : "false", s.fed_today ? "true" : "false",
                         (unsigned long)s.food_need,
                         (unsigned long)s.steps_total, (unsigned long)s.steps_today,

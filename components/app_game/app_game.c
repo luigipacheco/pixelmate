@@ -101,6 +101,7 @@ struct app_game {
     uint32_t history[APP_HISTORY_DAYS];
     app_net_state_t net;
     uint32_t ipv4;
+    char setup_ap[APP_SETUP_AP_MAX];
     bool goal_awarded;
     app_pixel_style_t pixel_style;
     uint8_t color_index;
@@ -469,6 +470,13 @@ static void update_power(app_game_handle_t g)
     if (g->pointer_down && ++g->pointer_still_ticks < STUCK_TOUCH_TICKS) {
         return;
     }
+    /* The hotspot name must stay readable while someone types on their phone
+     * (the hotspot itself times out in the runtime). */
+    if (g->overlay == APP_OVERLAY_WIFI && g->net == APP_NET_SETUP) {
+        g->screen_idle_ticks = 0;
+        set_power(g, APP_POWER_AWAKE);
+        return;
+    }
     ++g->screen_idle_ticks;
     const uint32_t doze_at = doze_after_ticks(g);
     const uint32_t dim_at = APP_DIM_AFTER_S * TICKS_PER_SECOND < doze_at
@@ -621,9 +629,30 @@ static void tap_goal(app_game_handle_t g, int32_t x, int32_t y)
     changed(g);
 }
 
+static bool wifi_needs_setup(const struct app_game *g)
+{
+    return g->net == APP_NET_NO_CONFIG || g->net == APP_NET_FAILED;
+}
+
+/* The panel's single button: stop a running setup, otherwise (re)start it. */
+static void tap_wifi(app_game_handle_t g, int32_t x, int32_t y)
+{
+    if (app_rect_hit(app_panel_back_rect(), x, y)) {
+        set_overlay(g, APP_OVERLAY_MENU);
+    } else if (app_rect_hit(app_wifi_action_rect(), x, y) && g->net != APP_NET_OFF) {
+        g->events |= g->net == APP_NET_SETUP ? APP_EVENT_WIFI_STOP : APP_EVENT_WIFI_SETUP;
+    }
+}
+
 static void tap_menu(app_game_handle_t g, int32_t x, int32_t y)
 {
-    if (app_rect_hit(app_menu_sleep_rect(), x, y)) {
+    if (app_rect_hit(app_menu_wifi_rect(), x, y) && g->net != APP_NET_OFF) {
+        /* Nothing to join yet: tapping SET UP starts the hotspot right away. */
+        if (wifi_needs_setup(g)) {
+            g->events |= APP_EVENT_WIFI_SETUP;
+        }
+        set_overlay(g, APP_OVERLAY_WIFI);
+    } else if (app_rect_hit(app_menu_sleep_rect(), x, y)) {
         doze(g);
     } else if (app_rect_hit(app_menu_store_rect(), x, y)) {
         set_overlay(g, APP_OVERLAY_STORE);
@@ -758,6 +787,7 @@ static void handle_tap(app_game_handle_t g, int32_t x, int32_t y)
     case APP_OVERLAY_STYLE: tap_style(g, x, y); return;
     case APP_OVERLAY_STORE: tap_store(g, x, y); return;
     case APP_OVERLAY_GOAL: tap_goal(g, x, y); return;
+    case APP_OVERLAY_WIFI: tap_wifi(g, x, y); return;
     default: break;
     }
     switch (g->screen) {
@@ -877,6 +907,16 @@ void app_game_set_network(app_game_handle_t g, app_net_state_t state, uint32_t i
     if (g) {
         g->net = state;
         g->ipv4 = state == APP_NET_ONLINE ? ipv4 : 0;
+    }
+}
+
+void app_game_set_setup_ap(app_game_handle_t g, const char *name)
+{
+    if (g) {
+        g->setup_ap[0] = '\0';
+        if (name) {
+            strncat(g->setup_ap, name, sizeof(g->setup_ap) - 1);
+        }
     }
 }
 
@@ -1084,6 +1124,7 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .save_seq = g->save_seq,
     };
     memcpy(snap.history, g->history, sizeof(snap.history));
+    memcpy(snap.setup_ap, g->setup_ap, sizeof(snap.setup_ap));
     return snap;
 }
 

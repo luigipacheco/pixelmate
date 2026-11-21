@@ -11,7 +11,7 @@ persists the pet, polls the hardware pedometer and tracks the calendar day.
 | `pet_screens.c` | Home (pet only), steps ring, feed, cards and slots content |
 | `pet_grid.c` | Spark Grid board, hints, PLAY/CASH and score |
 | `pet_arcade.c` | Arcade lobby: cabinets, attract-mode demos, EXIT button |
-| `pet_panels.c` | Pull-down menu, style picker, store and daily goal panels |
+| `pet_panels.c` | Pull-down menu, style picker, store, daily goal and Wi-Fi panels |
 | `pet_eyes.c` | Eye shapes per mood with spring physics, blinks and gaze |
 | `pixel_draw.c` | Grid rasterizer, 5x7 font, icons, palette |
 
@@ -54,7 +54,9 @@ advance the model, take its event bits, advance the view, then save if due.
 - Battery: the BQ27220 gauge is read every 10 s; current above 5 mA counts as
   charging. A failed read reports "unknown" (menu shows NO BATT).
 - Network: `app_net` starts 1 s after boot (first frame first). Every second
-  the runtime reports Wi-Fi status/IP to the model (shown in the menu) and
+  the runtime reports Wi-Fi status/IP and the setup hotspot name to the model
+  (shown in the menu and the Wi-Fi panel); `APP_EVENT_WIFI_SETUP/STOP` from the
+  model start/stop the setup hotspot and are reported back on the same frame. It also
   publishes stats JSON for `http://pixelpal.local` / the menu's IP. A timezone
   from the web page is applied as a POSIX `TZ` and saved in NVS
   (`pixel_pal/tz_min`), then reloaded on boot.
@@ -67,6 +69,7 @@ advance the model, take its event bits, advance the view, then save if due.
 
 The Host build compiles the files listed in `../../game.sim.json` without the
 device-only code; it reports a fixed 76 % battery and draws black while the
-screen is off. The left key ends the simulated day (health check). The space key (`jump` action) credits 50 steps; replay `imu`
+screen is off. Wi-Fi starts as "nothing saved"; SET UP shows a stand-in
+hotspot `PIXELPAL-SIM` and STOP returns to "nothing saved". The left key ends the simulated day (health check). The space key (`jump` action) credits 50 steps; replay `imu`
 events drive the software pedometer. Source files include application public
 headers by relative path because the Host runner cannot declare include paths.
