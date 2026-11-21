@@ -348,6 +348,44 @@ static void on_events(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
     }
 }
 
+/* Booth cues: digits bounce the eyes, the flash startles them, results pop. */
+static void on_booth(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
+{
+    const app_booth_snapshot_t *b = &s->booth;
+    const Color c = px_color(s->color_index), acc = px_accent(s->color_index);
+    const app_rect_t r = app_booth_view_rect();
+    if (b->seq == v->prev_booth_seq || s->screen != APP_SCREEN_BOOTH) {
+        return;
+    }
+    if (b->phase == APP_BOOTH_COUNTDOWN && (v->prev_booth_phase != b->phase || v->prev_booth_count != b->count)) {
+        pet_eyes_kick(&v->eyes, -4.0f);
+        pet_eyes_force_gaze(&v->eyes, 0, 0, 24);   /* Looking at you. */
+    }
+    if (b->phase == APP_BOOTH_FLASH && v->prev_booth_phase != b->phase) {
+        pet_eyes_kick(&v->eyes, -12.0f);
+        burst(v, P_SQUARE, r.x + r.w / 2, r.y + r.h / 2, 18, 10.0f, 0.3f, CONFETTI_WHITE, acc);
+    }
+    if (b->phase == APP_BOOTH_RECORD && v->prev_booth_phase != b->phase) {
+        pet_eyes_kick(&v->eyes, -8.0f);
+    }
+    if (b->result != v->prev_booth_result) {
+        switch (b->result) {
+        case APP_BOOTH_RESULT_SAVED:
+            floater(v, "SAVED!", 240, 300, acc);
+            burst(v, P_SQUARE, 240, 250, 22, 9.0f, 0.35f, c, CONFETTI_WHITE);
+            break;
+        case APP_BOOTH_RESULT_FULL: floater(v, "FULL", 240, 300, WARN); break;
+        case APP_BOOTH_RESULT_FAILED: floater(v, "OOPS", 240, 300, WARN); break;
+        case APP_BOOTH_RESULT_DELETED: floater(v, "DELETED", 240, 300, acc); break;
+        default: break;
+        }
+    }
+    /* A look/lens picker with nothing else owned reports a change-less event. */
+    if (b->phase == APP_BOOTH_LIVE && v->prev_booth_phase == APP_BOOTH_LIVE && !(ev & APP_EVENT_SETTINGS)) {
+        floater(v, "MORE IN STORE", 240, 300, acc);
+    }
+}
+
 static void update_food(pet_view_t *v, const app_game_snapshot_t *s)
 {
     if (v->food_t >= 1.0f) {
@@ -382,6 +420,11 @@ void pet_view_update(pet_view_t *v, const app_game_snapshot_t *s, uint32_t event
     ease_anchor(v, s, false);
     update_overlay(v, s->overlay);
     on_events(v, s, events);
+    on_booth(v, s, events);
+    v->prev_booth_phase = (uint8_t)s->booth.phase;
+    v->prev_booth_count = s->booth.count;
+    v->prev_booth_result = (uint8_t)s->booth.result;
+    v->prev_booth_seq = s->booth.seq;
     v->prev_sparks = s->sparks;
     if (v->dance_ticks) {
         /* Side-to-side shimmy with a hop on every beat. */
@@ -548,10 +591,16 @@ static void draw_sparks_counter(const pet_view_t *v, const draw_ctx_t *d)
     px_text(text, bolt_x - 8 - px_text_width(text, scale), 18 - (scale - 3) * 3, scale, c, d->gap);
 }
 
+static int s_pages(const app_game_snapshot_t *s)
+{
+    return s->camera_present || s->screen == APP_SCREEN_BOOTH ? APP_SCREEN_COUNT : APP_SCREEN_BOOTH;
+}
+
 static void draw_dots(const pet_view_t *v, const draw_ctx_t *d)
 {
     const int spacing = 24, size = 10;
-    const int pages = APP_SCREEN_COUNT;
+    /* The booth page exists only while a camera is plugged in. */
+    const int pages = s_pages(d->snap);
     const int x0 = APP_VIEW_W / 2 - (pages - 1) * spacing / 2 - size / 2;
     for (int i = 0; i < pages; ++i) {
         DrawRectangle(x0 + i * spacing, APP_DOTS_Y, size, size, d->dim);
@@ -571,6 +620,7 @@ void pet_view_draw(const pet_view_t *v, const app_game_snapshot_t *s)
     const draw_ctx_t d = {
         .view = v, .snap = s, .grid = grid, .gap = grid.gap > 0,
         .color = c, .accent = px_scale(px_accent(s->color_index), level), .dim = px_scale(c, 0.24f),
+        .level = level,
     };
     ClearBackground(BLACK);
     const bool panel = v->overlay_drawn != APP_OVERLAY_NONE;
@@ -592,6 +642,7 @@ void pet_view_draw(const pet_view_t *v, const app_game_snapshot_t *s)
         const int oy = -(int)(height * (1.0f - screens_ease_out(v->overlay_pos)));
         screens_draw_overlay(&d, v->overlay_drawn, oy);
     }
+    screens_draw_booth_flash(&d);   /* Under the eyes, so the pet blinks into the flash. */
     /* Unlocked animations change how the eyes are drawn. */
     const bool rainbow_on = anim_on(s, APP_ANIM_RAINBOW) && s->mood == APP_MOOD_WALK;
     const bool stars = anim_on(s, APP_ANIM_STARS) && s->mood == APP_MOOD_HAPPY;

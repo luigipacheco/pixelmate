@@ -53,9 +53,19 @@ the `pixel_pal` name so existing pets carry over.)
 - **Sound:** short 8-bit blips for sparks, petting, eating, buying, menus and
   every arcade game; a victory jingle when the pet is fed. Silent while the
   screen is off.
+- **Photo booth (needs a camera module, 300 sparks):** plug an OV3640 or
+  SC101IOT camera board into the **left** slot (any time; no reboot) and a
+  Booth page appears after the Arcade. Tap SNAP for a 3-2-1 photo or GIF for
+  an 8-frame clip; ROLL browses and deletes them. A photo is a lens plus a
+  look: LO RES 32x32 is free, MID RES 64x64 (80) and HI RES 128x128 (180) are
+  sold; PLAIN is free, DITHER, SCANLINES, GAME-GREEN, HALFTONE, THERMAL, ASCII
+  and EYE STICKERS are sold (50-150). Photos keep the pet's palette. Up to 12
+  photos and 2 GIFs are kept in NVS (HI RES photos fill it sooner), and the
+  stats page links to a gallery (`/photos`) to save them as PNG/GIF. Without a
+  camera the page and its store items are hidden; what you bought stays owned.
 - Progress is saved to NVS.
 
-Swipe left/right between Home, Steps, Feed and Arcade. Pull down from the top
+Swipe left/right between Home, Steps, Feed, Arcade and (with a camera) Booth. Pull down from the top
 edge for the menu (Store, Style, Settings); swipe up to close. Tap the eyes to pet.
 
 ## Build and run
@@ -72,7 +82,8 @@ python mosaico.py iris system-update --project projects/pixel_pal
 
 The Host simulator needs a C compiler (`cc`, `gcc` or `clang` on PATH) and Pillow.
 In the simulator the space key adds 50 steps; replay `imu` events drive the
-software pedometer.
+software pedometer; the right key unplugs/replugs the pretend camera (the booth
+shows a synthetic scene).
 
 A fresh checkout must generate the Board Manager configuration once before the
 first firmware build (see the workspace's `docs/game-development.md`):
@@ -93,6 +104,9 @@ IDF_EXTRA_ACTIONS_PATH=projects/pixel_pal/managed_components/espressif__esp_boar
 | `components/app_power_hw` | Screen power and battery gauge (device only) |
 | `components/app_net` | Wi-Fi, network time, mDNS, stats web server (device only) |
 | `components/app_sfx` | 8-bit sound effects from model events (device only) |
+| `components/app_photo` | Photo lenses, looks, palettes, PNG/GIF encoders (pure C) |
+| `components/app_photo_store` | Photo/GIF gallery in NVS (RAM in the simulator) |
+| `components/app_camera_hw` | Hot-pluggable left-slot camera, 128x128 feed (device only) |
 | `assets_src/generate_sfx.py` | Generates the sound clips at build time |
 | `main/game_entry.c` | Selects the runtime module for the Engine |
 | `game.sim.json` | Sources shared by the Host simulator and firmware |

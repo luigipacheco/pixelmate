@@ -366,6 +366,7 @@ void screens_draw(const draw_ctx_t *d, app_screen_t screen, int ox)
         default: screens_draw_arcade(d, ox); break;
         }
         break;
+    case APP_SCREEN_BOOTH: screens_draw_booth(d, ox); break;
     default: break;
     }
 }

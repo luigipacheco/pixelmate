@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 /* Engine module adapter: input translation, fixed-step update, drawing and, on
  * the device only, persistence, the hardware pedometer and the calendar day. */
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include "include/app_game_runtime.h"
 /* Engine Host accepts source lists, not component include paths. Reference only
  * the model's public header so these translation units work on both targets. */
 #include "../app_game/include/app_game.h"
+#include "private/booth_media.h"
 #include "private/game_config.h"
 #include "private/pet_view.h"
 #include "raylib_lite_raylib.h"
@@ -27,8 +29,8 @@
 
 static const char *TAG = "pixel_pal";
 enum {
-    /* v1 builds could store an all-zero pet (ignored); v2..v4 migrate by prefix. */
-    SAVE_VERSION = 5,
+    /* v1 builds could store an all-zero pet (ignored); v2..v5 migrate by prefix. */
+    SAVE_VERSION = 6,
     SAVE_SOON_MS = 2000,          /* After spending, settings or a goal. */
     SAVE_LATER_MS = 30000,        /* After step/stat drift; limits flash wear. */
     SENSOR_POLL_TICKS = GAME_TICK_HZ,          /* 1 s */
@@ -51,6 +53,7 @@ enum {
  * and a fixed battery reading lets the battery UI show in the simulator. */
 enum {
     GAME_ACTION_DEBUG_DAY = 0,    /* Host: left key ends the simulated day. */
+    GAME_ACTION_DEBUG_CAMERA = 1, /* Host: right key unplugs/replugs the camera. */
     GAME_ACTION_DEBUG_STEPS = 2,
     DEBUG_STEPS = 50,
     HOST_BATTERY_PCT = 76,
@@ -61,7 +64,8 @@ enum {
 typedef struct {
     app_game_handle_t game;
     pet_view_t view;
-    bool debug_key_down, debug_day_down;
+    booth_media_t media;          /* Photo booth pixels; the view reads them. */
+    bool debug_key_down, debug_day_down, debug_camera_down;
     bool blanked;                 /* Black frame already submitted while the screen is off. */
     int32_t host_day;
 #if defined(RAYLIB_LITE_GAME_NATIVE)
@@ -86,16 +90,37 @@ static uint64_t now_ms(void)
     return raylib_lite_time_us() / 1000U;
 }
 
-/* v2 -> v3: same prefix; the appended health fields start full. */
-/* v2 (32 B) and v3 (36 B) are prefixes of the current record: copy them and
- * default the appended fields (v2 had no health, so it starts full). */
+/* Pre-release photo-booth builds (feat/photo-booth before it was rebased on
+ * Bit Flip) wrote their own 72-byte v5: looks/lenses at bytes 68..71 instead
+ * of bits_best/reserved3, and the booth as store game 2, which is Bit Flip on
+ * main. Main's v5 always stores reserved3 = 0, while those builds always set
+ * the free LO RES lens bit at byte 70, so the two cannot be confused. */
+static void migrate_booth_prerelease(const uint8_t *old, app_game_record_t *record)
+{
+    enum { OLD_PHOTO_GAME = 2 };
+    record->filters_owned = old[68];
+    record->filter = old[69];
+    record->lenses_owned = old[70];
+    record->lens = old[71];
+    record->bits_best = 0;
+    record->reserved3 = 0;
+    if (record->owned & APP_OWN_GAME_BIT(OLD_PHOTO_GAME)) {
+        record->owned &= ~APP_OWN_GAME_BIT(OLD_PHOTO_GAME);
+        record->owned |= APP_OWN_GAME_BIT(APP_GAME_PHOTO);
+    }
+}
+
+/* v2 (32 B), v3 (36 B), v4 (68 B) and v5 (72 B) are prefixes of the current
+ * record: copy them and default the appended fields (v2 had no health, so it
+ * starts full; before v6 no photo looks or lenses were owned). */
 static raylib_lite_result_t migrate_save(uint16_t old_version, const void *old_data, size_t old_size,
                                         void *new_data, size_t new_size)
 {
     const bool v2 = old_version == 2 && old_size == APP_GAME_RECORD_V2_SIZE;
     const bool v3 = old_version == 3 && old_size == APP_GAME_RECORD_V3_SIZE;
     const bool v4 = old_version == 4 && old_size == APP_GAME_RECORD_V4_SIZE;
-    if ((!v2 && !v3 && !v4) || new_size != sizeof(app_game_record_t)) {
+    const bool v5 = old_version == 5 && old_size == APP_GAME_RECORD_V5_SIZE;
+    if ((!v2 && !v3 && !v4 && !v5) || new_size != sizeof(app_game_record_t)) {
         return RAYLIB_LITE_INVALID_VERSION;
     }
     app_game_record_t *record = new_data;
@@ -103,6 +128,9 @@ static raylib_lite_result_t migrate_save(uint16_t old_version, const void *old_d
     memcpy(record, old_data, old_size);
     if (v2) {
         record->hp = APP_HP_MAX;
+    }
+    if (v5 && ((const uint8_t *)old_data)[offsetof(app_game_record_t, reserved3)] != 0) {
+        migrate_booth_prerelease(old_data, record);
     }
     return RAYLIB_LITE_OK;
 }
@@ -381,7 +409,9 @@ static int initialize(void *value, const char *asset_root)
     state->host_day = HOST_FIRST_DAY;
     app_game_set_day(state->game, state->host_day);
 #endif
+    booth_media_init(&state->media);
     pet_view_init(&state->view);
+    state->view.media = &state->media;
     InitWindow(GAME_WIDTH, GAME_HEIGHT, GAME_NAME);
     SetTargetFPS(GAME_TICK_HZ);
     return 0;
@@ -442,6 +472,12 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
             }
             state->debug_key_down = event->pressed;
         }
+        if (event->code == GAME_ACTION_DEBUG_CAMERA) {
+            if (event->pressed && !state->debug_camera_down) {
+                state->media.host_present = !state->media.host_present;
+            }
+            state->debug_camera_down = event->pressed;
+        }
         if (event->code == GAME_ACTION_DEBUG_DAY) {
             if (event->pressed && !state->debug_day_down) {
                 app_game_set_day(state->game, ++state->host_day);
@@ -465,6 +501,8 @@ static void update(void *value)
     poll_net(state);
 #endif
     app_game_update(state->game);
+    const Color pet = px_color(app_game_read(state->game).color_index);
+    booth_media_update(&state->media, state->game, (app_photo_rgb_t) {pet.r, pet.g, pet.b});
     const uint32_t events = app_game_take_events(state->game);
     handle_wifi_events(state, events);
     const app_game_snapshot_t snapshot = app_game_read(state->game);
@@ -527,6 +565,8 @@ static uint32_t state_hash(const void *value)
     hash = hash * 31U + s.friendship;
     hash = hash * 31U + (uint32_t)s.cards.phase;
     hash = hash * 31U + s.cards.pot;
+    hash = hash * 31U + (uint32_t)s.booth.phase;
+    hash = hash * 31U + s.filters_owned;
     return hash * 31U + s.paused;
 }
 
@@ -535,7 +575,7 @@ static int state_json(const void *value, char *output, size_t capacity)
     if (!output || !capacity) {
         return -1;
     }
-    static const char *const screens[APP_SCREEN_COUNT] = {"home", "steps", "feed", "arcade"};
+    static const char *const screens[APP_SCREEN_COUNT] = {"home", "steps", "feed", "arcade", "booth"};
     static const char *const overlays[APP_OVERLAY_COUNT] = {"none", "menu", "style", "store", "goal", "wifi", "settings"};
     static const char *const nets[] = {"off", "no_config", "connecting", "online", "failed", "setup"};
     static const char *const moods[APP_MOOD_COUNT] = {
@@ -553,7 +593,10 @@ static int state_json(const void *value, char *output, size_t capacity)
                         "\"cards\":{\"phase\":%d,\"current\":%u,\"pot\":%u,\"streak\":%u,\"result\":%d},"
                         "\"slots\":{\"phase\":%d,\"payout\":%u,\"line\":[%u,%u,%u]},"
                         "\"bits\":{\"phase\":%d,\"target\":%u,\"switches\":%u,\"hits\":%u,\"payout\":%u,\"best\":%u},"
-                        "\"arcade\":%d,\"arcade_row\":%u,"
+                        "\"arcade\":%d,\"arcade_row\":%u,\"camera_present\":%s,\"filters_owned\":%u,"
+                        "\"lenses_owned\":%u,\"booth\":{\"phase\":%d,\"filter\":%u,\"res\":%u,\"unplugged\":%s,"
+                        "\"camera\":%s,\"photos\":%u,\"gifs\":%u,\"index\":%u,\"result\":%d,"
+                        "\"confirm\":%s},"
                         "\"pointer_x\":%ld,\"pointer_y\":%ld,\"pointer_down\":%s,\"state_hash\":\"%08lx\"}",
                         s.paused ? "paused" : "running", (unsigned long)s.tick,
                         screens[s.screen < APP_SCREEN_COUNT ? s.screen : 0],
@@ -572,7 +615,11 @@ static int state_json(const void *value, char *output, size_t capacity)
                         app_game_slot_symbol(s.slots.pos_q[0], 0), app_game_slot_symbol(s.slots.pos_q[1], 0),
                         app_game_slot_symbol(s.slots.pos_q[2], 0),
                         (int)s.bits.phase, s.bits.target, s.bits.switches, s.bits.hits, s.bits.payout, s.bits.best,
-                        (int)s.arcade, s.arcade_row,
+                        (int)s.arcade, s.arcade_row, s.camera_present ? "true" : "false", s.filters_owned,
+                        s.lenses_owned, (int)s.booth.phase, s.booth.filter, s.booth.res,
+                        s.booth.unplugged ? "true" : "false",
+                        s.booth.camera ? "true" : "false", s.booth.photos, s.booth.gifs, s.booth.index,
+                        (int)s.booth.result, s.booth.confirm_delete ? "true" : "false",
                         (long)s.pointer_x, (long)s.pointer_y,
                         s.pointer_down ? "true" : "false", (unsigned long)state_hash(value));
     return size < 0 || (size_t)size >= capacity ? -1 : size;

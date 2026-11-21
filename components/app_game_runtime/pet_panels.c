@@ -19,6 +19,8 @@ static bool owns_item(const app_game_snapshot_t *s, const app_store_item_t *item
     case APP_ITEM_COLOR: return s->owned & APP_OWN_COLOR_BIT(item->value);
     case APP_ITEM_STYLE: return s->owned & APP_OWN_STYLE_BIT(item->value);
     case APP_ITEM_GAME: return s->owned & APP_OWN_GAME_BIT(item->value);
+    case APP_ITEM_FILTER: return s->filters_owned & APP_OWN_FILTER_BIT(item->value);
+    case APP_ITEM_LENS: return s->lenses_owned & APP_OWN_LENS_BIT(item->value);
     default: return s->owned & APP_OWN_ANIM_BIT(item->value);
     }
 }
@@ -26,8 +28,8 @@ static bool owns_item(const app_game_snapshot_t *s, const app_store_item_t *item
 const app_store_item_t *screens_next_unlock(const app_game_snapshot_t *s)
 {
     const app_store_item_t *best = NULL;
-    for (int i = 0; i < app_game_store_count(); ++i) {
-        const app_store_item_t *item = app_game_store_item(i);
+    for (int i = 0; i < app_game_store_visible_count(s->camera_present); ++i) {
+        const app_store_item_t *item = app_game_store_item(app_game_store_visible(s->camera_present, i));
         if (!owns_item(s, item) && (!best || item->cost < best->cost)) {
             best = item;
         }
@@ -190,6 +192,12 @@ static void draw_preview(const draw_ctx_t *d, const app_store_item_t *item, int 
                       mini_eye_inside, &eye, c);
         return;
     }
+    case APP_ITEM_FILTER:
+        screens_filter_swatch(d, item->value, x, y, owned);
+        return;
+    case APP_ITEM_LENS:
+        screens_lens_swatch(d, item->value, x, y, owned);
+        return;
     case APP_ITEM_GAME:
         if (item->value == APP_GAME_BITS) {
             /* "1010" on four tiny levers. */
@@ -198,6 +206,10 @@ static void draw_preview(const draw_ctx_t *d, const app_store_item_t *item, int 
                 px_box(x + i * 15, y + 14, 13, 32, 1, c);
                 DrawRectangle(x + i * 15 + 3, on ? y + 17 : y + 31, 7, 12, on ? d->accent : c);
             }
+            return;
+        }
+        if (item->value == APP_GAME_PHOTO) {
+            screens_camera_icon(d, x, y + 10, 60, c);
             return;
         }
         if (item->value == APP_GAME_GRID) {
@@ -246,6 +258,11 @@ static void draw_status(const draw_ctx_t *d, const app_store_item_t *item, app_r
         if (item->kind == APP_ITEM_GAME) {
             label = "PLAY";
             c = d->accent;
+        } else if (item->kind == APP_ITEM_FILTER || item->kind == APP_ITEM_LENS) {
+            const bool used = item->kind == APP_ITEM_FILTER ? s->booth.filter == item->value
+                              : s->booth.res == item->value;
+            label = used ? "IN USE" : "OWNED";
+            c = used ? d->accent : d->dim;
         } else if (item->kind == APP_ITEM_ANIM) {
             const bool on = s->anims_on & (1U << item->value);
             label = on ? "ON" : "OFF";
@@ -259,6 +276,11 @@ static void draw_status(const draw_ctx_t *d, const app_store_item_t *item, app_r
         px_text(label, right - px_text_width(label, 3), y, 3, c, d->gap);
         return;
     }
+    if ((item->kind == APP_ITEM_FILTER || item->kind == APP_ITEM_LENS)
+            && !(s->owned & APP_OWN_GAME_BIT(APP_GAME_PHOTO))) {
+        px_text("NEEDS BOOTH", right - px_text_width("NEEDS BOOTH", 2), y + 4, 2, d->dim, false);
+        return;
+    }
     const bool can = s->sparks >= item->cost;
     snprintf(text, sizeof(text), "%u", item->cost);
     const int tw = px_text_width(text, 3);
@@ -270,10 +292,11 @@ static void draw_store(const draw_ctx_t *d, int oy)
 {
     const app_game_snapshot_t *s = d->snap;
     draw_header(d, oy, "STORE");
-    const int count = app_game_store_count();
+    /* Booth items are listed only while a camera is plugged in. */
+    const int count = app_game_store_visible_count(s->camera_present);
     for (int row = 0; row < APP_STORE_PER_PAGE; ++row) {
-        const int index = s->store_page * APP_STORE_PER_PAGE + row;
-        const app_store_item_t *item = app_game_store_item(index);
+        const int position = s->store_page * APP_STORE_PER_PAGE + row;
+        const app_store_item_t *item = app_game_store_item(app_game_store_visible(s->camera_present, position));
         if (!item) {
             break;
         }

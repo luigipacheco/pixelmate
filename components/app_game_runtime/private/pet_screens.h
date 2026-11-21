@@ -12,6 +12,7 @@ typedef struct {
     Color color;     /* Chosen palette color. */
     Color accent;    /* Contrasting secondary color. */
     Color dim;       /* Inactive tracks and outlines. */
+    float level;     /* 1 = awake, lower while the screen is dimmed. */
 } draw_ctx_t;
 
 /** Draw one swipeable screen's content shifted horizontally by ox pixels. */
@@ -28,6 +29,12 @@ void screens_draw_arcade(const draw_ctx_t *ctx, int ox);
 void screens_draw_bits(const draw_ctx_t *ctx, int ox);
 /** Spark Grid game (pet_grid.c). */
 void screens_draw_grid(const draw_ctx_t *ctx, int ox);
+/** Photo booth page (pet_booth.c), its flash (drawn under the eyes) and store art. */
+void screens_draw_booth(const draw_ctx_t *ctx, int ox);
+void screens_draw_booth_flash(const draw_ctx_t *ctx);
+void screens_camera_icon(const draw_ctx_t *ctx, int x, int y, int w, Color c);
+void screens_filter_swatch(const draw_ctx_t *ctx, int filter, int x, int y, bool owned);
+void screens_lens_swatch(const draw_ctx_t *ctx, int res, int x, int y, bool owned);
 /** EXIT button shown while a cabinet's game is open. */
 void screens_draw_exit(const draw_ctx_t *ctx, int ox);
 /** Labeled button; filled buttons use dark text. */
