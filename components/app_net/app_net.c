@@ -36,6 +36,7 @@ static const char *TAG = "app_net";
 #define SETUP_LINGER_US (20LL * 1000 * 1000)
 #define CREDS_NAMESPACE "app_net"   /* Owned by this component; see README. */
 #define SETUP_NAME_PREFIX "PIXELMATE-"
+#define STATION_PS WIFI_PS_MAX_MODEM   /* Uses LISTEN_INTERVAL; MIN_MODEM wakes every DTIM. */
 
 enum {
     FAIL_AFTER = 4,          /* Failed attempts (~75 s of backoff) before FAILED. */
@@ -44,10 +45,13 @@ enum {
     AP_MAX_CLIENTS = 3,
     SETUP_NAME_MAX = 24,
     POST_WAIT_MS = 100,
+    /* Station power save: the radio sleeps through LISTEN_INTERVAL beacons
+     * (~0.3 s) instead of waking for every one. Pages answer a little slower. */
+    LISTEN_INTERVAL = 3,
 };
 
 ESP_EVENT_DEFINE_BASE(APP_NET_EVENT);
-enum { REQ_SETUP_START, REQ_SETUP_STOP, REQ_JOIN };
+enum { REQ_SETUP_START, REQ_SETUP_STOP, REQ_JOIN, REQ_POWER };
 
 typedef struct {
     char ssid[APP_NET_SSID_MAX];
@@ -61,6 +65,7 @@ static uint32_t s_ipv4;
 static bool s_setup;                 /* Requested or running. */
 static app_net_join_t s_join;
 static uint32_t s_join_ip;
+static bool s_low_latency;           /* A stream asked for prompt Wi-Fi (no deep power save). */
 
 /* Event loop task only (initialized by app_net_start before handlers exist). */
 static esp_netif_t *s_sta, *s_ap;
@@ -141,6 +146,16 @@ const char *app_net_setup_name(void)
     return s_setup_name;
 }
 
+/* Station power save: deep (STATION_PS) normally, every-beacon while a
+ * stream holds app_net_set_low_latency(true). Event loop task. */
+static wifi_ps_type_t station_ps(void)
+{
+    portENTER_CRITICAL(&s_lock);
+    const bool low_latency = s_low_latency;
+    portEXIT_CRITICAL(&s_lock);
+    return low_latency ? WIFI_PS_MIN_MODEM : STATION_PS;
+}
+
 /* ---- Saved networks --------------------------------------------------- */
 
 /* The app's own saved network wins over Vibe Mode's shared values, which
@@ -198,6 +213,7 @@ static esp_err_t apply_station(const creds_t *c)
     /* Fixed-size fields need no NUL at full length (32-byte SSID, 64-char PSK). */
     memcpy(cfg.sta.ssid, c->ssid, strnlen(c->ssid, sizeof(cfg.sta.ssid)));
     memcpy(cfg.sta.password, c->pass, strnlen(c->pass, sizeof(cfg.sta.password)));
+    cfg.sta.listen_interval = LISTEN_INTERVAL;
     const esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &cfg);
     memset(&cfg, 0, sizeof(cfg));
     return err;
@@ -280,7 +296,7 @@ static void setup_end(void)
     set_setup(false);
     set_join(APP_NET_JOIN_IDLE, 0);
     if (app_net_status(NULL) == APP_NET_STATUS_ONLINE) {
-        esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+        esp_wifi_set_ps(station_ps());
         ESP_LOGI(TAG, "setup hotspot closed");
         return;
     }
@@ -293,7 +309,7 @@ static void setup_end(void)
         s_fails = 0;
         s_retry_us = RETRY_FIRST_US;
         set_station(APP_NET_STATUS_CONNECTING, 0);
-        esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+        esp_wifi_set_ps(station_ps());
         esp_wifi_connect();
     } else {
         s_have_creds = false;
@@ -417,6 +433,10 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         setup_begin();
     } else if (base == APP_NET_EVENT && id == REQ_SETUP_STOP) {
         setup_end();
+    } else if (base == APP_NET_EVENT && id == REQ_POWER) {
+        if (s_wifi_running && !s_ap_running) {   /* The hotspot keeps PS_NONE. */
+            esp_wifi_set_ps(station_ps());
+        }
     } else if (base == APP_NET_EVENT && id == REQ_JOIN && data) {
         join_begin(data);
         memset(data, 0, sizeof(creds_t));   /* The loop's copy of the password. */
@@ -437,6 +457,18 @@ esp_err_t app_net_setup_start(void)
         set_setup(false);
     }
     return err;
+}
+
+esp_err_t app_net_set_low_latency(bool on)
+{
+    portENTER_CRITICAL(&s_lock);
+    const bool changed = s_low_latency != on;
+    s_low_latency = on;
+    portEXIT_CRITICAL(&s_lock);
+    if (!changed || !s_started) {
+        return ESP_OK;   /* Applied when the station starts. */
+    }
+    return esp_event_post(APP_NET_EVENT, REQ_POWER, NULL, 0, pdMS_TO_TICKS(POST_WAIT_MS));
 }
 
 esp_err_t app_net_setup_stop(void)
@@ -502,7 +534,7 @@ static esp_err_t start_station(const creds_t *c)
     ESP_RETURN_ON_ERROR(apply_station(c), TAG, "wifi config");
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "wifi start");
     s_wifi_running = true;
-    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);   /* Radio naps between beacons. */
+    esp_wifi_set_ps(station_ps());   /* Radio naps between beacons. */
     return ESP_OK;
 }
 

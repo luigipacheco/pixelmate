@@ -12,6 +12,10 @@
 #define GAUGE_CMD_VOLTAGE 0x08
 #define GAUGE_CMD_CURRENT 0x0C
 #define GAUGE_CMD_SOC 0x2C
+#define GAUGE_CMD_REMAINING 0x10
+#define GAUGE_CMD_FULL 0x12
+#define GAUGE_CMD_AVG_CURRENT 0x14
+#define GAUGE_CMD_TIME_TO_EMPTY 0x16
 
 /* The gauge device lives on the board's bus for the app's lifetime and is
  * owned by the game loop task; the bus reference is never released (the board
@@ -74,5 +78,11 @@ esp_err_t app_power_hw_battery(app_battery_reading_t *reading)
     reading->percent = (uint8_t)(soc > 100 ? 100 : soc);
     reading->voltage_mv = mv;
     reading->current_ma = (int16_t)ma;
+    /* Extras for power measurements; a failed one is reported as unknown. */
+    uint16_t avg = 0, tte = 0, rem = 0, full = 0;
+    reading->avg_current_ma = read_word(GAUGE_CMD_AVG_CURRENT, &avg) == ESP_OK ? (int16_t)avg : 0;
+    reading->time_to_empty_min = read_word(GAUGE_CMD_TIME_TO_EMPTY, &tte) == ESP_OK ? tte : 0xFFFFU;
+    reading->remaining_mah = read_word(GAUGE_CMD_REMAINING, &rem) == ESP_OK ? rem : 0;
+    reading->full_mah = read_word(GAUGE_CMD_FULL, &full) == ESP_OK ? full : 0;
     return ESP_OK;
 }

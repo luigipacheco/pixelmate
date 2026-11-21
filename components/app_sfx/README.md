@@ -36,6 +36,11 @@ app_sfx_close();
   gain to 0.6 / 1.0 (`LEVEL_GAIN`); OFF plays nothing.
 - Screen off (`APP_POWER_DOZE`): nothing plays, and a pending sting is
   dropped. Waking from it plays the boot chime. Dimmed screens still play.
+- Battery: while audio is open the engine streams to the codec nonstop
+  (silence included), keeping I2S, the DAC and the speaker amp powered. So the
+  codec is closed while the screen is off or the sound is OFF, and reopened
+  on wake; the clips are reloaded then, and the first cue (usually the wake
+  chime) waits up to 1 s for them.
 - One cue per tick, highest priority first; a card flip or the last slot reel
   can queue one delayed sting (win / lose / jackpot).
 

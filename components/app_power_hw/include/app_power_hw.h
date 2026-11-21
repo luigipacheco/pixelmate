@@ -13,6 +13,10 @@ typedef struct {
     uint8_t percent;      /**< State of charge, 0..100. */
     uint16_t voltage_mv;
     int16_t current_ma;   /**< Positive while charging. */
+    int16_t avg_current_ma;      /**< Gauge's ~1 min average (AverageCurrent); 0 if unread. */
+    uint16_t time_to_empty_min;  /**< 0xFFFF while not discharging or unread. */
+    uint16_t remaining_mah;      /**< RemainingCapacity; 0 if unread. */
+    uint16_t full_mah;           /**< FullChargeCapacity; 0 if unread. */
 } app_battery_reading_t;
 
 /** Read the BQ27220 fuel gauge on the shared I2C bus (address 0x55). */

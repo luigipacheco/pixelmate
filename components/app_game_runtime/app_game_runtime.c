@@ -39,6 +39,8 @@ enum {
     DAY_POLL_TICKS = 10 * GAME_TICK_HZ,
     BATTERY_POLL_TICKS = 10 * GAME_TICK_HZ,
     CHARGING_MIN_MA = 5,          /* Gauge current above this counts as charging. */
+    BATTERY_LOG_POLLS = 6,        /* Log the power figures every 6th poll (1 min). */
+    POWER_STATES = APP_POWER_DOZE + 1,
     VALID_EPOCH = 1700000000,     /* Earlier clocks are unsynchronized. */
     NET_START_TICK = GAME_TICK_HZ,             /* Start Wi-Fi 1 s after boot. */
     NET_POLL_TICKS = GAME_TICK_HZ,
@@ -58,6 +60,7 @@ enum {
     DEBUG_STEPS = 50,
     HOST_BATTERY_PCT = 76,
     HOST_FIRST_DAY = 20000,
+    DIM_FRAME_EVERY = 3,          /* Dimmed screen: 10 frames a second instead of 30. */
 };
 #define HOST_SETUP_AP "PIXELMATE-SIM"   /* Host: stand-in setup hotspot name. */
 
@@ -67,6 +70,8 @@ typedef struct {
     booth_media_t media;          /* Photo booth pixels; the view reads them. */
     bool debug_key_down, debug_day_down, debug_camera_down;
     bool blanked;                 /* Black frame already submitted while the screen is off. */
+    app_power_t drawn_power;      /* Power state of the last frame submitted. */
+    uint32_t dim_ticks;           /* Render calls since the screen dimmed. */
     int32_t host_day;
 #if defined(RAYLIB_LITE_GAME_NATIVE)
     raylib_lite_save_t save;
@@ -76,6 +81,11 @@ typedef struct {
     bool sensor_ready;
     uint8_t sensor_attempts;
     uint32_t sensor_timer, day_timer, battery_timer;
+    app_battery_reading_t battery;     /* Last gauge reading, valid when battery_ok. */
+    bool battery_ok;
+    /* Discharge current per model power state since boot (mA, summed per poll),
+     * so the cost of being awake, dim and asleep can be compared on the board. */
+    uint32_t drain_sum[POWER_STATES], drain_polls[POWER_STATES];
     int logged_power;             /* Last model power state logged, for diagnostics. */
     uint8_t clock_logged;         /* 0 = not yet, 1 = logged invalid, 2 = logged valid. */
     uint32_t net_timer;
@@ -245,16 +255,37 @@ static void poll_sensor(host_state_t *state)
     }
 }
 
+/* Mean discharge in mA while in `power`, or -1 before any sample. */
+static long mean_drain(const host_state_t *state, app_power_t power)
+{
+    return state->drain_polls[power] ? (long)(state->drain_sum[power] / state->drain_polls[power]) : -1L;
+}
+
 static void poll_battery(host_state_t *state)
 {
     if (state->battery_timer++ % BATTERY_POLL_TICKS) {
         return;
     }
     app_battery_reading_t battery;
-    if (app_power_hw_battery(&battery) == ESP_OK) {
-        app_game_set_battery(state->game, battery.percent, battery.current_ma > CHARGING_MIN_MA);
-    } else {
+    state->battery_ok = app_power_hw_battery(&battery) == ESP_OK;
+    if (!state->battery_ok) {
         app_game_set_battery(state->game, -1, false);
+        return;
+    }
+    state->battery = battery;
+    app_game_set_battery(state->game, battery.percent, battery.current_ma > CHARGING_MIN_MA);
+    const app_power_t power = app_game_read(state->game).power;
+    if (battery.current_ma < 0 && (unsigned)power < POWER_STATES) {
+        state->drain_sum[power] += (uint32_t)(-battery.current_ma);
+        ++state->drain_polls[power];
+    }
+    if ((state->battery_timer / BATTERY_POLL_TICKS) % BATTERY_LOG_POLLS == 1) {
+        ESP_LOGI(TAG, "battery %u%% %u mV, now %d mA, avg %d mA, %u/%u mAh, empty in %u min; "
+                 "mean drain awake/dim/off %ld/%ld/%ld mA",
+                 battery.percent, battery.voltage_mv, battery.current_ma, battery.avg_current_ma,
+                 battery.remaining_mah, battery.full_mah, battery.time_to_empty_min,
+                 mean_drain(state, APP_POWER_AWAKE), mean_drain(state, APP_POWER_DIM),
+                 mean_drain(state, APP_POWER_DOZE));
     }
 }
 
@@ -328,7 +359,7 @@ static void save_timezone(int minutes)
     }
 }
 
-static int build_stats_json(const app_game_snapshot_t *s, char *out, size_t cap)
+static int build_stats_json(const host_state_t *state, const app_game_snapshot_t *s, char *out, size_t cap)
 {
     static const char *const moods[APP_MOOD_COUNT] = {
         "idle", "happy", "sleepy", "hungry", "sad", "walk", "eating", "thinking", "surprised", "grumpy",
@@ -349,8 +380,17 @@ static int build_stats_json(const app_game_snapshot_t *s, char *out, size_t cap)
     for (int i = 0; i < APP_HISTORY_DAYS && n > 0 && (size_t)n < cap; ++i) {
         n += snprintf(out + n, cap - (size_t)n, "%s%lu", i ? "," : "", (unsigned long)s->history[i]);
     }
+    /* Power figures for measuring battery life (mA < 0 = discharging). */
+    const app_battery_reading_t *b = &state->battery;
     if (n > 0 && (size_t)n < cap) {
-        n += snprintf(out + n, cap - (size_t)n, "]}");
+        n += snprintf(out + n, cap - (size_t)n,
+                      "],\"power_mv\":%u,\"power_ma\":%d,\"power_avg_ma\":%d,\"power_mah\":%u,"
+                      "\"power_full_mah\":%u,\"power_tte_min\":%u,\"drain_ma\":[%ld,%ld,%ld]}",
+                      state->battery_ok ? b->voltage_mv : 0U, state->battery_ok ? b->current_ma : 0,
+                      state->battery_ok ? b->avg_current_ma : 0, state->battery_ok ? b->remaining_mah : 0U,
+                      state->battery_ok ? b->full_mah : 0U, state->battery_ok ? b->time_to_empty_min : 0xFFFFU,
+                      mean_drain(state, APP_POWER_AWAKE), mean_drain(state, APP_POWER_DIM),
+                      mean_drain(state, APP_POWER_DOZE));
     }
     return n > 0 && (size_t)n < cap ? n : -1;
 }
@@ -390,7 +430,7 @@ static void poll_net(host_state_t *state)
     }
     report_network(state);
     const app_game_snapshot_t snapshot = app_game_read(state->game);
-    if (build_stats_json(&snapshot, state->stats_json, sizeof(state->stats_json)) > 0) {
+    if (build_stats_json(state, &snapshot, state->stats_json, sizeof(state->stats_json)) > 0) {
         app_net_publish(state->stats_json);
     }
 }
@@ -554,12 +594,20 @@ static int render(void *value)
     if (!state->game) {
         return -1;
     }
-    const bool screen_off = app_game_read(state->game).power == APP_POWER_DOZE;
+    const app_game_snapshot_t snapshot = app_game_read(state->game);
+    const bool screen_off = snapshot.power == APP_POWER_DOZE;
     /* Screen off: push one black frame (so nothing stale can stay visible even
-     * if the panel ignores "off"), then submit nothing until it wakes. */
+     * if the panel ignores "off"), then submit nothing until it wakes. The
+     * panel keeps the last frame, so a dimmed screen only needs every
+     * DIM_FRAME_EVERY-th frame: less drawing and display traffic. */
     if (!screen_off) {
         state->blanked = false;
     } else if (state->blanked) {
+        return 0;
+    }
+    if (snapshot.power != APP_POWER_DIM || state->drawn_power != APP_POWER_DIM) {
+        state->dim_ticks = 0;
+    } else if (++state->dim_ticks % DIM_FRAME_EVERY) {
         return 0;
     }
     BeginDrawing();
@@ -567,7 +615,7 @@ static int render(void *value)
         EndDrawing();
         return -1;
     }
-    const app_game_snapshot_t snapshot = app_game_read(state->game);
+    state->drawn_power = snapshot.power;
     if (screen_off) {
         ClearBackground(BLACK);
         state->blanked = true;

@@ -43,6 +43,7 @@ enum {
     STING_DELAY_TICKS = 8,     /* Card flip, then its win/lose sting (~0.27 s at 30 Hz). */
     RESULT_DELAY_TICKS = 5,    /* Last reel clack, then the slot result. */
     JACKPOT_MIN_SPARKS = 30,   /* Same threshold as the model's long slot celebration. */
+    DEFER_MAX_TICKS = 30,      /* A cue waits this long (1 s) for a reopened codec. */
 };
 
 /* Mixer master gain per app_sound_t. Clip peaks are 0.1..0.5 full scale. */
@@ -61,6 +62,8 @@ static struct {
     uint32_t step_ticks;       /* steps_total / STEP_TICK_EVERY at the last tick. */
     sfx_t pending;
     uint8_t pending_ticks;
+    sfx_t deferred;            /* Cue that arrived while the codec was reopening. */
+    uint8_t deferred_ticks;
 } s_sfx;
 
 static void load_sounds(void)
@@ -89,9 +92,55 @@ static void set_level(app_sound_t level)
 
 static void play(sfx_t sfx)
 {
-    if (sfx != SFX_NONE && s_sfx.sounds[sfx].frameCount) {
+    if (sfx == SFX_NONE) {
+        return;
+    }
+    if (!s_sfx.load_tried) {
+        /* Codec still reopening (screen just woke): play it once loaded. */
+        s_sfx.deferred = sfx;
+        s_sfx.deferred_ticks = DEFER_MAX_TICKS;
+        return;
+    }
+    if (s_sfx.sounds[sfx].frameCount) {
         raylib_lite_game_audio_play_sound(s_sfx.sounds[sfx]);
     }
+}
+
+/* The engine streams to the codec nonstop while audio is open (silence
+ * included), which keeps I2S, the codec and the speaker amp powered. Close it
+ * whenever nothing can play: screen off or sound OFF. */
+static void open_audio(void)
+{
+    if (s_sfx.audio_open) {
+        return;
+    }
+    raylib_lite_game_audio_init();
+    s_sfx.audio_open = true;
+    s_sfx.load_tried = false;   /* The mixer is new: reload the clips. */
+    memset(s_sfx.sounds, 0, sizeof(s_sfx.sounds));
+}
+
+static void close_audio(void)
+{
+    if (!s_sfx.audio_open) {
+        return;
+    }
+    for (int i = SFX_NONE + 1; i < SFX_COUNT; ++i) {
+        if (s_sfx.sounds[i].frameCount) {
+            raylib_lite_game_audio_stop_sound(s_sfx.sounds[i]);
+            raylib_lite_game_audio_unload_sound(s_sfx.sounds[i]);
+        }
+    }
+    memset(s_sfx.sounds, 0, sizeof(s_sfx.sounds));
+    raylib_lite_game_audio_close();
+    s_sfx.audio_open = false;
+    s_sfx.load_tried = false;
+    s_sfx.pending = s_sfx.deferred = SFX_NONE;
+}
+
+static bool audio_wanted(const app_game_snapshot_t *s)
+{
+    return s->power != APP_POWER_DOZE && s->sound != APP_SOUND_OFF;
 }
 
 static sfx_t card_sting(app_card_result_t result)
@@ -187,17 +236,33 @@ void app_sfx_update(uint32_t events, const app_game_snapshot_t *snapshot)
         /* Boot: open the codec once and baseline the state; the loaded save's
          * SETTINGS event would otherwise click, so chime instead. */
         s_sfx.started = true;
-        raylib_lite_game_audio_init();
-        s_sfx.audio_open = true;
-        load_sounds();
-        set_level(snapshot->sound);
+        s_sfx.level = snapshot->sound;
         remember(snapshot);
-        if (snapshot->power != APP_POWER_DOZE && s_sfx.level != APP_SOUND_OFF) {
+        if (audio_wanted(snapshot)) {
+            open_audio();
+            load_sounds();
+            set_level(snapshot->sound);
             play(SFX_WAKE);
         }
         return;
     }
-    load_sounds();   /* No-op once tried; retries if the codec was late. */
+    if (!audio_wanted(snapshot)) {
+        close_audio();
+    } else if (!s_sfx.audio_open) {
+        open_audio();
+    }
+    if (s_sfx.audio_open && !s_sfx.load_tried) {
+        load_sounds();   /* Retries each tick until the codec is ready. */
+        if (s_sfx.load_tried) {
+            set_level(snapshot->sound);
+            if (s_sfx.deferred != SFX_NONE) {
+                play(s_sfx.deferred);
+                s_sfx.deferred = SFX_NONE;
+            }
+        } else if (s_sfx.deferred != SFX_NONE && --s_sfx.deferred_ticks == 0) {
+            s_sfx.deferred = SFX_NONE;   /* Too late to make sense now. */
+        }
+    }
     if (snapshot->sound != s_sfx.level) {
         set_level(snapshot->sound);
     }
@@ -226,15 +291,6 @@ void app_sfx_update(uint32_t events, const app_game_snapshot_t *snapshot)
 
 void app_sfx_close(void)
 {
-    if (!s_sfx.audio_open) {
-        return;
-    }
-    for (int i = SFX_NONE + 1; i < SFX_COUNT; ++i) {
-        if (s_sfx.sounds[i].frameCount) {
-            raylib_lite_game_audio_stop_sound(s_sfx.sounds[i]);
-            raylib_lite_game_audio_unload_sound(s_sfx.sounds[i]);
-        }
-    }
-    raylib_lite_game_audio_close();
+    close_audio();
     memset(&s_sfx, 0, sizeof(s_sfx));
 }

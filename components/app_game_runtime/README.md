@@ -49,8 +49,10 @@ its event bits, advance the view, then save if due.
   drift after 30 s, to bound flash wear.
 - Day: from `time()` once the clock is set (after network time sync); until
   then `steps_today` simply keeps accumulating.
-- Screen power: dimming draws the scene at 30 % brightness; dozing draws one
-  black frame and then submits nothing (no render, no transfer) until a tap.
+- Screen power: dimming draws the scene at 30 % brightness and only every
+  third frame (10 fps; the panel keeps the last frame in between); dozing
+  draws one black frame and then submits nothing (no render, no transfer)
+  until a tap.
   The panel itself is never commanded from the game loop: the board's frame
   task shares that bus and has no hook for out-of-band commands, and switching
   the panel off from here could hang the device. Black AMOLED pixels are off,
@@ -58,7 +60,12 @@ its event bits, advance the view, then save if due.
 - Sound: after each tick the runtime hands the events and snapshot to
   `app_sfx` (device only; see `components/app_sfx/README.md`).
 - Battery: the BQ27220 gauge is read every 10 s; current above 5 mA counts as
-  charging. A failed read reports "unknown" (menu shows NO BATT).
+  charging. A failed read reports "unknown" (menu shows NO BATT). For battery
+  work the runtime keeps the mean discharge current per screen state since
+  boot (awake / dim / off), logs it with the gauge's average current and
+  time-to-empty every minute, and adds them to `/api/stats` (`power_ma`,
+  `power_avg_ma`, `power_mah`, `power_full_mah`, `power_tte_min`, and
+  `drain_ma` = [awake, dim, off], -1 before the first sample).
 - Network: `app_net` starts 1 s after boot (first frame first). Every second
   the runtime reports Wi-Fi status/IP and the setup hotspot name to the model
   (shown in the menu and the Wi-Fi panel); `APP_EVENT_WIFI_SETUP/STOP` from the

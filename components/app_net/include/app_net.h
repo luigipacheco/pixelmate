@@ -43,6 +43,12 @@ const char *app_net_setup_name(void);
 enum { APP_NET_JSON_MAX = 1024 };
 esp_err_t app_net_publish(const char *json);
 
+/** Hold Wi-Fi responsive while streaming (e.g. the booth webcam): true keeps
+ * the station at WIFI_PS_MIN_MODEM (wakes every DTIM beacon), false returns to
+ * the battery-saving deep power save (WIFI_PS_MAX_MODEM, listen interval 3).
+ * Any task; asynchronous; safe before app_net_start (applied when it starts). */
+esp_err_t app_net_set_low_latency(bool on);
+
 /** Take a timezone sent by the web page: minutes west of UTC, as returned by
  * JavaScript getTimezoneOffset(). Returns true once per new value. */
 bool app_net_take_timezone(int *minutes_west);

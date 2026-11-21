@@ -32,7 +32,10 @@ overwrites Wi-Fi records Vibe Mode might keep there.
 
 ## Station
 
-Modem power save. After a drop it retries after 5 s, doubling up to every
+Modem power save (`WIFI_PS_MAX_MODEM`, listen interval 3 beacons, about
+0.3 s), so the radio sleeps between wakeups; the web page answers a bit
+slower. A stream that needs prompt Wi-Fi (the booth webcam) calls
+`app_net_set_low_latency(true)` to hold `WIFI_PS_MIN_MODEM` until it ends. After a drop it retries after 5 s, doubling up to every
 5 minutes; a successful connection resets it. After 4 failed attempts in a row
 (about 75 s) the status is `APP_NET_STATUS_FAILED` (it keeps retrying), which
 is when the app offers setup again.
