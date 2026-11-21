@@ -98,6 +98,21 @@ enum {
     APP_RESET_HOLD_S = 3,        /**< Hold RESET PET this long to start over. */
 };
 
+/* HI-LO pays by the odds: a win multiplies the pot by 10.8 / (ranks that
+ * win), i.e. 0.9 x the fair 12 / n, never less than +1 and capped. With
+ * best play a deal returns about what it cost; the risky side pays most. */
+#define APP_CARDS_POT_MAX 500U
+static inline uint32_t app_cards_win_pot(uint32_t pot, uint8_t current, bool higher)
+{
+    const uint32_t n = higher ? 13U - current : (uint32_t)current - 1U;
+    if (n == 0U) {
+        return 0U;   /* Impossible side: nothing to win. */
+    }
+    uint32_t won = pot * 108U / (10U * n);
+    won = won > pot ? won : pot + 1U;
+    return won < APP_CARDS_POT_MAX ? won : APP_CARDS_POT_MAX;
+}
+
 #define APP_PET_NAME "BITSY"     /* The pet's name (the app is PixelMate). */
 
 enum {
@@ -164,6 +179,7 @@ typedef enum {
 enum {
     APP_BITS = 8,
     APP_BITS_COST = 5,           /**< Sparks per run. */
+    APP_BITS_PAYOUT_MAX = 30,    /**< A run pays 1 spark per hit, up to this. */
 };
 
 typedef enum {
@@ -188,7 +204,7 @@ typedef struct {
 enum {
     APP_GRID_N = 5,              /**< Tiles per row and column. */
     APP_GRID_TILES = 25,
-    APP_GRID_COST = 5,           /**< Sparks per round. */
+    APP_GRID_COST = 10,          /**< Sparks per round. */
     APP_GRID_DUD = 0,            /**< Tile value of a dud; others are 1..3. */
 };
 

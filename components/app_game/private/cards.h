@@ -7,7 +7,7 @@
 
 enum {
     CARDS_DEAL_COST = APP_CARDS_DEAL_COST,
-    CARDS_MAX_STREAK = 5,        /* Pot auto-cashes after this many wins (5 -> 160). */
+    CARDS_MAX_STREAK = 5,        /* Pot auto-cashes after this many wins. */
     CARDS_REVEAL_TICKS = 36,     /* Time the revealed card stays before resolving. */
 };
 
@@ -15,6 +15,7 @@ typedef struct {
     app_cards_snapshot_t view;
     uint32_t rng;
     uint16_t reveal_ticks;
+    uint16_t win_pot;            /* Pot after the pending win. */
 } cards_t;
 
 typedef enum {

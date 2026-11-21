@@ -3,9 +3,9 @@
 #include "private/grid.h"
 
 /* Multiplier mixes (x2 count, x3 count). Clearing a board pays 2^a * 3^b:
- * 24..96 sparks for a 5-spark round, so careful play is clearly rewarded. */
+ * 24..54 sparks for a 10-spark round (APP_GRID_COST). */
 static const uint8_t s_mixes[][2] = {
-    {3, 1}, {0, 3}, {5, 0}, {2, 2}, {4, 1}, {1, 3}, {3, 2}, {5, 1},
+    {3, 1}, {0, 3}, {5, 0}, {2, 2}, {4, 1}, {1, 3},
 };
 #define MIX_COUNT (sizeof(s_mixes) / sizeof(s_mixes[0]))
 #define ALL_TILES ((1UL << APP_GRID_TILES) - 1UL)

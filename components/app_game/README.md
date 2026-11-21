@@ -91,7 +91,7 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
   `reserved2` bytes (0 = default), so no save migration was needed.
 - Battery: `app_game_set_battery()` stores the runtime's reading for display;
   it only changes the doze timeout.
-- Spark Slots is a store item (250 sparks); owning it unlocks its arcade
+- Spark Slots is a store item (100 sparks); owning it unlocks its arcade
   cabinet, and buying it opens that cabinet. A spin costs 3 sparks; each STOP tap halts the
   leftmost spinning reel after it finishes its symbol plus 0..2 random slip.
   Three of a kind pays 150 (7) / 60 / 30 / 20 / 10 / 8 (shoe); any pair refunds

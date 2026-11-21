@@ -52,6 +52,7 @@ bool cards_guess(cards_t *cards, cards_guess_t guess)
         cards->view.result = APP_CARD_RESULT_TIE;
     } else if ((b > a) == (guess == CARDS_GUESS_HIGHER)) {
         cards->view.result = APP_CARD_RESULT_WIN;
+        cards->win_pot = (uint16_t)app_cards_win_pot(cards->view.pot, a, guess == CARDS_GUESS_HIGHER);
     } else {
         cards->view.result = APP_CARD_RESULT_LOSE;
     }
@@ -85,7 +86,7 @@ uint32_t cards_update(cards_t *cards, uint32_t *events)
     }
     if (v->result == APP_CARD_RESULT_WIN) {
         ++v->streak;
-        v->pot = (uint16_t)(v->pot * 2U);
+        v->pot = cards->win_pot;
         if (v->streak > v->best_streak) {
             v->best_streak = v->streak;
         }

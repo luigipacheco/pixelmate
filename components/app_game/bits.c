@@ -24,9 +24,9 @@ static uint32_t next_random(bits_t *b)
 
 uint32_t bits_payout(uint16_t hits)
 {
-    /* Grows faster than linear so long runs feel worth it: 5 hits ~ the
-     * 5-spark entry, 10 -> 20, 20 -> 60, 30 -> 120. */
-    return hits + (uint32_t)hits * hits / 10U;
+    /* One spark per hit, capped: 5 hits pay back the entry, a long run
+     * tops out at APP_BITS_PAYOUT_MAX so the arcade never outearns walking. */
+    return hits < APP_BITS_PAYOUT_MAX ? hits : APP_BITS_PAYOUT_MAX;
 }
 
 static void new_target(bits_t *b)

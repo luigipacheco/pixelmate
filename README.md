@@ -16,8 +16,9 @@ the `pixel_pal` name so existing pets carry over.)
 - **Snacks:** spend sparks on CELL (10), CHIP (25) or MEGA (60) for a temporary
   fullness boost (they don't count toward survival).
 - **Arcade:** a row of pixel cabinets with attract-mode demos; tap one to
-  play (EXIT returns). HI-LO: deal for 5 sparks, each right guess doubles the
-  pot, cash out any time (auto cash-out after 5 wins).
+  play (EXIT returns). HI-LO: deal for 5 sparks; a right guess grows the pot
+  by the odds (the long shot pays more, shown under HI and LO), cash out any
+  time (auto cash-out after 5 wins). Played well it about breaks even.
 - **Moods:** idle, happy, sleepy, hungry, sad, walking, eating, thinking,
   surprised and grumpy, each with its own eye shape, springy motion, blinks
   and gaze that follows your finger.
@@ -25,14 +26,15 @@ the `pixel_pal` name so existing pets carry over.)
   pixel styles (80–150) and animations (100–300): a spark trail as you walk, a
   dance every 100 steps, star eyes when happy and rainbow eyes while walking.
   The menu shows how many steps until your next unlock; Home stays just the pet.
-- **Bit Flip (unlockable cabinet, 150 sparks):** flip 8 switches (128..1) to
+- **Spark Slots (unlockable cabinet, 100 sparks):** a three-reel slot machine
+  where you stop each reel yourself; 3 sparks a spin, 7-7-7 pays 150. Pure
+  luck, and it keeps a house edge.
+- **Bit Flip (unlockable cabinet, 250 sparks):** flip 8 switches (128..1) to
   match the target number before the timer runs out; every hit brings a new
-  number and a shorter timer. 5 sparks a run; long runs pay much more.
+  number and a shorter timer. 5 sparks a run, 1 spark per hit (up to 30).
 - **Spark Grid (unlockable cabinet, 200 sparks):** a 5x5 logic flip puzzle.
   Tiles hide x1/x2/x3 or a dud; row/column hints show totals and dud counts.
-  5 sparks a round, each flip multiplies the score, CASH banks it.
-- **Spark Slots (unlockable cabinet, 250 sparks):** a three-reel slot machine
-  where you stop each reel yourself; 3 sparks a spin, 7-7-7 pays 150.
+  10 sparks a round, each flip multiplies the score, CASH banks it.
 - **Low-energy mode:** after 20 s without a touch the pet dozes off and the
   screen dims; at 30 s the screen turns off (12 s on low battery). SLEEP in
   the menu does it at once. Steps keep counting; tap the screen to wake.

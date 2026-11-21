@@ -17,7 +17,7 @@ enum {
 /* Payout of a run with this many hits (mirrors the model's formula). */
 static unsigned payout_for(unsigned hits)
 {
-    return hits + hits * hits / 10U;
+    return hits < APP_BITS_PAYOUT_MAX ? hits : APP_BITS_PAYOUT_MAX;
 }
 
 static void draw_timer(const draw_ctx_t *d, const app_bits_snapshot_t *b, int ox)

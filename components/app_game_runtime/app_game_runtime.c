@@ -135,6 +135,27 @@ static raylib_lite_result_t migrate_save(uint16_t old_version, const void *old_d
     return RAYLIB_LITE_OK;
 }
 
+/* Copy the stored "pet" blob, whatever it holds, to "pet_bak" before a fresh
+ * pet may overwrite it. True when copied or when nothing is stored. */
+static bool backup_unreadable_save(void)
+{
+    nvs_handle_t h;
+    if (nvs_open("pixel_pal", NVS_READWRITE, &h) != ESP_OK) {
+        return false;
+    }
+    size_t size = 0;
+    const esp_err_t err = nvs_get_blob(h, "pet", NULL, &size);
+    bool ok = err == ESP_ERR_NVS_NOT_FOUND;
+    if (err == ESP_OK && size > 0) {
+        uint8_t *raw = malloc(size);
+        ok = raw && nvs_get_blob(h, "pet", raw, &size) == ESP_OK && nvs_set_blob(h, "pet_bak", raw, size) == ESP_OK
+             && nvs_commit(h) == ESP_OK;
+        free(raw);
+    }
+    nvs_close(h);
+    return ok;
+}
+
 static void load_save(host_state_t *state)
 {
     const esp_err_t nvs = nvs_flash_init();   /* No-op if already initialized. */
@@ -159,10 +180,19 @@ static void load_save(host_state_t *state)
      * so the defaults must be the fresh pet, not zeros. */
     app_game_record_t fresh, record;
     app_game_export(state->game, &fresh);
-    if (raylib_lite_save_load(&state->save, &record, &fresh) == RAYLIB_LITE_OK) {
+    const raylib_lite_result_t loaded = raylib_lite_save_load(&state->save, &record, &fresh);
+    if (loaded == RAYLIB_LITE_OK) {
         app_game_import(state->game, &record);
         ESP_LOGI(TAG, "restored pet: %lu steps, %lu sparks, hp %u",
                  (unsigned long)record.steps_total, (unsigned long)record.sparks, record.hp);
+    } else if (!backup_unreadable_save()) {
+        /* A save exists but can't be read (older firmware, torn write...) and
+         * couldn't be backed up: never overwrite it with the fresh pet. */
+        ESP_LOGE(TAG, "save unreadable (%d) and not backed up; saving disabled", (int)loaded);
+        state->save_ready = false;
+        return;
+    } else {
+        ESP_LOGE(TAG, "save unreadable (%d); raw copy kept in key \"pet_bak\"", (int)loaded);
     }
     state->saved_seq = app_game_read(state->game).save_seq;
 }
