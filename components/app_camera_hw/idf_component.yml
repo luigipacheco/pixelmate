@@ -1,0 +1,6 @@
+dependencies:
+  idf: ">=6.2"
+  # Same camera stack as esp-mosaico-bsp's mosaico_module_camera (OV3640 driver,
+  # SCCB and /dev/video2 for DVP).
+  espressif/esp_video:
+    version: "^2.4.1"
