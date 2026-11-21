@@ -91,11 +91,12 @@ static void draw_steps(const draw_ctx_t *d, int ox)
     px_text_center(text, RING_CX + ox, 236, 3, d->dim, d->gap);
 
     snprintf(text, sizeof(text), "TOTAL %lu", (unsigned long)s->steps_total);
-    px_text_center(text, 240 + ox, 360, 3, d->color, d->gap);
+    px_text_center(text, 240 + ox, 350, 3, d->color, d->gap);
     /* Health hearts: +1 for each day fed (half the goal), -1 for each missed. */
+    px_text_center("HEALTH", 240 + ox, 384, 2, d->dim, false);
     for (int i = 0; i < APP_HP_MAX; ++i) {
         const bool full = i < s->hp;
-        px_icon(full ? PX_ICON_HEART : PX_ICON_HEART_EMPTY, 240 + ox - 82 + i * 34, 398, 3,
+        px_icon(full ? PX_ICON_HEART : PX_ICON_HEART_EMPTY, 240 + ox - 82 + i * 34, 404, 3,
                 full ? d->accent : (s->hp == 0 ? WARN : d->dim), d->accent, d->gap);
     }
 }

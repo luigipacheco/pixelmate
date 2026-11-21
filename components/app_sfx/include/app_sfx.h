@@ -13,7 +13,7 @@ extern "C" {
 /** Call once per game tick, after app_game_take_events(), with that tick's
  * events and snapshot. The first call opens the codec and loads the clips;
  * it plays the boot chime instead of that tick's events. Honors
- * snapshot->sound (ON / LOUD / OFF) and stays silent while the screen is off. */
+ * snapshot->sound (OFF / LOW / MID / HIGH) and stays silent while the screen is off. */
 void app_sfx_update(uint32_t events, const app_game_snapshot_t *snapshot);
 
 /** Stop playback, unload the clips and release the codec. Safe to repeat. */

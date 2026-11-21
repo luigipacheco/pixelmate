@@ -40,15 +40,17 @@ react to how much you walk, what you feed it and how you play with it.
   serves a stats page at `http://pixelpal.local` (or the IP in the menu):
   today, food, health, 7-day chart, streak, sparks and battery. Opening it once
   sets the pet's timezone.
-- **Style:** pick among the pixel sizes and colors you own, and set SOUND
-  (ON / LOUD / OFF).
+- **Style:** pick among the pixel sizes and colors you own.
+- **Settings** (pull-down menu): sound volume (off/low/mid/high), daily goal,
+  Wi-Fi, screen sleep (15 s to 2 min), brightness (60-100 %), about, and
+  RESET PET (hold 3 s; keeps your settings).
 - **Sound:** short 8-bit blips for sparks, petting, eating, buying, menus and
   every arcade game; a victory jingle when the pet is fed. Silent while the
   screen is off.
 - Progress is saved to NVS.
 
 Swipe left/right between Home, Steps, Feed and Arcade. Pull down from the top
-edge for the menu (Store, Style, Goal); swipe up to close. Tap the eyes to pet.
+edge for the menu (Store, Style, Settings); swipe up to close. Tap the eyes to pet.
 
 ## Build and run
 

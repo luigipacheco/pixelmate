@@ -533,7 +533,7 @@ void pet_view_draw(const pet_view_t *v, const app_game_snapshot_t *s)
     const px_grid_t grid = px_grid(s->pixel_style);
     /* Dimming is drawn, not commanded: the panel is never touched from the game
      * loop (see app_power_hw/README.md), and dark pixels cost little on AMOLED. */
-    const float level = s->power == APP_POWER_DIM ? DIM_LEVEL : 1.0f;
+    const float level = (s->power == APP_POWER_DIM ? DIM_LEVEL : 1.0f) * (float)s->brightness_pct / 100.0f;
     const Color c = px_scale(px_color(s->color_index), level);
     const draw_ctx_t d = {
         .view = v, .snap = s, .grid = grid, .gap = grid.gap > 0,

@@ -44,6 +44,7 @@ typedef enum {
     APP_OVERLAY_STORE,     /**< Buy colors, styles and animations with sparks. */
     APP_OVERLAY_GOAL,      /**< Adjust the daily step goal. */
     APP_OVERLAY_WIFI,      /**< Wi-Fi status and first-time setup. */
+    APP_OVERLAY_SETTINGS,  /**< Sound, goal, Wi-Fi, screen sleep, brightness, about, reset. */
     APP_OVERLAY_COUNT,
 } app_overlay_t;
 
@@ -69,14 +70,24 @@ typedef enum {
     APP_PIXEL_COUNT,
 } app_pixel_style_t;
 
-/** Sound effects setting, cycled by the Style panel's SOUND button. Only the
- * runtime plays sound; the model just stores and saves the choice. */
+/** Sound volume, set in Settings. Only the runtime plays sound; the model just
+ * stores the choice. Values keep the earlier saved meaning (0 was ON, 1 LOUD,
+ * 2 OFF), so old saves load unchanged; LOW was added after. */
 typedef enum {
-    APP_SOUND_ON = 0,      /**< Default: moderate volume. */
-    APP_SOUND_LOUD,
+    APP_SOUND_MID = 0,     /**< Default (was ON). */
+    APP_SOUND_HIGH,        /**< Was LOUD. */
     APP_SOUND_OFF,
+    APP_SOUND_LOW,
     APP_SOUND_COUNT,
 } app_sound_t;
+
+/* Settings choices. Index 0 of each saved code means "default". */
+enum {
+    APP_SLEEP_OPTIONS = 4,       /**< Screen sleep: 15 s, 30 s (default), 60 s, 120 s. */
+    APP_BRIGHT_OPTIONS = 3,      /**< Drawn brightness: 100 % (default), 80 %, 60 %. */
+    APP_SETTINGS_ROWS = 7,
+    APP_RESET_HOLD_S = 3,        /**< Hold RESET PET this long to start over. */
+};
 
 enum {
     APP_COLOR_COUNT = 6,
@@ -310,6 +321,10 @@ typedef struct {
     uint32_t owned;             /**< APP_OWN_*_BIT flags. */
     uint8_t anims_on;           /**< Bit per app_anim_t; only owned ones can be on. */
     app_sound_t sound;
+    uint8_t settings_page;      /**< 0..1. */
+    uint16_t sleep_s;           /**< Seconds without a touch before the screen sleeps. */
+    uint8_t brightness_pct;     /**< Drawn brightness when awake, 60..100. */
+    uint8_t reset_hold;         /**< 0..100 progress of holding RESET PET. */
     uint32_t steps_total;
     uint32_t steps_today;
     uint32_t step_goal;
@@ -362,7 +377,8 @@ typedef struct {
     /* v4 */
     uint32_t history[APP_HISTORY_DAYS];
     uint16_t fed_streak;
-    uint16_t reserved2;
+    uint8_t sleep_code;         /**< 0 = default 30 s, else 1 + index into the sleep options. */
+    uint8_t bright_code;        /**< 0 = default 100 %, else 1 + index into the brightness options. */
 } app_game_record_t;
 
 /** Sizes of older records (prefixes of the current one), for save migration. */

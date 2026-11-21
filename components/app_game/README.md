@@ -78,6 +78,14 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
   menu's SLEEP turns it off at once. The touch that wakes the screen is
   swallowed (no tap or swipe), so a pocket touch cannot buy or play.
   Steps keep counting in every power state; steps do not keep the screen on.
+- Settings overlay (`APP_OVERLAY_SETTINGS`, 7 rows over 2 swipeable pages):
+  SOUND cycles OFF/LOW/MID/HIGH (`app_sound_t` keeps the old saved values:
+  0 = MID, 1 = HIGH, 2 = OFF, 3 = LOW), DAILY GOAL and WI-FI open their panels
+  (whose BACK returns to Settings), SCREEN SLEEP cycles 15/30/60/120 s (dims for
+  the last third), BRIGHTNESS cycles 100/80/60 % (drawn by the view), ABOUT is
+  read-only, and holding RESET PET for 3 s starts a new pet but keeps sound,
+  goal, sleep and brightness. Sleep/brightness are saved as codes in the former
+  `reserved2` bytes (0 = default), so no save migration was needed.
 - Battery: `app_game_set_battery()` stores the runtime's reading for display;
   it only changes the doze timeout.
 - Spark Slots is a store item (250 sparks); owning it unlocks its arcade

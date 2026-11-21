@@ -46,7 +46,9 @@ enum {
 };
 
 /* Mixer master gain per app_sound_t. Clip peaks are 0.1..0.5 full scale. */
-static const float LEVEL_GAIN[APP_SOUND_COUNT] = {0.6f, 1.0f, 0.0f};
+static const float LEVEL_GAIN[APP_SOUND_COUNT] = {
+    [APP_SOUND_MID] = 0.6f, [APP_SOUND_HIGH] = 1.0f, [APP_SOUND_OFF] = 0.0f, [APP_SOUND_LOW] = 0.3f,
+};
 
 static struct {
     bool started;              /* Baseline taken on the first update. */
@@ -81,7 +83,7 @@ static void load_sounds(void)
 
 static void set_level(app_sound_t level)
 {
-    s_sfx.level = level < APP_SOUND_COUNT ? level : APP_SOUND_ON;
+    s_sfx.level = level < APP_SOUND_COUNT ? level : APP_SOUND_MID;
     raylib_lite_game_audio_set_master_volume(LEVEL_GAIN[s_sfx.level]);
 }
 

@@ -1,0 +1,223 @@
+{
+  "files": [
+    {
+      "bits": 16,
+      "bytes": 21380,
+      "file": "sfx_buy.sound",
+      "rate": 24000,
+      "samples": 10680,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 10580,
+      "file": "sfx_buzz.sound",
+      "rate": 24000,
+      "samples": 5280,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 25172,
+      "file": "sfx_clear.sound",
+      "rate": 24000,
+      "samples": 12576,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 5300,
+      "file": "sfx_close.sound",
+      "rate": 24000,
+      "samples": 2640,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 18980,
+      "file": "sfx_coins.sound",
+      "rate": 24000,
+      "samples": 9480,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 3380,
+      "file": "sfx_deal.sound",
+      "rate": 24000,
+      "samples": 1680,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 10580,
+      "file": "sfx_eat.sound",
+      "rate": 24000,
+      "samples": 5280,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 37460,
+      "file": "sfx_faint.sound",
+      "rate": 24000,
+      "samples": 18720,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 21620,
+      "file": "sfx_fed.sound",
+      "rate": 24000,
+      "samples": 10800,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 3858,
+      "file": "sfx_flip.sound",
+      "rate": 24000,
+      "samples": 1919,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 32660,
+      "file": "sfx_goal.sound",
+      "rate": 24000,
+      "samples": 16320,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 41300,
+      "file": "sfx_jackpot.sound",
+      "rate": 24000,
+      "samples": 20640,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 22100,
+      "file": "sfx_lose.sound",
+      "rate": 24000,
+      "samples": 11040,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 6260,
+      "file": "sfx_open.sound",
+      "rate": 24000,
+      "samples": 3120,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 7700,
+      "file": "sfx_pet.sound",
+      "rate": 24000,
+      "samples": 3840,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 2900,
+      "file": "sfx_reel.sound",
+      "rate": 24000,
+      "samples": 1440,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 26900,
+      "file": "sfx_revive.sound",
+      "rate": 24000,
+      "samples": 13440,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 13700,
+      "file": "sfx_spark.sound",
+      "rate": 24000,
+      "samples": 6840,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 6740,
+      "file": "sfx_spin.sound",
+      "rate": 24000,
+      "samples": 3360,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 882,
+      "file": "sfx_step.sound",
+      "rate": 24000,
+      "samples": 431,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 2900,
+      "file": "sfx_swipe.sound",
+      "rate": 24000,
+      "samples": 1440,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 980,
+      "file": "sfx_tap.sound",
+      "rate": 24000,
+      "samples": 480,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 3380,
+      "file": "sfx_tile.sound",
+      "rate": 24000,
+      "samples": 1680,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 8180,
+      "file": "sfx_tile_bonus.sound",
+      "rate": 24000,
+      "samples": 4080,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 18740,
+      "file": "sfx_wake.sound",
+      "rate": 24000,
+      "samples": 9360,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 15860,
+      "file": "sfx_win.sound",
+      "rate": 24000,
+      "samples": 7920,
+      "type": "audio_pcm16"
+    },
+    {
+      "bits": 16,
+      "bytes": 14420,
+      "file": "sfx_zap.sound",
+      "rate": 24000,
+      "samples": 7200,
+      "type": "audio_pcm16"
+    }
+  ],
+  "limit_bytes": 1048576,
+  "schema": "mosaico-assets-report/v1",
+  "total_bytes": 383912
+}

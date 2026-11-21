@@ -54,4 +54,5 @@ extern const char *const PX_ICON_LOCK[];
 extern const char *const PX_ICON_EYE[];
 extern const char *const PX_ICON_NOTE[];
 extern const char *const PX_ICON_STAR[];
+extern const char *const PX_ICON_GEAR[];
 extern const char *const PX_ICON_FOOD[APP_FOOD_COUNT][13];

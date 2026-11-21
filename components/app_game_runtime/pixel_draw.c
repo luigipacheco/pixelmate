@@ -322,6 +322,17 @@ const char *const PX_ICON_STAR[] = {
     NULL,
 };
 
+const char *const PX_ICON_GEAR[] = {
+    ".#.#.#.",
+    "#######",
+    ".#ooo#.",
+    "##o.o##",
+    ".#ooo#.",
+    "#######",
+    ".#.#.#.",
+    NULL,
+};
+
 const char *const PX_ICON_FOOD[APP_FOOD_COUNT][13] = {
     {
         "...##...",

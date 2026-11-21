@@ -40,6 +40,7 @@ static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay, int arcad
     case 3: return (app_eye_anchor_t) {240, 140, 0.0f};    /* store: hidden */
     case 4: return (app_eye_anchor_t) {240, 400, 0.42f};   /* goal: watching the number */
     case 5: return (app_eye_anchor_t) {240, 140, 0.0f};    /* wifi: hidden */
+    case 6: return (app_eye_anchor_t) {240, 140, 0.0f};    /* settings: hidden */
     default: break;
     }
     switch (screen) {
@@ -139,7 +140,7 @@ static inline app_rect_t app_menu_style_rect(void)
 {
     return (app_rect_t) {40, 142, 400, 66};
 }
-static inline app_rect_t app_menu_goal_rect(void)
+static inline app_rect_t app_menu_settings_rect(void)
 {
     return (app_rect_t) {40, 220, 400, 66};
 }
@@ -180,13 +181,14 @@ static inline app_rect_t app_style_color_rect(int i)
 {
     return (app_rect_t) {(int16_t)(24 + i * 74), 372, 64, 56};
 }
-/* SOUND ON / LOUD / OFF, left of the eye preview. */
-static inline app_rect_t app_style_sound_rect(void)
-{
-    return (app_rect_t) {12, 96, 100, 116};
-}
-
 static inline app_rect_t app_store_row_rect(int row)
 {
     return (app_rect_t) {16, (int16_t)(68 + row * 92), 448, 84};
+}
+
+/* Settings: same row geometry as the store, 4 rows per page. */
+enum { APP_SETTINGS_PER_PAGE = 4 };
+static inline app_rect_t app_settings_row_rect(int row)
+{
+    return app_store_row_rect(row);
 }

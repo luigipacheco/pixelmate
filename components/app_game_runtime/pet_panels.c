@@ -92,13 +92,13 @@ static void draw_menu(const draw_ctx_t *d, int oy)
     screens_button(d, app_menu_sleep_rect(), 0, oy, "SLEEP", 3, d->color, false);
 
     const app_rect_t store = app_menu_store_rect(), style = app_menu_style_rect();
-    const app_rect_t goal = app_menu_goal_rect();
+    const app_rect_t settings = app_menu_settings_rect();
     screens_button(d, store, 0, oy, "STORE", 4, d->color, true);
     px_icon(PX_ICON_BOLT, store.x + 26, store.y + oy + 15, 5, INK, INK, d->gap);
     screens_button(d, style, 0, oy, "STYLE", 4, d->color, false);
     px_icon(PX_ICON_EYE, style.x + 20, style.y + oy + 21, 4, d->color, d->accent, d->gap);
-    screens_button(d, goal, 0, oy, "GOAL", 4, d->color, false);
-    px_icon(PX_ICON_SHOE, goal.x + 22, goal.y + oy + 21, 4, d->color, d->accent, d->gap);
+    screens_button(d, settings, 0, oy, "SETTINGS", 4, d->color, false);
+    px_icon(PX_ICON_GEAR, settings.x + 22, settings.y + oy + 19, 4, d->color, d->accent, d->gap);
 
     char text[40];
     draw_menu_wifi(d, oy);
@@ -131,37 +131,11 @@ static void draw_lock(int x, int y, Color color)
     px_icon(PX_ICON_LOCK, x, y, 3, color, color, false);
 }
 
-/* SOUND button: a note with one or two waves for the level, crossed out when off. */
-static void draw_sound_button(const draw_ctx_t *d, int oy)
-{
-    static const char *const names[APP_SOUND_COUNT] = {"ON", "LOUD", "OFF"};
-    const app_sound_t sound = d->snap->sound < APP_SOUND_COUNT ? d->snap->sound : APP_SOUND_ON;
-    const app_rect_t r = app_style_sound_rect();
-    const bool muted = sound == APP_SOUND_OFF;
-    const Color c = muted ? d->dim : d->color;
-    const int x = r.x, y = r.y + oy;
-    px_text_center("SOUND", x + r.w / 2, y - 20, 2, d->dim, false);
-    px_box(x, y, r.w, r.h, 3, c);
-    px_icon(PX_ICON_NOTE, x + 18, y + 22, 4, c, c, d->gap);
-    if (muted) {
-        for (int i = 0; i < 6; ++i) {
-            DrawRectangle(x + 60 + i * 4, y + 24 + i * 4, 4, 4, d->accent);
-            DrawRectangle(x + 80 - i * 4, y + 24 + i * 4, 4, 4, d->accent);
-        }
-    } else {
-        for (int i = 0; i <= (int)sound; ++i) {
-            DrawRectangle(x + 60 + i * 12, y + 30 - i * 6, 4, 20 + i * 12, d->accent);
-        }
-    }
-    px_text_center(names[sound], x + r.w / 2, y + 76, 3, c, d->gap);
-}
-
 static void draw_style(const draw_ctx_t *d, int oy)
 {
     static const char *const names[APP_PIXEL_COUNT] = {"CHUNKY", "FINE", "SMOOTH"};
     const app_game_snapshot_t *s = d->snap;
     draw_header(d, oy, "STYLE");
-    draw_sound_button(d, oy);
     px_text_center("PIXELS", 240, oy + 262, 2, d->dim, false);
     for (int i = 0; i < APP_PIXEL_COUNT; ++i) {
         const app_rect_t r = app_style_pixel_rect(i);
@@ -382,6 +356,146 @@ static void draw_wifi(const draw_ctx_t *d, int oy)
     }
 }
 
+/* ---- Settings -------------------------------------------------------- */
+
+#define ABOUT_VERSION "0.1.0"
+static const Color RESET_RED = {255, 48, 48, 255};
+
+static const char *sound_name(app_sound_t sound)
+{
+    switch (sound) {
+    case APP_SOUND_OFF: return "OFF";
+    case APP_SOUND_LOW: return "LOW";
+    case APP_SOUND_HIGH: return "HIGH";
+    default: return "MID";
+    }
+}
+
+static int sound_bars(app_sound_t sound)
+{
+    switch (sound) {
+    case APP_SOUND_LOW: return 1;
+    case APP_SOUND_MID: return 2;
+    case APP_SOUND_HIGH: return 3;
+    default: return 0;
+    }
+}
+
+static const char *wifi_word(app_net_state_t net)
+{
+    switch (net) {
+    case APP_NET_ONLINE: return "ONLINE";
+    case APP_NET_CONNECTING: return "JOINING";
+    case APP_NET_NO_CONFIG: return "NOT SET";
+    case APP_NET_FAILED: return "RETRYING";
+    case APP_NET_SETUP: return "SETUP";
+    default: return "OFF";
+    }
+}
+
+static void ip_text(uint32_t ipv4, char *out, size_t cap)
+{
+    snprintf(out, cap, "%lu.%lu.%lu.%lu", (unsigned long)(ipv4 & 0xFF),
+             (unsigned long)((ipv4 >> 8) & 0xFF), (unsigned long)((ipv4 >> 16) & 0xFF),
+             (unsigned long)(ipv4 >> 24));
+}
+
+/* One row: name (left), current value (right), a hint line underneath. */
+static void draw_setting_row(const draw_ctx_t *d, int row, int index, int oy)
+{
+    static const char *const names[APP_SETTINGS_ROWS] = {
+        "SOUND", "DAILY GOAL", "WI-FI", "SCREEN SLEEP", "BRIGHTNESS", "ABOUT", "RESET PET",
+    };
+    const app_game_snapshot_t *s = d->snap;
+    const app_rect_t r = app_settings_row_rect(row);
+    const int x = r.x, y = r.y + oy;
+    const bool reset = index == APP_SETTINGS_ROWS - 1;
+    char value[24], hint[40], ip[20];
+    hint[0] = '\0';
+    switch (index) {
+    case 0:
+        snprintf(value, sizeof(value), "%s", sound_name(s->sound));
+        snprintf(hint, sizeof(hint), "TAP TO CHANGE VOLUME");
+        break;
+    case 1:
+        snprintf(value, sizeof(value), "%lu", (unsigned long)s->step_goal);
+        snprintf(hint, sizeof(hint), "STEPS A DAY - TAP TO ADJUST");
+        break;
+    case 2:
+        snprintf(value, sizeof(value), "%s", wifi_word(s->net));
+        if (s->net == APP_NET_ONLINE) {
+            ip_text(s->ipv4, ip, sizeof(ip));
+            snprintf(hint, sizeof(hint), "WEB %s", ip);
+        } else {
+            snprintf(hint, sizeof(hint), "TAP TO SET UP");
+        }
+        break;
+    case 3:
+        if (s->sleep_s >= 60) {
+            snprintf(value, sizeof(value), "%u MIN", s->sleep_s / 60U);
+        } else {
+            snprintf(value, sizeof(value), "%u S", s->sleep_s);
+        }
+        snprintf(hint, sizeof(hint), "IDLE TIME BEFORE IT NAPS");
+        break;
+    case 4:
+        snprintf(value, sizeof(value), "%u%%", s->brightness_pct);
+        snprintf(hint, sizeof(hint), "HOW BRIGHT THE PET GLOWS");
+        break;
+    case 5:
+        snprintf(value, sizeof(value), "V%s", ABOUT_VERSION);
+        if (s->battery_pct >= 0) {
+            snprintf(hint, sizeof(hint), "BATT %d%%  TOTAL %lu", s->battery_pct,
+                     (unsigned long)s->steps_total);
+        } else {
+            snprintf(hint, sizeof(hint), "TOTAL %lu STEPS", (unsigned long)s->steps_total);
+        }
+        break;
+    default:
+        snprintf(value, sizeof(value), "HOLD");
+        snprintf(hint, sizeof(hint), "HOLD %d S TO START OVER", APP_RESET_HOLD_S);
+        break;
+    }
+    if (reset && s->reset_hold) {
+        /* Fill grows while the finger stays down; releasing cancels. */
+        DrawRectangle(x + 3, y + 3, (r.w - 6) * s->reset_hold / 100, r.h - 6, px_scale(RESET_RED, 0.45f));
+    }
+    px_box(x, y, r.w, r.h, 3, reset ? RESET_RED : (index == 5 ? d->dim : d->color));
+    px_text(names[index], x + 16, y + 14, 3, reset ? RESET_RED : d->color, d->gap);
+    px_text(hint, x + 16, y + 50, 2, d->dim, false);
+    const int right = x + r.w - 16;
+    if (index == 0) {
+        /* Volume bars left of the value word. */
+        const int bars = sound_bars(s->sound);
+        for (int i = 0; i < 3; ++i) {
+            DrawRectangle(right - 120 + i * 10, y + 30 - i * 8, 6, 8 + i * 8, i < bars ? d->accent : d->dim);
+        }
+    }
+    px_text(value, right - px_text_width(value, 3), y + 14, 3, reset ? RESET_RED : d->accent, d->gap);
+}
+
+static void draw_settings(const draw_ctx_t *d, int oy)
+{
+    const app_game_snapshot_t *s = d->snap;
+    draw_header(d, oy, "SETTINGS");
+    for (int row = 0; row < APP_SETTINGS_PER_PAGE; ++row) {
+        const int index = s->settings_page * APP_SETTINGS_PER_PAGE + row;
+        if (index >= APP_SETTINGS_ROWS) {
+            break;
+        }
+        draw_setting_row(d, row, index, oy);
+    }
+    const int pages = (APP_SETTINGS_ROWS + APP_SETTINGS_PER_PAGE - 1) / APP_SETTINGS_PER_PAGE;
+    const int x0 = 240 - (pages - 1) * 12 - 5;
+    for (int p = 0; p < pages; ++p) {
+        if (p == s->settings_page) {
+            DrawRectangle(x0 + p * 24 - 2, oy + APP_DOTS_Y - 2, 14, 14, d->color);
+        } else {
+            DrawRectangle(x0 + p * 24, oy + APP_DOTS_Y, 10, 10, d->dim);
+        }
+    }
+}
+
 void screens_draw_overlay(const draw_ctx_t *d, app_overlay_t overlay, int oy)
 {
     switch (overlay) {
@@ -390,6 +504,7 @@ void screens_draw_overlay(const draw_ctx_t *d, app_overlay_t overlay, int oy)
     case APP_OVERLAY_STORE: draw_store(d, oy); break;
     case APP_OVERLAY_GOAL: draw_goal(d, oy); break;
     case APP_OVERLAY_WIFI: draw_wifi(d, oy); break;
+    case APP_OVERLAY_SETTINGS: draw_settings(d, oy); break;
     default: break;
     }
 }

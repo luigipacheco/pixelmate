@@ -41,6 +41,14 @@ enum {
     STUCK_TOUCH_TICKS = 10 * TICKS_PER_SECOND,
 };
 
+static const uint16_t s_sleep_s[APP_SLEEP_OPTIONS] = {15, 30, 60, 120};
+static const uint8_t s_bright_pct[APP_BRIGHT_OPTIONS] = {100, 80, 60};
+enum { DEFAULT_SLEEP_IDX = 1, DEFAULT_BRIGHT_IDX = 0, SETTINGS_PAGES = 2, RESET_ROW = 6 };
+/* Volume order when tapping SOUND: off, low, mid, high. */
+static const app_sound_t s_sound_cycle[APP_SOUND_COUNT] = {
+    APP_SOUND_OFF, APP_SOUND_LOW, APP_SOUND_MID, APP_SOUND_HIGH,
+};
+
 static const app_food_t s_foods[APP_FOOD_COUNT] = {
     {"CELL", 10, 15, 2},
     {"CHIP", 25, 35, 6},
@@ -79,6 +87,10 @@ struct app_game {
     app_overlay_t overlay;
     app_arcade_t arcade;
     uint8_t store_page;
+    uint8_t settings_page;
+    uint8_t sleep_idx, bright_idx;     /* Indexes into s_sleep_s / s_bright_pct. */
+    bool reset_armed;                  /* Finger went down on RESET PET. */
+    uint16_t reset_hold_ticks;
     uint32_t owned;
     uint8_t anims_on;
     app_sound_t sound;
@@ -216,7 +228,12 @@ static void fresh_pet(app_game_handle_t g)
     g->store_page = 0;
     g->owned = FREE_OWNED;
     g->anims_on = 0;
-    g->sound = APP_SOUND_ON;
+    g->sound = APP_SOUND_MID;
+    g->settings_page = 0;
+    g->sleep_idx = DEFAULT_SLEEP_IDX;
+    g->bright_idx = DEFAULT_BRIGHT_IDX;
+    g->reset_armed = false;
+    g->reset_hold_ticks = 0;
     g->step_goal = APP_GOAL_DEFAULT;
     g->power = APP_POWER_AWAKE;
     g->screen_idle_ticks = 0;
@@ -287,6 +304,22 @@ void app_game_reset(app_game_handle_t g)
         g->events |= APP_EVENT_SETTINGS | APP_EVENT_SCREEN;
         changed(g);
     }
+}
+
+/* RESET PET from Settings: a brand-new pet, but the settings stay. */
+static void reset_pet_keep_settings(app_game_handle_t g)
+{
+    const app_sound_t sound = g->sound;
+    const uint8_t sleep_idx = g->sleep_idx, bright_idx = g->bright_idx;
+    const uint32_t goal = g->step_goal;
+    fresh_pet(g);
+    g->sound = sound;
+    g->sleep_idx = sleep_idx;
+    g->bright_idx = bright_idx;
+    g->step_goal = goal;
+    g->swallow_touch = true;   /* The finger still on the glass does nothing else. */
+    g->events |= APP_EVENT_SETTINGS | APP_EVENT_SCREEN | APP_EVENT_OVERLAY;
+    changed(g);
 }
 
 void app_game_set_paused(app_game_handle_t g, bool paused)
@@ -459,7 +492,8 @@ static void wake(app_game_handle_t g)
 static uint32_t doze_after_ticks(const struct app_game *g)
 {
     const bool low = g->battery_pct >= 0 && g->battery_pct <= APP_LOW_BATTERY_PCT && !g->battery_charging;
-    return (low ? APP_LOW_BATTERY_DOZE_S : APP_DOZE_AFTER_S) * TICKS_PER_SECOND;
+    const uint32_t chosen = s_sleep_s[g->sleep_idx < APP_SLEEP_OPTIONS ? g->sleep_idx : DEFAULT_SLEEP_IDX];
+    return (low && APP_LOW_BATTERY_DOZE_S < chosen ? APP_LOW_BATTERY_DOZE_S : chosen) * TICKS_PER_SECOND;
 }
 
 static void update_power(app_game_handle_t g)
@@ -481,8 +515,7 @@ static void update_power(app_game_handle_t g)
     }
     ++g->screen_idle_ticks;
     const uint32_t doze_at = doze_after_ticks(g);
-    const uint32_t dim_at = APP_DIM_AFTER_S * TICKS_PER_SECOND < doze_at
-                            ? APP_DIM_AFTER_S * TICKS_PER_SECOND : doze_at * 2U / 3U;
+    const uint32_t dim_at = doze_at * 2U / 3U;   /* Dim for the last third. */
     if (g->screen_idle_ticks >= doze_at) {
         doze(g);
     } else if (g->screen_idle_ticks >= dim_at) {
@@ -542,12 +575,6 @@ static void tap_style(app_game_handle_t g, int32_t x, int32_t y)
 {
     if (app_rect_hit(app_panel_back_rect(), x, y)) {
         set_overlay(g, APP_OVERLAY_MENU);
-        return;
-    }
-    if (app_rect_hit(app_style_sound_rect(), x, y)) {
-        g->sound = (app_sound_t)((g->sound + 1) % APP_SOUND_COUNT);   /* ON -> LOUD -> OFF */
-        g->events |= APP_EVENT_SETTINGS;
-        changed(g);
         return;
     }
     for (int i = 0; i < APP_PIXEL_COUNT; ++i) {
@@ -619,7 +646,7 @@ static void tap_store(app_game_handle_t g, int32_t x, int32_t y)
 static void tap_goal(app_game_handle_t g, int32_t x, int32_t y)
 {
     if (app_rect_hit(app_panel_back_rect(), x, y)) {
-        set_overlay(g, APP_OVERLAY_MENU);
+        set_overlay(g, APP_OVERLAY_SETTINGS);
         return;
     }
     uint32_t goal = g->step_goal;
@@ -646,28 +673,94 @@ static bool wifi_needs_setup(const struct app_game *g)
 static void tap_wifi(app_game_handle_t g, int32_t x, int32_t y)
 {
     if (app_rect_hit(app_panel_back_rect(), x, y)) {
-        set_overlay(g, APP_OVERLAY_MENU);
+        set_overlay(g, APP_OVERLAY_SETTINGS);
     } else if (app_rect_hit(app_wifi_action_rect(), x, y) && g->net != APP_NET_OFF) {
         g->events |= g->net == APP_NET_SETUP ? APP_EVENT_WIFI_STOP : APP_EVENT_WIFI_SETUP;
+    }
+}
+
+static void open_wifi(app_game_handle_t g)
+{
+    if (g->net == APP_NET_OFF) {
+        return;
+    }
+    /* Nothing to join yet: opening it starts the setup hotspot right away. */
+    if (wifi_needs_setup(g)) {
+        g->events |= APP_EVENT_WIFI_SETUP;
+    }
+    set_overlay(g, APP_OVERLAY_WIFI);
+}
+
+/* Rows: 0 SOUND, 1 DAILY GOAL, 2 WI-FI, 3 SCREEN SLEEP, 4 BRIGHTNESS, 5 ABOUT,
+ * 6 RESET PET (held, see update_reset). Taps cycle a value or open a panel. */
+static void tap_settings(app_game_handle_t g, int32_t x, int32_t y)
+{
+    if (app_rect_hit(app_panel_back_rect(), x, y)) {
+        set_overlay(g, APP_OVERLAY_MENU);
+        return;
+    }
+    for (int row = 0; row < APP_SETTINGS_PER_PAGE; ++row) {
+        const int index = g->settings_page * APP_SETTINGS_PER_PAGE + row;
+        if (index >= APP_SETTINGS_ROWS || !app_rect_hit(app_settings_row_rect(row), x, y)) {
+            continue;
+        }
+        switch (index) {
+        case 0: {
+            int at = 0;
+            while (at < APP_SOUND_COUNT && s_sound_cycle[at] != g->sound) {
+                ++at;
+            }
+            g->sound = s_sound_cycle[(at + 1) % APP_SOUND_COUNT];
+            break;
+        }
+        case 1: set_overlay(g, APP_OVERLAY_GOAL); return;
+        case 2: open_wifi(g); return;
+        case 3: g->sleep_idx = (uint8_t)((g->sleep_idx + 1) % APP_SLEEP_OPTIONS); break;
+        case 4: g->bright_idx = (uint8_t)((g->bright_idx + 1) % APP_BRIGHT_OPTIONS); break;
+        default: return;   /* ABOUT is read-only; RESET needs a hold. */
+        }
+        g->events |= APP_EVENT_SETTINGS;
+        changed(g);
+        return;
+    }
+}
+
+static bool on_reset_row(const struct app_game *g, int32_t x, int32_t y)
+{
+    return g->overlay == APP_OVERLAY_SETTINGS
+           && g->settings_page == RESET_ROW / APP_SETTINGS_PER_PAGE
+           && app_rect_hit(app_settings_row_rect(RESET_ROW % APP_SETTINGS_PER_PAGE), x, y);
+}
+
+static void update_reset(app_game_handle_t g)
+{
+    if (!g->reset_armed) {
+        return;
+    }
+    if (!g->pointer_down || !on_reset_row(g, g->pointer_x, g->pointer_y)) {
+        g->reset_armed = false;   /* Let go or slid off: cancelled. */
+        g->reset_hold_ticks = 0;
+        return;
+    }
+    if (++g->reset_hold_ticks >= APP_RESET_HOLD_S * TICKS_PER_SECOND) {
+        g->reset_armed = false;
+        g->reset_hold_ticks = 0;
+        reset_pet_keep_settings(g);
     }
 }
 
 static void tap_menu(app_game_handle_t g, int32_t x, int32_t y)
 {
     if (app_rect_hit(app_menu_wifi_rect(), x, y) && g->net != APP_NET_OFF) {
-        /* Nothing to join yet: tapping SET UP starts the hotspot right away. */
-        if (wifi_needs_setup(g)) {
-            g->events |= APP_EVENT_WIFI_SETUP;
-        }
-        set_overlay(g, APP_OVERLAY_WIFI);
+        open_wifi(g);
     } else if (app_rect_hit(app_menu_sleep_rect(), x, y)) {
         doze(g);
     } else if (app_rect_hit(app_menu_store_rect(), x, y)) {
         set_overlay(g, APP_OVERLAY_STORE);
     } else if (app_rect_hit(app_menu_style_rect(), x, y)) {
         set_overlay(g, APP_OVERLAY_STYLE);
-    } else if (app_rect_hit(app_menu_goal_rect(), x, y)) {
-        set_overlay(g, APP_OVERLAY_GOAL);
+    } else if (app_rect_hit(app_menu_settings_rect(), x, y)) {
+        set_overlay(g, APP_OVERLAY_SETTINGS);
     } else if (y >= APP_MENU_H) {
         set_overlay(g, APP_OVERLAY_NONE);
     }
@@ -796,6 +889,7 @@ static void handle_tap(app_game_handle_t g, int32_t x, int32_t y)
     case APP_OVERLAY_STORE: tap_store(g, x, y); return;
     case APP_OVERLAY_GOAL: tap_goal(g, x, y); return;
     case APP_OVERLAY_WIFI: tap_wifi(g, x, y); return;
+    case APP_OVERLAY_SETTINGS: tap_settings(g, x, y); return;
     default: break;
     }
     switch (g->screen) {
@@ -826,6 +920,12 @@ static void handle_swipe(app_game_handle_t g, int32_t dx, int32_t dy)
             g->store_page = (uint8_t)page;
             g->events |= APP_EVENT_STORE_PAGE;
         }
+    } else if (g->overlay == APP_OVERLAY_SETTINGS) {
+        const int page = (int)g->settings_page + (dx < 0 ? 1 : -1);
+        if (page >= 0 && page < SETTINGS_PAGES) {
+            g->settings_page = (uint8_t)page;
+            g->events |= APP_EVENT_STORE_PAGE;
+        }
     } else if (g->overlay == APP_OVERLAY_NONE) {
         go_screen(g, dx < 0 ? 1 : -1);
     }
@@ -850,6 +950,10 @@ void app_game_set_pointer(app_game_handle_t g, int32_t x, int32_t y, bool presse
         g->press_x = x;
         g->press_y = y;
         g->idle_ticks = 0;
+        if (g->power == APP_POWER_AWAKE && on_reset_row(g, x, y)) {
+            g->reset_armed = true;
+            g->reset_hold_ticks = 0;
+        }
         if (g->power != APP_POWER_AWAKE) {
             wake(g);
             g->swallow_touch = true;
@@ -1062,6 +1166,7 @@ void app_game_update(app_game_handle_t g)
     }
     decay_stats(g);
     update_power(g);
+    update_reset(g);
     const uint32_t won = cards_update(&g->cards, &g->events);
     if (won) {
         g->sparks += won;
@@ -1109,6 +1214,10 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .owned = g->owned,
         .anims_on = g->anims_on,
         .sound = g->sound,
+        .settings_page = g->settings_page,
+        .sleep_s = s_sleep_s[g->sleep_idx < APP_SLEEP_OPTIONS ? g->sleep_idx : DEFAULT_SLEEP_IDX],
+        .brightness_pct = s_bright_pct[g->bright_idx < APP_BRIGHT_OPTIONS ? g->bright_idx : DEFAULT_BRIGHT_IDX],
+        .reset_hold = (uint8_t)(g->reset_hold_ticks * 100U / (APP_RESET_HOLD_S * TICKS_PER_SECOND)),
         .steps_total = g->steps_total,
         .steps_today = g->steps_today,
         .step_goal = g->step_goal,
@@ -1198,6 +1307,8 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->owned = g->owned;
     r->anims_on = g->anims_on;
     r->sound = (uint8_t)g->sound;
+    r->sleep_code = g->sleep_idx == DEFAULT_SLEEP_IDX ? 0 : (uint8_t)(g->sleep_idx + 1);
+    r->bright_code = g->bright_idx == DEFAULT_BRIGHT_IDX ? 0 : (uint8_t)(g->bright_idx + 1);
     r->goal_k = (uint8_t)(g->step_goal / 1000U);
 }
 
@@ -1228,7 +1339,11 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
         }
     }
     g->anims_on = anims;
-    g->sound = r->sound < APP_SOUND_COUNT ? (app_sound_t)r->sound : APP_SOUND_ON;
+    g->sound = r->sound < APP_SOUND_COUNT ? (app_sound_t)r->sound : APP_SOUND_MID;
+    g->sleep_idx = r->sleep_code && r->sleep_code <= APP_SLEEP_OPTIONS
+                   ? (uint8_t)(r->sleep_code - 1) : DEFAULT_SLEEP_IDX;
+    g->bright_idx = r->bright_code && r->bright_code <= APP_BRIGHT_OPTIONS
+                    ? (uint8_t)(r->bright_code - 1) : DEFAULT_BRIGHT_IDX;
     g->pixel_style = r->pixel_style < APP_PIXEL_COUNT && (g->owned & APP_OWN_STYLE_BIT(r->pixel_style))
                      ? (app_pixel_style_t)r->pixel_style : APP_PIXEL_CHUNKY;
     g->color_index = r->color_index < APP_COLOR_COUNT && (g->owned & APP_OWN_COLOR_BIT(r->color_index))
