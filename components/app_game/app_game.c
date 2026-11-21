@@ -69,11 +69,12 @@ static const app_store_item_t s_store[] = {
     {APP_ITEM_ANIM, APP_ANIM_DANCE, 150, "STEP DANCE", "DANCES EVERY 100 STEPS"},
     {APP_ITEM_STYLE, APP_PIXEL_SMOOTH, 150, "SMOOTH", "NO PIXELS AT ALL"},
     {APP_ITEM_ANIM, APP_ANIM_STARS, 200, "STAR EYES", "STARS WHEN HAPPY"},
-    {APP_ITEM_GAME, APP_GAME_BITS, 250, "BIT FLIP", "MATCH NUMBERS IN BINARY"},
-    {APP_ITEM_GAME, APP_GAME_GRID, 200, "SPARK GRID", "FLIP TILES DODGE DUDS"},
     {APP_ITEM_GAME, APP_GAME_SLOTS, 100, "SPARK SLOTS", "STOP THE REELS TO WIN"},
+    {APP_ITEM_GAME, APP_GAME_GRID, 200, "SPARK GRID", "FLIP TILES DODGE DUDS"},
+    {APP_ITEM_GAME, APP_GAME_BITS, 250, "BIT FLIP", "MATCH NUMBERS IN BINARY"},
     {APP_ITEM_ANIM, APP_ANIM_RAINBOW, 300, "RAINBOW", "COLORS WHILE WALKING"},
     {APP_ITEM_GAME, APP_GAME_PHOTO, 300, "PHOTO BOOTH", "LO-RES PICS AND GIFS"},
+    {APP_ITEM_GAME, APP_GAME_CARDS, 400, "HI-LO", "DOUBLE OR NOTHING CARDS"},
     {APP_ITEM_FILTER, APP_FILTER_DITHER, 50, "DITHER", "RETRO DOT SHADING"},
     {APP_ITEM_FILTER, APP_FILTER_SCANLINES, 60, "SCANLINES", "OLD TV LINES"},
     {APP_ITEM_LENS, APP_PHOTO_RES_MID, 80, "MID RES", "SHARPER 64X64 PHOTOS"},
@@ -976,13 +977,14 @@ static app_minigame_t cabinet_game(app_arcade_t cabinet)
     switch (cabinet) {
     case APP_ARCADE_GRID: return APP_GAME_GRID;
     case APP_ARCADE_BITS: return APP_GAME_BITS;
+    case APP_ARCADE_CARDS: return APP_GAME_CARDS;
     default: return APP_GAME_SLOTS;
     }
 }
 
 static bool cabinet_owned(const struct app_game *g, app_arcade_t game)
 {
-    return game == APP_ARCADE_CARDS || (g->owned & APP_OWN_GAME_BIT(cabinet_game(game)));
+    return (g->owned & APP_OWN_GAME_BIT(cabinet_game(game))) != 0;
 }
 
 static bool booth_owned(const struct app_game *g)

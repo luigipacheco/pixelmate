@@ -212,6 +212,13 @@ static void draw_preview(const draw_ctx_t *d, const app_store_item_t *item, int 
             }
             return;
         }
+        if (item->value == APP_GAME_CARDS) {
+            /* Two tiny cards: a face-up 7 and a face-down one. */
+            DrawRectangle(x, y + 8, 26, 40, (Color){240, 240, 232, 255});
+            px_text("7", x + 8, y + 20, 2, (Color){12, 12, 12, 255}, false);
+            px_box(x + 32, y + 8, 26, 40, 2, c);
+            return;
+        }
         if (item->value == APP_GAME_PHOTO) {
             screens_camera_icon(d, x, y + 10, 60, c);
             return;

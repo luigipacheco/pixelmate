@@ -16,9 +16,11 @@ the `pixel_pal` name so existing pets carry over.)
 - **Snacks:** spend sparks on CELL (10), CHIP (25) or MEGA (60) for a temporary
   fullness boost (they don't count toward survival).
 - **Arcade:** a row of pixel cabinets with attract-mode demos; tap one to
-  play (EXIT returns). HI-LO: deal for 5 sparks; a right guess grows the pot
-  by the odds (the long shot pays more, shown under HI and LO), cash out any
-  time (auto cash-out after 5 wins). Played well it about breaks even.
+  play (EXIT returns). Every game is bought in the store, in unlock order:
+  Spark Slots (100), Spark Grid (200), Bit Flip (250) and HI-LO (400), the
+  best earner, last.
+- **HI-LO (unlockable cabinet, 400 sparks):** deal for 5 sparks, each right
+  guess doubles the pot, cash out any time (auto cash-out after 5 wins).
 - **Moods:** idle, happy, sleepy, hungry, sad, walking, eating, thinking,
   surprised and grumpy, each with its own eye shape, springy motion, blinks
   and gaze that follows your finger.

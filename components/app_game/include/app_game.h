@@ -32,10 +32,11 @@ typedef enum {
 /** Cabinets in the arcade, left to right. LOBBY = no game open. */
 typedef enum {
     APP_ARCADE_LOBBY = 0,
-    APP_ARCADE_CARDS,      /**< HI-LO, free. */
+    /* Cabinets in unlock order: cheapest (luck) first, best earner last. */
     APP_ARCADE_SLOTS,      /**< Spark Slots, bought in the store. */
     APP_ARCADE_GRID,       /**< Spark Grid, bought in the store. */
     APP_ARCADE_BITS,       /**< Bit Flip, bought in the store. */
+    APP_ARCADE_CARDS,      /**< HI-LO, bought in the store (the last unlock). */
     APP_ARCADE_COUNT,
 } app_arcade_t;
 
@@ -98,21 +99,6 @@ enum {
     APP_RESET_HOLD_S = 3,        /**< Hold RESET PET this long to start over. */
 };
 
-/* HI-LO pays by the odds: a win multiplies the pot by 10.8 / (ranks that
- * win), i.e. 0.9 x the fair 12 / n, never less than +1 and capped. With
- * best play a deal returns about what it cost; the risky side pays most. */
-#define APP_CARDS_POT_MAX 500U
-static inline uint32_t app_cards_win_pot(uint32_t pot, uint8_t current, bool higher)
-{
-    const uint32_t n = higher ? 13U - current : (uint32_t)current - 1U;
-    if (n == 0U) {
-        return 0U;   /* Impossible side: nothing to win. */
-    }
-    uint32_t won = pot * 108U / (10U * n);
-    won = won > pot ? won : pot + 1U;
-    return won < APP_CARDS_POT_MAX ? won : APP_CARDS_POT_MAX;
-}
-
 #define APP_PET_NAME "BITSY"     /* The pet's name (the app is PixelMate). */
 
 enum {
@@ -172,6 +158,7 @@ typedef enum {
     APP_GAME_GRID,
     APP_GAME_BITS,
     APP_GAME_PHOTO,        /**< Photo booth page (needs the camera module). */
+    APP_GAME_CARDS,        /**< HI-LO (was free before it moved to the store). */
     APP_GAME_COUNT,
 } app_minigame_t;
 

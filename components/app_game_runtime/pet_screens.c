@@ -250,19 +250,6 @@ static void draw_cards(const draw_ctx_t *d, int ox)
     const bool guessing = c->phase == APP_CARDS_GUESS;
     draw_button(d, app_cards_hi_rect(), ox, "HI", 5, guessing ? d->color : d->dim, false);
     draw_button(d, app_cards_lo_rect(), ox, "LO", 5, guessing ? d->accent : d->dim, false);
-    if (guessing) {
-        /* What each side would make the pot: the long shot pays more. */
-        for (int hi = 0; hi < 2; ++hi) {
-            const app_rect_t r = hi ? app_cards_hi_rect() : app_cards_lo_rect();
-            const uint32_t won = app_cards_win_pot(c->pot, c->current, hi);
-            if (won) {
-                snprintf(text, sizeof(text), "WIN %lu", (unsigned long)won);
-            } else {
-                snprintf(text, sizeof(text), "NO WAY");
-            }
-            px_text_center(text, r.x + r.w / 2 + ox, r.y + r.h + 6, 2, won ? (hi ? d->color : d->accent) : d->dim, false);
-        }
-    }
     const bool can_cash = guessing && c->streak > 0;
     draw_button(d, app_cards_cash_rect(), ox, "CASH", 3, can_cash ? d->color : d->dim, can_cash);
 }

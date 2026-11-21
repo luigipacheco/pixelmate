@@ -23,7 +23,7 @@ enum {
 static bool cabinet_unlocked(const app_game_snapshot_t *s, app_arcade_t game)
 {
     switch (game) {
-    case APP_ARCADE_CARDS: return true;
+    case APP_ARCADE_CARDS: return s->owned & APP_OWN_GAME_BIT(APP_GAME_CARDS);
     case APP_ARCADE_SLOTS: return s->owned & APP_OWN_GAME_BIT(APP_GAME_SLOTS);
     case APP_ARCADE_GRID: return s->owned & APP_OWN_GAME_BIT(APP_GAME_GRID);
     case APP_ARCADE_BITS: return s->owned & APP_OWN_GAME_BIT(APP_GAME_BITS);
@@ -188,7 +188,8 @@ static void draw_cabinet(const draw_ctx_t *d, int index, int ox, int oy)
         }
     } else {
         const app_minigame_t id = game == APP_ARCADE_GRID ? APP_GAME_GRID
-                                  : (game == APP_ARCADE_BITS ? APP_GAME_BITS : APP_GAME_SLOTS);
+                                  : game == APP_ARCADE_BITS ? APP_GAME_BITS
+                                  : game == APP_ARCADE_CARDS ? APP_GAME_CARDS : APP_GAME_SLOTS;
         const app_store_item_t *item = app_game_store_item(app_game_store_find(APP_ITEM_GAME, id));
         snprintf(text, sizeof(text), "%u", item ? item->cost : 0);
         const int tw = px_text_width(text, 2);
