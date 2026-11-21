@@ -145,6 +145,11 @@ static inline app_rect_t app_booth_lens_rect(void)
 {
     return (app_rect_t) {12, 70, 110, 44};
 }
+/* Color chip under the lens chip: tap to cycle the photo's color. */
+static inline app_rect_t app_booth_tint_rect(void)
+{
+    return (app_rect_t) {12, 122, 84, 46};
+}
 static inline app_rect_t app_booth_view_rect(void)
 {
     return (app_rect_t) {112, 120, 256, 256};

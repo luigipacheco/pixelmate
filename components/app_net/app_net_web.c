@@ -33,7 +33,7 @@ static httpd_handle_t s_server;
 
 static const char PAGE[] =
     "<!doctype html><html><head><meta charset=utf-8>"
-    "<meta name=viewport content='width=device-width,initial-scale=1'><title>PixelMate</title><style>"
+    "<meta name=viewport content='width=device-width,initial-scale=1'><title>Bitsy - PixelMate</title><style>"
     ":root{--c:#d9ff00;--a:#ff4c01;--d:#2c3300}"
     "body{margin:0;background:#000;color:var(--c);font:16px/1.4 ui-monospace,Menlo,Consolas,monospace;"
     "display:flex;justify-content:center}"
@@ -47,7 +47,7 @@ static const char PAGE[] =
     ".chart div{flex:1;background:var(--c);min-height:2px}.chart div.miss{background:var(--d)}"
     ".days{display:flex;gap:6px;font-size:11px;opacity:.6}.days span{flex:1;text-align:center}"
     "section{border-top:1px dashed var(--d);padding-top:14px;margin-top:16px}"
-    "</style></head><body><main><h1>PIXELMATE</h1>"
+    "</style></head><body><main><h1>BITSY</h1><p>PIXELMATE</p>"
     "<div class=sub>TODAY</div><div class=big id=today>-</div><div class=sub id=goal></div>"
     "<div class=bar><i id=gbar></i></div>"
     "<div class=row><span>ENERGY</span><span id=food></span></div><div class=bar><i id=fbar></i></div>"

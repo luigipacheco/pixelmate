@@ -996,7 +996,7 @@ static void tap_booth(app_game_handle_t g, int32_t x, int32_t y)
         }
         return;
     }
-    const uint32_t events = booth_tap(&g->booth, x, y, g->filters_owned, g->lenses_owned, g->fainted);
+    const uint32_t events = booth_tap(&g->booth, x, y, g->filters_owned, g->lenses_owned, g->owned, g->fainted);
     g->events |= events;
     const app_booth_snapshot_t *v = &g->booth.view;
     if (events & APP_EVENT_SETTINGS) {

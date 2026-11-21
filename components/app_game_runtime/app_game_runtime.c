@@ -501,7 +501,8 @@ static void update(void *value)
     poll_net(state);
 #endif
     app_game_update(state->game);
-    const Color pet = px_color(app_game_read(state->game).color_index);
+    const app_game_snapshot_t before = app_game_read(state->game);
+    const Color pet = px_color(before.booth.tint == APP_BOOTH_TINT_PET ? before.color_index : before.booth.tint);
     booth_media_update(&state->media, state->game, (app_photo_rgb_t) {pet.r, pet.g, pet.b});
     const uint32_t events = app_game_take_events(state->game);
     handle_wifi_events(state, events);

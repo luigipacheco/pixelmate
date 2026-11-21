@@ -98,6 +98,9 @@ enum {
     APP_RESET_HOLD_S = 3,        /**< Hold RESET PET this long to start over. */
 };
 
+#define APP_PET_NAME "BITSY"     /* The pet's name (the app is PixelMate). */
+#define APP_BOOTH_TINT_PET 0xFFU /* Booth photos follow the pet's eye color. */
+
 enum {
     APP_COLOR_COUNT = 6,
     APP_FOOD_COUNT = 3,
@@ -272,6 +275,7 @@ typedef struct {
     uint8_t frame;               /**< GIF frames requested so far. */
     uint8_t filter;              /**< Selected look; always owned. */
     uint8_t res;                 /**< Selected lens (app_photo_res_t); always owned. */
+    uint8_t tint;                /**< Photo color: an owned color index, or APP_BOOTH_TINT_PET. */
     bool camera;                 /**< Runtime has a live camera. */
     uint8_t photos, gifs;        /**< Stored items, reported by the runtime. */
     uint8_t index;               /**< Gallery item shown, 0 = newest. */

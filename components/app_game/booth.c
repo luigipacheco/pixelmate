@@ -41,6 +41,7 @@ static void request(booth_t *b, app_booth_request_kind_t kind, uint8_t frame, ui
 void booth_init(booth_t *b)
 {
     memset(b, 0, sizeof(*b));
+    b->view.tint = APP_BOOTH_TINT_PET;
 }
 
 void booth_enter(booth_t *b)
@@ -83,6 +84,22 @@ static uint8_t step_owned(uint8_t current, int dir, uint8_t owned, int count)
     return current;
 }
 
+/* PET, then each owned color in order, wrapping back to PET. */
+static uint8_t next_tint(uint8_t tint, uint32_t colors_owned)
+{
+    int c = tint == APP_BOOTH_TINT_PET ? -1 : tint;
+    for (int i = 0; i <= APP_COLOR_COUNT; ++i) {
+        c = c + 1 >= APP_COLOR_COUNT ? -1 : c + 1;
+        if (c < 0) {
+            return APP_BOOTH_TINT_PET;
+        }
+        if (colors_owned & APP_OWN_COLOR_BIT(c)) {
+            return (uint8_t)c;
+        }
+    }
+    return APP_BOOTH_TINT_PET;
+}
+
 static uint32_t start_capture(booth_t *b, bool gif, bool fainted)
 {
     if (fainted || !b->view.camera) {
@@ -102,8 +119,13 @@ static uint32_t start_capture(booth_t *b, bool gif, bool fainted)
     return bump(b);
 }
 
-static uint32_t tap_live(booth_t *b, int32_t x, int32_t y, uint8_t looks, uint8_t lenses, bool fainted)
+static uint32_t tap_live(booth_t *b, int32_t x, int32_t y, uint8_t looks, uint8_t lenses,
+                         uint32_t colors, bool fainted)
 {
+    if (app_rect_hit(app_booth_tint_rect(), x, y)) {
+        b->view.tint = next_tint(b->view.tint, colors);
+        return APP_EVENT_SETTINGS | bump(b);
+    }
     const int dir = app_rect_hit(app_booth_prev_rect(), x, y) ? -1
                     : (app_rect_hit(app_booth_next_rect(), x, y) ? 1 : 0);
     if (dir) {
@@ -162,10 +184,11 @@ static uint32_t tap_gallery(booth_t *b, int32_t x, int32_t y)
     return 0;
 }
 
-uint32_t booth_tap(booth_t *b, int32_t x, int32_t y, uint8_t filters_owned, uint8_t lenses_owned, bool fainted)
+uint32_t booth_tap(booth_t *b, int32_t x, int32_t y, uint8_t filters_owned, uint8_t lenses_owned,
+                   uint32_t colors_owned, bool fainted)
 {
     switch (b->view.phase) {
-    case APP_BOOTH_LIVE: return tap_live(b, x, y, filters_owned, lenses_owned, fainted);
+    case APP_BOOTH_LIVE: return tap_live(b, x, y, filters_owned, lenses_owned, colors_owned, fainted);
     case APP_BOOTH_GALLERY: return tap_gallery(b, x, y);
     case APP_BOOTH_REVIEW:
         set_phase(b, APP_BOOTH_LIVE);

@@ -120,6 +120,12 @@ static int count_bits(unsigned bits)
     return n;
 }
 
+/* Color index the booth photographs in: the chosen tint or the pet's color. */
+static int booth_tint_index(const app_game_snapshot_t *s)
+{
+    return s->booth.tint == APP_BOOTH_TINT_PET ? s->color_index : s->booth.tint;
+}
+
 static void draw_live_picture(const draw_ctx_t *d, int ox)
 {
     const booth_media_t *m = d->view->media;
@@ -136,7 +142,7 @@ static void draw_live_picture(const draw_ctx_t *d, int ox)
         return;
     }
     Color pal[APP_PHOTO_SHADES];
-    palette_colors(s->booth.filter, px_color(s->color_index), d->level, pal);
+    palette_colors(s->booth.filter, px_color(booth_tint_index(s)), d->level, pal);
     const int side = app_photo_side(m->live_res);
     draw_photo(m->live, false, side, side, r.x + ox, r.y, r.w / side, pal);
 }
@@ -154,6 +160,12 @@ static void draw_live(const draw_ctx_t *d, int ox)
     const bool lenses = count_bits(s->lenses_owned | APP_OWN_LENS_BIT(APP_PHOTO_RES_LOW)) > 1;
     screens_button(d, app_booth_lens_rect(), ox, 0, app_photo_res_name(b->res), 2,
                    lenses ? d->color : d->dim, false);
+    /* Color chip: PET follows the eyes; otherwise a swatch of the chosen color.
+     * GREEN and THERMAL have fixed palettes, so the chip dims for them. */
+    const bool tints = b->filter != APP_FILTER_GREEN && b->filter != APP_FILTER_THERMAL;
+    const Color tc = px_scale(px_color(booth_tint_index(s)), d->level);
+    screens_button(d, app_booth_tint_rect(), ox, 0, b->tint == APP_BOOTH_TINT_PET ? "PET" : "HUE", 2,
+                   tints ? tc : d->dim, tints && b->tint != APP_BOOTH_TINT_PET);
     const bool ready = b->camera && !s->fainted;
     screens_button(d, app_booth_button_rect(0), ox, 0, "GIF", 4,
                    ready && b->gifs < APP_BOOTH_GIFS ? d->accent : d->dim, false);

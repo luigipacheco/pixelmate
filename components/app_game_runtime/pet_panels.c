@@ -475,7 +475,7 @@ static void draw_setting_row(const draw_ctx_t *d, int row, int index, int oy)
         snprintf(hint, sizeof(hint), "HOW BRIGHT THE PET GLOWS");
         break;
     case 5:
-        snprintf(value, sizeof(value), "V%s", ABOUT_VERSION);
+        snprintf(value, sizeof(value), "%s V%s", APP_PET_NAME, ABOUT_VERSION);
         if (s->battery_pct >= 0) {
             snprintf(hint, sizeof(hint), "BATT %d%%  TOTAL %lu", s->battery_pct,
                      (unsigned long)s->steps_total);
