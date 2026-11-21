@@ -22,11 +22,13 @@ enum {
     REVEAL_LOOK_TICKS = 30,
     OVERLAY_TICKS = 8,
     CRT_TICKS = 12,
+    BITS_FLIP_TICKS = 6,
     CRT_TOP = 60, CRT_BOTTOM = 446,
     DANCE_TICKS = 72,
 };
 #define ANCHOR_EASE 0.25f
 #define DIM_LEVEL 0.3f
+#define ARCADE_SCROLL_EASE 0.3f
 static const Color WARN = {255, 48, 48, 255};
 static const Color CONFETTI_WHITE = {240, 240, 232, 255};
 
@@ -149,7 +151,7 @@ void pet_view_init(pet_view_t *v)
     memset(v, 0, sizeof(*v));
     pet_eyes_init(&v->eyes);
     v->rng = 0x7a3c19e1U;
-    v->trans = v->food_t = v->flip_t = v->deal_t = v->slide_t = v->crt_t = v->grid_flip_t = 1.0f;
+    v->trans = v->food_t = v->flip_t = v->deal_t = v->slide_t = v->crt_t = v->grid_flip_t = v->bits_flip_t = v->bits_pop_t = 1.0f;
     v->food_index = -1;
 }
 
@@ -293,6 +295,34 @@ static void on_events(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
             v->spark_pulse = SPARK_PULSE_TICKS;
         }
     }
+    if (ev & APP_EVENT_BIT_FLIP) {
+        const uint8_t now = s->bits.last_was_hit ? 0xFF : s->bits.switches;
+        v->bits_flip_mask = (uint8_t)(now ^ v->prev_bits_switches);
+        if (s->bits.last_was_hit) {
+            v->bits_flip_mask = 0xFF;   /* All levers snap back for the next target. */
+        }
+        v->bits_flip_t = 0;
+        if (s->bits.last_was_hit) {
+            char text[VIEW_FLOATER_TEXT];
+            snprintf(text, sizeof(text), "%u!", s->bits.hits);
+            floater(v, text, 240, 120, acc);
+            burst(v, P_BOLT, 240, 186, 6, 6.0f, 0.3f, c, acc);
+            v->bits_pop_t = 0;
+            pet_eyes_kick(&v->eyes, -5.0f);
+        }
+    }
+    v->prev_bits_switches = s->bits.switches;
+    if (ev & APP_EVENT_BIT_DONE) {
+        if (s->bits.payout) {
+            char text[VIEW_FLOATER_TEXT];
+            snprintf(text, sizeof(text), "+%u", s->bits.payout);
+            floater(v, text, 240, 300, acc);
+            burst(v, P_SQUARE, 240, 260, s->bits.payout >= 20 ? 26 : 10, 8.0f, 0.35f, acc, CONFETTI_WHITE);
+            v->spark_pulse = SPARK_PULSE_TICKS;
+        } else {
+            pet_eyes_shake(&v->eyes);
+        }
+    }
     if (ev & APP_EVENT_BLOCKED) {
         pet_eyes_shake(&v->eyes);
     }
@@ -369,6 +399,9 @@ void pet_view_update(pet_view_t *v, const app_game_snapshot_t *s, uint32_t event
     advance(&v->slide_t, SLIDE_TICKS);
     advance(&v->crt_t, CRT_TICKS);
     advance(&v->grid_flip_t, FLIP_TICKS);
+    advance(&v->bits_flip_t, BITS_FLIP_TICKS);
+    advance(&v->bits_pop_t, FLIP_TICKS);
+    v->arcade_scroll += ((float)s->arcade_row - v->arcade_scroll) * ARCADE_SCROLL_EASE;
     update_food(v, s);
     if (v->spark_pulse) {
         --v->spark_pulse;

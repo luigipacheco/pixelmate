@@ -11,6 +11,7 @@ touch gestures, feeding and the high-low card game.
 | `cards.c` | High-low rules (deal, guess, reveal, cash out) |
 | `slots.c` | Spark Slots: 3 player-stopped reels, pay table |
 | `grid.c` | Spark Grid: 5x5 flip puzzle with row/column hints |
+| `bits.c` | Bit Flip: binary target race with a shrinking timer |
 | `include/app_game_layout.h` | Button and eye geometry shared with the view |
 
 ```c

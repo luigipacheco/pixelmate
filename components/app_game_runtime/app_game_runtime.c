@@ -27,8 +27,8 @@
 
 static const char *TAG = "pixel_pal";
 enum {
-    /* v1 builds could store an all-zero pet (ignored); v2/v3 migrate by prefix. */
-    SAVE_VERSION = 4,
+    /* v1 builds could store an all-zero pet (ignored); v2..v4 migrate by prefix. */
+    SAVE_VERSION = 5,
     SAVE_SOON_MS = 2000,          /* After spending, settings or a goal. */
     SAVE_LATER_MS = 30000,        /* After step/stat drift; limits flash wear. */
     SENSOR_POLL_TICKS = GAME_TICK_HZ,          /* 1 s */
@@ -94,7 +94,8 @@ static raylib_lite_result_t migrate_save(uint16_t old_version, const void *old_d
 {
     const bool v2 = old_version == 2 && old_size == APP_GAME_RECORD_V2_SIZE;
     const bool v3 = old_version == 3 && old_size == APP_GAME_RECORD_V3_SIZE;
-    if ((!v2 && !v3) || new_size != sizeof(app_game_record_t)) {
+    const bool v4 = old_version == 4 && old_size == APP_GAME_RECORD_V4_SIZE;
+    if ((!v2 && !v3 && !v4) || new_size != sizeof(app_game_record_t)) {
         return RAYLIB_LITE_INVALID_VERSION;
     }
     app_game_record_t *record = new_data;
@@ -551,6 +552,8 @@ static int state_json(const void *value, char *output, size_t capacity)
                         "\"happiness\":%u,\"friendship\":%u,\"pixel_style\":%d,\"color\":%u,"
                         "\"cards\":{\"phase\":%d,\"current\":%u,\"pot\":%u,\"streak\":%u,\"result\":%d},"
                         "\"slots\":{\"phase\":%d,\"payout\":%u,\"line\":[%u,%u,%u]},"
+                        "\"bits\":{\"phase\":%d,\"target\":%u,\"switches\":%u,\"hits\":%u,\"payout\":%u,\"best\":%u},"
+                        "\"arcade\":%d,\"arcade_row\":%u,"
                         "\"pointer_x\":%ld,\"pointer_y\":%ld,\"pointer_down\":%s,\"state_hash\":\"%08lx\"}",
                         s.paused ? "paused" : "running", (unsigned long)s.tick,
                         screens[s.screen < APP_SCREEN_COUNT ? s.screen : 0],
@@ -568,6 +571,8 @@ static int state_json(const void *value, char *output, size_t capacity)
                         (int)s.slots.phase, s.slots.payout,
                         app_game_slot_symbol(s.slots.pos_q[0], 0), app_game_slot_symbol(s.slots.pos_q[1], 0),
                         app_game_slot_symbol(s.slots.pos_q[2], 0),
+                        (int)s.bits.phase, s.bits.target, s.bits.switches, s.bits.hits, s.bits.payout, s.bits.best,
+                        (int)s.arcade, s.arcade_row,
                         (long)s.pointer_x, (long)s.pointer_y,
                         s.pointer_down ? "true" : "false", (unsigned long)state_hash(value));
     return size < 0 || (size_t)size >= capacity ? -1 : size;

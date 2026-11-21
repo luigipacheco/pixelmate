@@ -26,6 +26,7 @@ static bool cabinet_unlocked(const app_game_snapshot_t *s, app_arcade_t game)
     case APP_ARCADE_CARDS: return true;
     case APP_ARCADE_SLOTS: return s->owned & APP_OWN_GAME_BIT(APP_GAME_SLOTS);
     case APP_ARCADE_GRID: return s->owned & APP_OWN_GAME_BIT(APP_GAME_GRID);
+    case APP_ARCADE_BITS: return s->owned & APP_OWN_GAME_BIT(APP_GAME_BITS);
     default: return false;
     }
 }
@@ -35,7 +36,8 @@ static const char *cabinet_name(app_arcade_t game)
     switch (game) {
     case APP_ARCADE_CARDS: return "HI-LO";
     case APP_ARCADE_SLOTS: return "SLOTS";
-    default: return "GRID";
+    case APP_ARCADE_GRID: return "GRID";
+    default: return "BITS";
     }
 }
 
@@ -81,6 +83,22 @@ static void attract_slots(const draw_ctx_t *d, int x, int y, int w, uint32_t t)
     }
 }
 
+static void attract_bits(const draw_ctx_t *d, int x, int y, int w, uint32_t t)
+{
+    /* Counts up in binary: the number on top, eight tiny levers below. */
+    const uint8_t value = (uint8_t)((t / 8U) % 256U);
+    char text[4];
+    snprintf(text, sizeof(text), "%u", value);
+    px_text_center(text, x + w / 2, y + 14, 4, d->color, false);
+    const int cell = (w - 8) / 8;
+    for (int i = 0; i < 8; ++i) {
+        const bool on = value & (0x80U >> i);
+        const int bx = x + 4 + i * cell;
+        px_box(bx + 1, y + 54, cell - 2, 36, 1, on ? d->color : px_scale(d->color, 0.35f));
+        DrawRectangle(bx + 3, on ? y + 57 : y + 73, cell - 6, 14, on ? d->accent : px_scale(d->color, 0.2f));
+    }
+}
+
 static void attract_grid(const draw_ctx_t *d, int x, int y, int w, uint32_t t)
 {
     /* A 3x3 board turning tiles one by one; the last one is a dud. */
@@ -120,15 +138,15 @@ static void draw_controls(int x, int y, int w, Color c, Color accent)
     px_box(x + w - 34, y + 12, 16, 12, 0, c);
 }
 
-static void draw_cabinet(const draw_ctx_t *d, int index, int ox)
+static void draw_cabinet(const draw_ctx_t *d, int index, int ox, int oy)
 {
     const app_game_snapshot_t *s = d->snap;
     const app_arcade_t game = (app_arcade_t)(index + 1);
-    const app_rect_t r = app_arcade_cabinet_rect(index);
+    const app_rect_t r = app_arcade_cabinet_rect(index % APP_ARCADE_PER_ROW);
     const bool unlocked = cabinet_unlocked(s, game);
     const Color c = unlocked ? d->color : px_scale(d->color, 0.35f);
     const Color accent = unlocked ? d->accent : px_scale(d->accent, 0.35f);
-    const int x = r.x + ox, y = r.y;
+    const int x = r.x + ox, y = r.y + oy;
     const uint32_t t = d->view->t + (uint32_t)index * 23U;   /* Offset so they don't sync. */
 
     /* Marquee with chasing lights along its bottom edge. */
@@ -148,8 +166,10 @@ static void draw_cabinet(const draw_ctx_t *d, int index, int ox)
             attract_cards(d, sx, sy, sw, t);
         } else if (game == APP_ARCADE_SLOTS) {
             attract_slots(d, sx, sy, sw, t);
-        } else {
+        } else if (game == APP_ARCADE_GRID) {
             attract_grid(d, sx, sy, sw, t);
+        } else {
+            attract_bits(d, sx, sy, sw, t);
         }
     } else {
         px_icon(PX_ICON_LOCK, sx + sw / 2 - 14, sy + SCREEN_H / 2 - 16, 4, c, c, d->gap);
@@ -167,7 +187,8 @@ static void draw_cabinet(const draw_ctx_t *d, int index, int ox)
             px_text_center("COIN", x + r.w / 2, cy + 42, 2, c, false);
         }
     } else {
-        const app_minigame_t id = game == APP_ARCADE_GRID ? APP_GAME_GRID : APP_GAME_SLOTS;
+        const app_minigame_t id = game == APP_ARCADE_GRID ? APP_GAME_GRID
+                                  : (game == APP_ARCADE_BITS ? APP_GAME_BITS : APP_GAME_SLOTS);
         const app_store_item_t *item = app_game_store_item(app_game_store_find(APP_ITEM_GAME, id));
         snprintf(text, sizeof(text), "%u", item ? item->cost : 0);
         const int tw = px_text_width(text, 2);
@@ -176,10 +197,38 @@ static void draw_cabinet(const draw_ctx_t *d, int index, int ox)
     }
 }
 
+enum { ROW_PITCH = 300 };
+
+static void draw_chevron(int cx, int y, bool down, Color c)
+{
+    for (int i = 0; i < 4; ++i) {
+        const int dy = down ? i : 3 - i;
+        DrawRectangle(cx - 12 + i * 3, y + dy * 3, 4, 4, c);
+        DrawRectangle(cx + 8 - i * 3, y + dy * 3, 4, 4, c);
+    }
+}
+
 void screens_draw_arcade(const draw_ctx_t *d, int ox)
 {
+    /* Rows of three; the view eases arcade_scroll toward the chosen row. */
+    const float scroll = d->view->arcade_scroll;
     for (int i = 0; i < APP_ARCADE_CABINETS; ++i) {
-        draw_cabinet(d, i, ox);
+        const int oy = (int)((i / APP_ARCADE_PER_ROW - scroll) * ROW_PITCH);
+        if (oy > -ROW_PITCH && oy < ROW_PITCH) {
+            draw_cabinet(d, i, ox, oy);
+        }
+    }
+    /* Hide rows scrolled out of the cabinet band (top bar and dots draw later). */
+    DrawRectangle(ox, 0, APP_VIEW_W, 148, BLACK);
+    DrawRectangle(ox, 434, APP_VIEW_W, APP_VIEW_H - 434, BLACK);
+    /* Blinking hints that more cabinets sit above or below. */
+    const bool blink = (d->view->t / 15U) % 2U;
+    const int row = d->snap->arcade_row;
+    if (row + 1 < APP_ARCADE_ROWS) {
+        draw_chevron(240 + ox, 436, true, blink ? d->accent : d->dim);
+    }
+    if (row > 0) {
+        draw_chevron(240 + ox, 136, false, blink ? d->accent : d->dim);
     }
 }
 

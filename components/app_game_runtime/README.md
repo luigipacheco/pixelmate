@@ -9,6 +9,7 @@ persists the pet, polls the hardware pedometer and tracks the calendar day.
 | `app_game_runtime.c` | Module ABI, input mapping, save, sensor and day polling |
 | `pet_view.c` | Transitions, particles, floaters, card/food animations, chrome |
 | `pet_screens.c` | Home (pet only), steps ring, feed, cards and slots content |
+| `pet_bits.c` | Bit Flip: target, timer bar, eight switches, score |
 | `pet_grid.c` | Spark Grid board, hints, PLAY/CASH and score |
 | `pet_arcade.c` | Arcade lobby: cabinets, attract-mode demos, EXIT button |
 | `pet_panels.c` | Pull-down menu, style picker, store, daily goal and Wi-Fi panels |

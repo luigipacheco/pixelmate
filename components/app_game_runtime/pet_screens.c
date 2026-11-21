@@ -362,6 +362,7 @@ void screens_draw(const draw_ctx_t *d, app_screen_t screen, int ox)
         case APP_ARCADE_CARDS: draw_cards(d, ox); screens_draw_exit(d, ox); break;
         case APP_ARCADE_SLOTS: draw_slots(d, ox); screens_draw_exit(d, ox); break;
         case APP_ARCADE_GRID: screens_draw_grid(d, ox); screens_draw_exit(d, ox); break;
+        case APP_ARCADE_BITS: screens_draw_bits(d, ox); screens_draw_exit(d, ox); break;
         default: screens_draw_arcade(d, ox); break;
         }
         break;

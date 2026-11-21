@@ -24,6 +24,8 @@ int screens_overlay_height(app_overlay_t overlay);
 const app_store_item_t *screens_next_unlock(const app_game_snapshot_t *snap);
 /** Arcade lobby: the cabinet row (pet_arcade.c). */
 void screens_draw_arcade(const draw_ctx_t *ctx, int ox);
+/** Bit Flip game (pet_bits.c). */
+void screens_draw_bits(const draw_ctx_t *ctx, int ox);
 /** Spark Grid game (pet_grid.c). */
 void screens_draw_grid(const draw_ctx_t *ctx, int ox);
 /** EXIT button shown while a cabinet's game is open. */

@@ -22,6 +22,9 @@ react to how much you walk, what you feed it and how you play with it.
   pixel styles (80–150) and animations (100–300): a spark trail as you walk, a
   dance every 100 steps, star eyes when happy and rainbow eyes while walking.
   The menu shows how many steps until your next unlock; Home stays just the pet.
+- **Bit Flip (unlockable cabinet, 150 sparks):** flip 8 switches (128..1) to
+  match the target number before the timer runs out; every hit brings a new
+  number and a shorter timer. 5 sparks a run; long runs pay much more.
 - **Spark Grid (unlockable cabinet, 200 sparks):** a 5x5 logic flip puzzle.
   Tiles hide x1/x2/x3 or a dud; row/column hints show totals and dud counts.
   5 sparks a round, each flip multiplies the score, CASH banks it.

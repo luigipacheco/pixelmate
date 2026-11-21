@@ -51,6 +51,7 @@ static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay, int arcad
         case 1: return (app_eye_anchor_t) {240, 104, 0.46f};   /* HI-LO */
         case 2: return (app_eye_anchor_t) {240, 98, 0.42f};    /* slots */
         case 3: return (app_eye_anchor_t) {426, 340, 0.26f};   /* grid: watching from the side */
+        case 4: return (app_eye_anchor_t) {240, 96, 0.4f};     /* bit flip */
         default: return (app_eye_anchor_t) {240, 98, 0.42f};   /* lobby: watching */
         }
     default: return (app_eye_anchor_t) {240, 206, 0.0f};   /* steps: no eyes */
@@ -124,6 +125,16 @@ static inline app_rect_t app_grid_tile_rect(int tile)
 static inline app_rect_t app_grid_button_rect(void)
 {
     return (app_rect_t) {382, 126, 88, 64};
+}
+
+/* Bit Flip: 8 switches (128 on the left) and the PLAY button. */
+static inline app_rect_t app_bits_switch_rect(int i)
+{
+    return (app_rect_t) {(int16_t)(16 + i * 56), 262, 52, 92};
+}
+static inline app_rect_t app_bits_button_rect(void)
+{
+    return (app_rect_t) {130, 384, 220, 56};
 }
 
 /* Pull-down menu entries (inside the APP_MENU_H panel). The top row holds the

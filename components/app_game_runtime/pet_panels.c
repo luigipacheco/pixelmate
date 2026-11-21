@@ -191,6 +191,15 @@ static void draw_preview(const draw_ctx_t *d, const app_store_item_t *item, int 
         return;
     }
     case APP_ITEM_GAME:
+        if (item->value == APP_GAME_BITS) {
+            /* "1010" on four tiny levers. */
+            for (int i = 0; i < 4; ++i) {
+                const bool on = !(i & 1);
+                px_box(x + i * 15, y + 14, 13, 32, 1, c);
+                DrawRectangle(x + i * 15 + 3, on ? y + 17 : y + 31, 7, 12, on ? d->accent : c);
+            }
+            return;
+        }
         if (item->value == APP_GAME_GRID) {
             /* A tiny 3x3 board with one dud. */
             for (int i = 0; i < 9; ++i) {

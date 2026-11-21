@@ -38,6 +38,11 @@ typedef struct {
     uint16_t dance_ticks;
     float grid_flip_t;        /* 0..1 flip of the grid tile just turned. */
     uint32_t grid_flipped;    /* Tiles the player flipped this round. */
+    float bits_flip_t;        /* 0..1 lever animation of the switches in bits_flip_mask. */
+    uint8_t bits_flip_mask;
+    uint8_t prev_bits_switches;
+    float bits_pop_t;         /* 0..1 pop of a new Bit Flip target. */
+    float arcade_scroll;      /* Eased arcade row (0 = first row). */
     float crt_t;              /* 0..1 CRT power-on when a cabinet opens, >= 1 idle. */
     uint8_t prev_slot_stopped;  /* Reel-stop bits seen last tick. */
     uint8_t prev_hp;            /* Health seen last tick, for day-change floaters. */

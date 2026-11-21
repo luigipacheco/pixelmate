@@ -137,6 +137,10 @@ static sfx_t pick(uint32_t ev, const app_game_snapshot_t *s, sfx_t *follow, uint
         return SFX_REEL;
     }
     if (ev & APP_EVENT_GRID_DONE) return grid_result(s->grid.result);
+    if (ev & APP_EVENT_BIT_DONE) {
+        return s->bits.payout >= 2 * APP_BITS_COST ? SFX_WIN : (s->bits.payout ? SFX_COINS : SFX_LOSE);
+    }
+    if (ev & APP_EVENT_BIT_FLIP) return s->bits.last_was_hit ? SFX_TILE_BONUS : SFX_TILE;
     if (ev & APP_EVENT_GRID_FLIP) {
         const int t = s->grid.last_flip;
         return t >= 0 && t < APP_GRID_TILES && s->grid.tiles[t] > 1 ? SFX_TILE_BONUS : SFX_TILE;

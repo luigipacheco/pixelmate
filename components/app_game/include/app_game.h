@@ -31,10 +31,15 @@ typedef enum {
     APP_ARCADE_CARDS,      /**< HI-LO, free. */
     APP_ARCADE_SLOTS,      /**< Spark Slots, bought in the store. */
     APP_ARCADE_GRID,       /**< Spark Grid, bought in the store. */
+    APP_ARCADE_BITS,       /**< Bit Flip, bought in the store. */
     APP_ARCADE_COUNT,
 } app_arcade_t;
 
-enum { APP_ARCADE_CABINETS = APP_ARCADE_COUNT - 1 };
+enum {
+    APP_ARCADE_CABINETS = APP_ARCADE_COUNT - 1,
+    APP_ARCADE_PER_ROW = 3,      /**< Cabinets per row; more rows scroll vertically. */
+    APP_ARCADE_ROWS = (APP_ARCADE_CABINETS + APP_ARCADE_PER_ROW - 1) / APP_ARCADE_PER_ROW,
+};
 
 /** Panels that slide down over the swipeable screens. */
 typedef enum {
@@ -144,8 +149,33 @@ typedef enum {
 typedef enum {
     APP_GAME_SLOTS = 0,
     APP_GAME_GRID,
+    APP_GAME_BITS,
     APP_GAME_COUNT,
 } app_minigame_t;
+
+/* ---- Bit Flip: set 8 switches (128..1) to the target before time runs out ---- */
+enum {
+    APP_BITS = 8,
+    APP_BITS_COST = 5,           /**< Sparks per run. */
+};
+
+typedef enum {
+    APP_BITS_READY = 0,
+    APP_BITS_PLAYING,
+    APP_BITS_RESULT,             /**< Run over; payout shown. */
+} app_bits_phase_t;
+
+typedef struct {
+    app_bits_phase_t phase;
+    uint8_t target;              /**< 1..255. */
+    uint8_t switches;            /**< Bit 7 = the 128 switch (leftmost). */
+    uint16_t hits;               /**< Correct answers this run. */
+    uint16_t best;               /**< Best run ever (saved). */
+    uint16_t time_left;          /**< Ticks left for this target. */
+    uint16_t time_limit;         /**< Ticks this target started with. */
+    uint16_t payout;             /**< Sparks paid by the last run. */
+    bool last_was_hit;           /**< The last flip completed the target. */
+} app_bits_snapshot_t;
 
 /* ---- Spark Grid: flip tiles, multiply the score, avoid duds ---- */
 enum {
@@ -279,13 +309,16 @@ enum {
     APP_EVENT_GRID_DONE = 1U << 27,   /**< Round over; see grid.result and payout. */
     APP_EVENT_WIFI_SETUP = 1U << 28,  /**< Runtime: start the Wi-Fi setup hotspot. */
     APP_EVENT_WIFI_STOP = 1U << 29,   /**< Runtime: stop the setup hotspot. */
+    APP_EVENT_BIT_FLIP = 1U << 30,    /**< A switch moved; see bits.last_was_hit. */
+    APP_EVENT_BIT_DONE = 1U << 31,    /**< Bit Flip run over; see bits.payout. */
 };
 
 /** Events that change spendable or configured data and deserve a prompt save. */
 #define APP_EVENTS_SAVE_NOW (APP_EVENT_ATE | APP_EVENT_CARD_DEAL | APP_EVENT_CARD_REVEAL | \
                              APP_EVENT_CASH_OUT | APP_EVENT_SETTINGS | APP_EVENT_GOAL | \
                              APP_EVENT_BOUGHT | APP_EVENT_SLOT_DONE | APP_EVENT_FED | \
-                             APP_EVENT_REVIVED | APP_EVENT_DAY | APP_EVENT_GRID_DONE)
+                             APP_EVENT_REVIVED | APP_EVENT_DAY | APP_EVENT_GRID_DONE | \
+                             APP_EVENT_BIT_DONE)
 
 typedef struct {
     const char *name;   /**< Upper-case label drawable by the pixel font. */
@@ -348,6 +381,8 @@ typedef struct {
     app_cards_snapshot_t cards;
     app_slots_snapshot_t slots;
     app_grid_snapshot_t grid;
+    app_bits_snapshot_t bits;
+    uint8_t arcade_row;         /**< Cabinet row shown in the arcade lobby. */
     uint32_t save_seq;          /**< Increments whenever persistent data changes. */
 } app_game_snapshot_t;
 
@@ -379,11 +414,15 @@ typedef struct {
     uint16_t fed_streak;
     uint8_t sleep_code;         /**< 0 = default 30 s, else 1 + index into the sleep options. */
     uint8_t bright_code;        /**< 0 = default 100 %, else 1 + index into the brightness options. */
+    /* v5 */
+    uint16_t bits_best;         /**< Bit Flip best run (hits). */
+    uint16_t reserved3;
 } app_game_record_t;
 
 /** Sizes of older records (prefixes of the current one), for save migration. */
 #define APP_GAME_RECORD_V2_SIZE 32U
 #define APP_GAME_RECORD_V3_SIZE 36U
+#define APP_GAME_RECORD_V4_SIZE 68U
 
 typedef struct {
     uint16_t width;    /**< Viewport width in pixels, 1..65535. */
