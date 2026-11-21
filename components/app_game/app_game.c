@@ -1,0 +1,553 @@
+// SPDX-License-Identifier: Apache-2.0
+/* Pet model: steps -> sparks, stats, mood, screen navigation and touch rules.
+ * Pure C; drawing and hardware live in app_game_runtime. */
+#include <stdlib.h>
+#include <string.h>
+#include "include/app_game.h"
+#include "include/app_game_layout.h"
+#include "private/cards.h"
+#include "private/pedometer.h"
+
+#define TICKS_PER_SECOND 30U
+enum {
+    STEP_GOAL = 8000,
+    STEPS_PER_SPARK = 20,
+    START_SPARKS = 30,
+    START_HUNGER = 70,
+    START_HAPPINESS = 70,
+    STAT_MAX = 100,
+    FRIENDSHIP_MAX = 999,
+    LOW_STAT = 25,
+    GOAL_FRIENDSHIP = 50,
+    FEED_FRIENDSHIP = 2,
+    PET_HAPPINESS = 3,
+    MAX_SENSOR_DELTA = 100000,   /* Larger jumps are treated as a sensor reset. */
+};
+enum {
+    HUNGER_DECAY_TICKS = 120 * TICKS_PER_SECOND,
+    HAPPY_DECAY_TICKS = 180 * TICKS_PER_SECOND,
+    SLEEP_AFTER_TICKS = 90 * TICKS_PER_SECOND,
+    WALK_MOOD_TICKS = 3 * TICKS_PER_SECOND,
+    PET_COOLDOWN_TICKS = 10,
+    REACT_PET_TICKS = 40,
+    REACT_EAT_TICKS = 66,
+    REACT_GRUMPY_TICKS = 34,
+    REACT_WIN_TICKS = 44,
+    REACT_LOSE_TICKS = 60,
+    REACT_SURPRISE_TICKS = 26,
+    REACT_GOAL_TICKS = 90,
+};
+
+static const app_food_t s_foods[APP_FOOD_COUNT] = {
+    {"CELL", 10, 15, 2},
+    {"CHIP", 25, 35, 6},
+    {"MEGA", 60, 80, 20},
+};
+
+struct app_game {
+    app_game_config_t config;
+    uint32_t tick;
+    bool paused;
+    int32_t pointer_x, pointer_y;
+    bool pointer_down;
+    int32_t press_x, press_y;
+    app_screen_t screen;
+    uint32_t events;
+    uint32_t save_seq;
+
+    uint32_t steps_total, steps_today, sparks;
+    int32_t day;
+    uint16_t spark_progress, friendship;
+    uint8_t hunger, happiness;
+    bool goal_awarded;
+    app_pixel_style_t pixel_style;
+    uint8_t color_index;
+    int8_t last_food;
+
+    uint32_t idle_ticks, walk_ticks, hunger_timer, happy_timer;
+    app_mood_t reaction;
+    uint16_t reaction_ticks, pet_cooldown;
+    app_mood_t mood;
+
+    pedometer_t pedometer;
+    bool has_sensor, sensor_valid;
+    uint32_t sensor_last;
+    cards_t cards;
+};
+
+static uint8_t add_stat(uint8_t value, int delta)
+{
+    int v = (int)value + delta;
+    return (uint8_t)(v < 0 ? 0 : (v > STAT_MAX ? STAT_MAX : v));
+}
+
+static void add_friendship(app_game_handle_t g, int delta)
+{
+    int v = (int)g->friendship + delta;
+    g->friendship = (uint16_t)(v < 0 ? 0 : (v > FRIENDSHIP_MAX ? FRIENDSHIP_MAX : v));
+}
+
+static void react(app_game_handle_t g, app_mood_t mood, uint16_t ticks)
+{
+    g->reaction = mood;
+    g->reaction_ticks = ticks;
+}
+
+static void changed(app_game_handle_t g)
+{
+    ++g->save_seq;
+}
+
+static void credit_steps(app_game_handle_t g, uint32_t steps)
+{
+    if (!steps) {
+        return;
+    }
+    g->steps_total += steps;
+    g->steps_today += steps;
+    uint32_t progress = g->spark_progress + steps;
+    if (progress >= STEPS_PER_SPARK) {
+        g->sparks += progress / STEPS_PER_SPARK;
+        progress %= STEPS_PER_SPARK;
+        g->events |= APP_EVENT_SPARK;
+    }
+    g->spark_progress = (uint16_t)progress;
+    g->walk_ticks = 0;
+    g->idle_ticks = 0;
+    g->events |= APP_EVENT_STEP;
+    if (!g->goal_awarded && g->steps_today >= STEP_GOAL) {
+        g->goal_awarded = true;
+        add_friendship(g, GOAL_FRIENDSHIP);
+        g->happiness = STAT_MAX;
+        react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS);
+        g->events |= APP_EVENT_GOAL;
+    }
+    changed(g);
+}
+
+static void fresh_pet(app_game_handle_t g)
+{
+    g->screen = APP_SCREEN_HOME;
+    g->steps_total = g->steps_today = 0;
+    g->day = 0;
+    g->sparks = START_SPARKS;
+    g->spark_progress = 0;
+    g->friendship = 0;
+    g->hunger = START_HUNGER;
+    g->happiness = START_HAPPINESS;
+    g->goal_awarded = false;
+    g->pixel_style = APP_PIXEL_CHUNKY;
+    g->color_index = 0;
+    g->last_food = -1;
+    g->idle_ticks = 0;
+    g->walk_ticks = WALK_MOOD_TICKS;
+    g->hunger_timer = g->happy_timer = 0;
+    g->reaction_ticks = g->pet_cooldown = 0;
+    g->mood = APP_MOOD_IDLE;
+    g->cards.view.best_streak = 0;
+    cards_init(&g->cards, g->cards.rng);
+    pedometer_reset(&g->pedometer);
+}
+
+app_game_err_t app_game_create(const app_game_config_t *config, app_game_handle_t *ret_handle)
+{
+    if (!ret_handle) {
+        return APP_GAME_INVALID_ARGUMENT;
+    }
+    *ret_handle = NULL;
+    if (!config || !config->width || !config->height) {
+        return APP_GAME_INVALID_ARGUMENT;
+    }
+    app_game_handle_t g = calloc(1, sizeof(*g));
+    if (!g) {
+        return APP_GAME_NO_MEMORY;
+    }
+    g->config = *config;
+    cards_init(&g->cards, config->seed);
+    fresh_pet(g);
+    *ret_handle = g;
+    return APP_GAME_OK;
+}
+
+void app_game_destroy(app_game_handle_t *handle)
+{
+    if (handle) {
+        free(*handle);
+        *handle = NULL;
+    }
+}
+
+void app_game_reset(app_game_handle_t g)
+{
+    if (g) {
+        fresh_pet(g);
+        g->events |= APP_EVENT_SETTINGS | APP_EVENT_SCREEN;
+        changed(g);
+    }
+}
+
+void app_game_set_paused(app_game_handle_t g, bool paused)
+{
+    if (g) {
+        g->paused = paused;
+    }
+}
+
+static void go_screen(app_game_handle_t g, int delta)
+{
+    int next = (int)g->screen + delta;
+    if (next < 0 || next >= APP_SCREEN_COUNT) {
+        return;
+    }
+    g->screen = (app_screen_t)next;
+    g->events |= APP_EVENT_SCREEN;
+}
+
+static void tap_home(app_game_handle_t g, int32_t x, int32_t y)
+{
+    if (!app_rect_hit(app_home_eyes_rect(), x, y) || g->pet_cooldown) {
+        return;
+    }
+    g->pet_cooldown = PET_COOLDOWN_TICKS;
+    g->happiness = add_stat(g->happiness, PET_HAPPINESS);
+    add_friendship(g, 1);
+    react(g, APP_MOOD_HAPPY, REACT_PET_TICKS);
+    g->events |= APP_EVENT_PETTED;
+    changed(g);
+}
+
+static void tap_feed(app_game_handle_t g, int32_t x, int32_t y)
+{
+    for (int i = 0; i < APP_FOOD_COUNT; ++i) {
+        if (!app_rect_hit(app_feed_item_rect(i), x, y)) {
+            continue;
+        }
+        const app_food_t *food = &s_foods[i];
+        if (g->sparks < food->cost) {
+            react(g, APP_MOOD_GRUMPY, REACT_GRUMPY_TICKS);
+            g->events |= APP_EVENT_NO_SPARKS;
+            return;
+        }
+        g->sparks -= food->cost;
+        g->hunger = add_stat(g->hunger, food->hunger);
+        g->happiness = add_stat(g->happiness, food->happiness);
+        add_friendship(g, FEED_FRIENDSHIP);
+        g->last_food = (int8_t)i;
+        react(g, APP_MOOD_EATING, REACT_EAT_TICKS);
+        g->events |= APP_EVENT_ATE;
+        changed(g);
+        return;
+    }
+}
+
+static void tap_cards(app_game_handle_t g, int32_t x, int32_t y)
+{
+    const app_cards_phase_t phase = g->cards.view.phase;
+    if (phase == APP_CARDS_READY && app_rect_hit(app_cards_deal_rect(), x, y)) {
+        const uint32_t cost = cards_deal(&g->cards, g->sparks);
+        if (!cost) {
+            react(g, APP_MOOD_GRUMPY, REACT_GRUMPY_TICKS);
+            g->events |= APP_EVENT_NO_SPARKS;
+            return;
+        }
+        g->sparks -= cost;
+        g->events |= APP_EVENT_CARD_DEAL;
+        changed(g);
+        return;
+    }
+    if (phase != APP_CARDS_GUESS) {
+        return;
+    }
+    if (app_rect_hit(app_cards_cash_rect(), x, y)) {
+        const uint32_t won = cards_cash_out(&g->cards);
+        if (won) {
+            g->sparks += won;
+            react(g, APP_MOOD_HAPPY, REACT_WIN_TICKS);
+            g->events |= APP_EVENT_CASH_OUT;
+            changed(g);
+        }
+        return;
+    }
+    bool guessed = false;
+    if (app_rect_hit(app_cards_hi_rect(), x, y)) {
+        guessed = cards_guess(&g->cards, CARDS_GUESS_HIGHER);
+    } else if (app_rect_hit(app_cards_lo_rect(), x, y)) {
+        guessed = cards_guess(&g->cards, CARDS_GUESS_LOWER);
+    }
+    if (!guessed) {
+        return;
+    }
+    g->events |= APP_EVENT_CARD_REVEAL;
+    switch (g->cards.view.result) {
+    case APP_CARD_RESULT_WIN: react(g, APP_MOOD_HAPPY, REACT_WIN_TICKS); break;
+    case APP_CARD_RESULT_LOSE: react(g, APP_MOOD_SAD, REACT_LOSE_TICKS); break;
+    default: react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS); break;
+    }
+    changed(g);
+}
+
+static void tap_settings(app_game_handle_t g, int32_t x, int32_t y)
+{
+    for (int i = 0; i < APP_PIXEL_COUNT; ++i) {
+        if (app_rect_hit(app_settings_pixel_rect(i), x, y)) {
+            g->pixel_style = (app_pixel_style_t)i;
+            g->events |= APP_EVENT_SETTINGS;
+            react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
+            changed(g);
+            return;
+        }
+    }
+    for (int i = 0; i < APP_COLOR_COUNT; ++i) {
+        if (app_rect_hit(app_settings_color_rect(i), x, y)) {
+            g->color_index = (uint8_t)i;
+            g->events |= APP_EVENT_SETTINGS;
+            react(g, APP_MOOD_HAPPY, REACT_SURPRISE_TICKS);
+            changed(g);
+            return;
+        }
+    }
+}
+
+static void handle_tap(app_game_handle_t g, int32_t x, int32_t y)
+{
+    switch (g->screen) {
+    case APP_SCREEN_HOME: tap_home(g, x, y); break;
+    case APP_SCREEN_FEED: tap_feed(g, x, y); break;
+    case APP_SCREEN_CARDS: tap_cards(g, x, y); break;
+    case APP_SCREEN_SETTINGS: tap_settings(g, x, y); break;
+    default: break;
+    }
+}
+
+void app_game_set_pointer(app_game_handle_t g, int32_t x, int32_t y, bool pressed)
+{
+    if (!g) {
+        return;
+    }
+    x = x < 0 ? 0 : (x >= g->config.width ? g->config.width - 1 : x);
+    y = y < 0 ? 0 : (y >= g->config.height ? g->config.height - 1 : y);
+    const bool was_down = g->pointer_down;
+    g->pointer_x = x;
+    g->pointer_y = y;
+    g->pointer_down = pressed;
+    if (g->paused) {
+        return;
+    }
+    if (pressed && !was_down) {
+        g->press_x = x;
+        g->press_y = y;
+        if (g->mood == APP_MOOD_SLEEPY) {
+            react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
+            g->events |= APP_EVENT_WOKE;
+        }
+        g->idle_ticks = 0;
+        return;
+    }
+    if (pressed || !was_down) {
+        return;
+    }
+    const int32_t dx = x - g->press_x;
+    const int32_t dy = y - g->press_y;
+    const int32_t adx = abs(dx), ady = abs(dy);
+    if (adx >= APP_SWIPE_MIN_PX && adx > ady) {
+        go_screen(g, dx < 0 ? 1 : -1);
+    } else if (adx <= APP_TAP_SLOP_PX && ady <= APP_TAP_SLOP_PX) {
+        handle_tap(g, g->press_x, g->press_y);
+    }
+}
+
+void app_game_add_accel(app_game_handle_t g, float x_g, float y_g, float z_g)
+{
+    if (!g || g->has_sensor) {
+        return;
+    }
+    credit_steps(g, pedometer_sample(&g->pedometer, x_g, y_g, z_g, g->tick));
+}
+
+void app_game_set_sensor_steps(app_game_handle_t g, uint32_t cumulative)
+{
+    if (!g) {
+        return;
+    }
+    g->has_sensor = true;
+    if (!g->sensor_valid || cumulative < g->sensor_last
+            || cumulative - g->sensor_last > MAX_SENSOR_DELTA) {
+        g->sensor_valid = true;
+        g->sensor_last = cumulative;
+        return;
+    }
+    const uint32_t delta = cumulative - g->sensor_last;
+    g->sensor_last = cumulative;
+    credit_steps(g, delta);
+}
+
+void app_game_add_steps(app_game_handle_t g, uint32_t steps)
+{
+    if (g) {
+        credit_steps(g, steps);
+    }
+}
+
+void app_game_set_day(app_game_handle_t g, int32_t day)
+{
+    if (!g || day <= 0 || day == g->day) {
+        return;
+    }
+    if (g->day > 0) {
+        g->steps_today = 0;
+        g->goal_awarded = false;
+    }
+    g->day = day;
+    changed(g);
+}
+
+static app_mood_t compute_mood(const struct app_game *g)
+{
+    if (g->reaction_ticks) {
+        return g->reaction;
+    }
+    if (g->walk_ticks < WALK_MOOD_TICKS) {
+        return APP_MOOD_WALK;
+    }
+    if (g->idle_ticks > SLEEP_AFTER_TICKS) {
+        return APP_MOOD_SLEEPY;
+    }
+    if (g->screen == APP_SCREEN_CARDS && g->cards.view.phase == APP_CARDS_GUESS) {
+        return APP_MOOD_THINKING;
+    }
+    if (g->hunger < LOW_STAT) {
+        return APP_MOOD_HUNGRY;
+    }
+    if (g->happiness < LOW_STAT) {
+        return APP_MOOD_SAD;
+    }
+    return APP_MOOD_IDLE;
+}
+
+static void decay_stats(app_game_handle_t g)
+{
+    if (++g->hunger_timer >= HUNGER_DECAY_TICKS) {
+        g->hunger_timer = 0;
+        g->hunger = add_stat(g->hunger, -1);
+        changed(g);
+    }
+    const uint32_t happy_period = g->hunger < LOW_STAT ? HAPPY_DECAY_TICKS / 2 : HAPPY_DECAY_TICKS;
+    if (++g->happy_timer >= happy_period) {
+        g->happy_timer = 0;
+        g->happiness = add_stat(g->happiness, -1);
+        changed(g);
+    }
+}
+
+void app_game_update(app_game_handle_t g)
+{
+    if (!g || g->paused) {
+        return;
+    }
+    ++g->tick;
+    if (g->walk_ticks < WALK_MOOD_TICKS) {
+        ++g->walk_ticks;
+    }
+    if (!g->pointer_down && g->idle_ticks <= SLEEP_AFTER_TICKS) {
+        ++g->idle_ticks;
+    }
+    if (g->reaction_ticks) {
+        --g->reaction_ticks;
+    }
+    if (g->pet_cooldown) {
+        --g->pet_cooldown;
+    }
+    decay_stats(g);
+    const uint32_t won = cards_update(&g->cards, &g->events);
+    if (won) {
+        g->sparks += won;
+        react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS);
+        changed(g);
+    }
+    g->mood = compute_mood(g);
+}
+
+app_game_snapshot_t app_game_read(app_game_handle_t g)
+{
+    if (!g) {
+        return (app_game_snapshot_t) {
+            0
+        };
+    }
+    return (app_game_snapshot_t) {
+        .tick = g->tick,
+        .pointer_x = g->pointer_x,
+        .pointer_y = g->pointer_y,
+        .pointer_down = g->pointer_down,
+        .paused = g->paused,
+        .screen = g->screen,
+        .mood = g->mood,
+        .steps_total = g->steps_total,
+        .steps_today = g->steps_today,
+        .step_goal = STEP_GOAL,
+        .sparks = g->sparks,
+        .hunger = g->hunger,
+        .happiness = g->happiness,
+        .friendship = g->friendship,
+        .pixel_style = g->pixel_style,
+        .color_index = g->color_index,
+        .last_food = g->last_food,
+        .cards = g->cards.view,
+        .save_seq = g->save_seq,
+    };
+}
+
+uint32_t app_game_take_events(app_game_handle_t g)
+{
+    if (!g) {
+        return 0;
+    }
+    const uint32_t events = g->events;
+    g->events = 0;
+    return events;
+}
+
+const app_food_t *app_game_food(int index)
+{
+    return index >= 0 && index < APP_FOOD_COUNT ? &s_foods[index] : NULL;
+}
+
+void app_game_export(app_game_handle_t g, app_game_record_t *r)
+{
+    if (!g || !r) {
+        return;
+    }
+    memset(r, 0, sizeof(*r));
+    r->steps_total = g->steps_total;
+    r->steps_today = g->steps_today;
+    r->day = g->day;
+    r->sparks = g->sparks;
+    r->spark_progress = g->spark_progress;
+    r->friendship = g->friendship;
+    r->hunger = g->hunger;
+    r->happiness = g->happiness;
+    r->pixel_style = (uint8_t)g->pixel_style;
+    r->color_index = g->color_index;
+    r->best_streak = g->cards.view.best_streak;
+    r->goal_awarded = g->goal_awarded;
+}
+
+void app_game_import(app_game_handle_t g, const app_game_record_t *r)
+{
+    if (!g || !r) {
+        return;
+    }
+    g->steps_total = r->steps_total;
+    g->steps_today = r->steps_today;
+    g->day = r->day > 0 ? r->day : 0;
+    g->sparks = r->sparks;
+    g->spark_progress = r->spark_progress < STEPS_PER_SPARK ? r->spark_progress : 0;
+    g->friendship = r->friendship > FRIENDSHIP_MAX ? FRIENDSHIP_MAX : r->friendship;
+    g->hunger = r->hunger > STAT_MAX ? STAT_MAX : r->hunger;
+    g->happiness = r->happiness > STAT_MAX ? STAT_MAX : r->happiness;
+    g->pixel_style = r->pixel_style < APP_PIXEL_COUNT ? (app_pixel_style_t)r->pixel_style : APP_PIXEL_CHUNKY;
+    g->color_index = r->color_index < APP_COLOR_COUNT ? r->color_index : 0;
+    g->cards.view.best_streak = r->best_streak;
+    g->goal_awarded = r->goal_awarded != 0;
+    g->events |= APP_EVENT_SETTINGS;
+}
