@@ -5,7 +5,8 @@ built on Raylib Lite Engine. The pet is a pair of pixel-art robot eyes that
 react to how much you walk, what you feed it and how you play with it.
 
 - **Steps → sparks:** the BMI270's on-chip step counter keeps counting while
-  the pet is idle; every 20 steps earns 1 spark. Daily goal: 8000 steps.
+  the pet is idle; every 20 steps earns 1 spark. Daily goal: 8000 steps by
+  default, adjustable from 1000 to 30000 in the Goal panel.
 - **Feed:** spend sparks on CELL (10), CHIP (25) or MEGA (60) snacks.
 - **Cards:** high-low. Deal for 5 sparks, each right guess doubles the pot,
   cash out any time (auto cash-out after 5 wins).
@@ -20,7 +21,7 @@ react to how much you walk, what you feed it and how you play with it.
 - Progress is saved to NVS.
 
 Swipe left/right between Home, Steps, Feed and Cards. Pull down from the top
-edge for the menu (Store, Style); swipe up to close. Tap the eyes to pet.
+edge for the menu (Store, Style, Goal); swipe up to close. Tap the eyes to pet.
 
 ## Build and run
 

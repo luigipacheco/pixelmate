@@ -285,7 +285,7 @@ static int state_json(const void *value, char *output, size_t capacity)
         return -1;
     }
     static const char *const screens[APP_SCREEN_COUNT] = {"home", "steps", "feed", "cards"};
-    static const char *const overlays[APP_OVERLAY_COUNT] = {"none", "menu", "style", "store"};
+    static const char *const overlays[APP_OVERLAY_COUNT] = {"none", "menu", "style", "store", "goal"};
     static const char *const moods[APP_MOOD_COUNT] = {
         "idle", "happy", "sleepy", "hungry", "sad", "walk", "eating", "thinking", "surprised", "grumpy"
     };

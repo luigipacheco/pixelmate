@@ -31,6 +31,7 @@ typedef enum {
     APP_OVERLAY_MENU,      /**< Pulled down from the top edge. */
     APP_OVERLAY_STYLE,     /**< Pick owned pixel style and color. */
     APP_OVERLAY_STORE,     /**< Buy colors, styles and animations with sparks. */
+    APP_OVERLAY_GOAL,      /**< Adjust the daily step goal. */
     APP_OVERLAY_COUNT,
 } app_overlay_t;
 
@@ -60,6 +61,10 @@ enum {
     APP_FOOD_COUNT = 3,
     APP_CARDS_DEAL_COST = 5,     /**< Sparks. */
     APP_STEPS_PER_SPARK = 20,
+    APP_GOAL_DEFAULT = 8000,     /**< Steps per day. */
+    APP_GOAL_MIN = 1000,
+    APP_GOAL_MAX = 30000,
+    APP_GOAL_STEP = 1000,        /**< Adjustment per +/- tap. */
 };
 
 /** Unlockable animations, bought in the store and toggled on/off. */
@@ -190,7 +195,7 @@ typedef struct {
     uint8_t best_streak;
     uint8_t goal_awarded;
     uint8_t anims_on;
-    uint8_t reserved;
+    uint8_t goal_k;             /**< Daily goal in thousands of steps; 0 = default. */
 } app_game_record_t;
 
 typedef struct {

@@ -23,7 +23,7 @@ enum {
     APP_TAP_SLOP_PX = 28,     /**< Movement still accepted as a tap. */
     APP_PULL_ZONE_H = 90,     /**< A downward drag starting above this opens the menu. */
     APP_PULL_MIN_PX = 70,     /**< Vertical travel that opens/closes a panel. */
-    APP_MENU_H = 290,         /**< Height of the pull-down menu panel. */
+    APP_MENU_H = 330,         /**< Height of the pull-down menu panel. */
 };
 
 /* Eye placement: center and scale relative to the home eyes (0 = hidden). */
@@ -35,9 +35,10 @@ typedef struct {
 static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay)
 {
     switch (overlay) {
-    case 1: return (app_eye_anchor_t) {240, 388, 0.5f};    /* menu: peeking below */
+    case 1: return (app_eye_anchor_t) {240, 398, 0.46f};   /* menu: peeking below */
     case 2: return (app_eye_anchor_t) {240, 160, 0.72f};   /* style preview */
     case 3: return (app_eye_anchor_t) {240, 140, 0.0f};    /* store: hidden */
+    case 4: return (app_eye_anchor_t) {240, 400, 0.42f};   /* goal: watching the number */
     default: break;
     }
     switch (screen) {
@@ -82,11 +83,25 @@ static inline app_rect_t app_cards_slot_rect(int slot)
 /* Pull-down menu entries (inside the APP_MENU_H panel). */
 static inline app_rect_t app_menu_store_rect(void)
 {
-    return (app_rect_t) {40, 76, 400, 76};
+    return (app_rect_t) {40, 64, 400, 66};
 }
 static inline app_rect_t app_menu_style_rect(void)
 {
-    return (app_rect_t) {40, 168, 400, 76};
+    return (app_rect_t) {40, 142, 400, 66};
+}
+static inline app_rect_t app_menu_goal_rect(void)
+{
+    return (app_rect_t) {40, 220, 400, 66};
+}
+
+/* Daily goal panel. */
+static inline app_rect_t app_goal_minus_rect(void)
+{
+    return (app_rect_t) {40, 222, 150, 84};
+}
+static inline app_rect_t app_goal_plus_rect(void)
+{
+    return (app_rect_t) {290, 222, 150, 84};
 }
 
 /* Shared by the style and store panels. */

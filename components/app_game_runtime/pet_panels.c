@@ -49,10 +49,13 @@ static void draw_menu(const draw_ctx_t *d, int oy)
     DrawRectangle(0, oy + APP_MENU_H - 4, APP_VIEW_W, 4, d->color);
 
     const app_rect_t store = app_menu_store_rect(), style = app_menu_style_rect();
-    screens_button(d, store, 0, oy, "STORE", 5, d->color, true);
-    px_icon(PX_ICON_BOLT, store.x + 24, store.y + oy + 17, 6, INK, INK, d->gap);
-    screens_button(d, style, 0, oy, "STYLE", 5, d->color, false);
-    px_icon(PX_ICON_EYE, style.x + 22, style.y + oy + 20, 5, d->color, d->accent, d->gap);
+    const app_rect_t goal = app_menu_goal_rect();
+    screens_button(d, store, 0, oy, "STORE", 4, d->color, true);
+    px_icon(PX_ICON_BOLT, store.x + 26, store.y + oy + 15, 5, INK, INK, d->gap);
+    screens_button(d, style, 0, oy, "STYLE", 4, d->color, false);
+    px_icon(PX_ICON_EYE, style.x + 20, style.y + oy + 21, 4, d->color, d->accent, d->gap);
+    screens_button(d, goal, 0, oy, "GOAL", 4, d->color, false);
+    px_icon(PX_ICON_SHOE, goal.x + 22, goal.y + oy + 21, 4, d->color, d->accent, d->gap);
 
     const app_store_item_t *next = screens_next_unlock(s);
     char text[40];
@@ -64,8 +67,8 @@ static void draw_menu(const draw_ctx_t *d, int oy)
         snprintf(text, sizeof(text), "%s IN %lu STEPS", next->name,
                  (unsigned long)(next->cost - s->sparks) * APP_STEPS_PER_SPARK);
     }
-    px_text_center(text, 240, oy + 252, 2, d->accent, false);
-    draw_grabber(oy + APP_MENU_H - 20, d->dim);
+    px_text_center(text, 240, oy + 296, 2, d->accent, false);
+    draw_grabber(oy + APP_MENU_H - 18, d->dim);
 }
 
 /* ---- Shared panel header --------------------------------------------- */
@@ -223,12 +226,32 @@ static void draw_store(const draw_ctx_t *d, int oy)
     }
 }
 
+/* ---- Daily goal ------------------------------------------------------ */
+
+static void draw_goal(const draw_ctx_t *d, int oy)
+{
+    const app_game_snapshot_t *s = d->snap;
+    char text[24];
+    draw_header(d, oy, "DAILY GOAL");
+    snprintf(text, sizeof(text), "%lu", (unsigned long)s->step_goal);
+    px_text_center(text, 240, oy + 92, 9, d->color, d->gap);
+    px_text_center("STEPS A DAY", 240, oy + 168, 2, d->dim, false);
+
+    const bool can_down = s->step_goal > APP_GOAL_MIN, can_up = s->step_goal < APP_GOAL_MAX;
+    screens_button(d, app_goal_minus_rect(), 0, oy, "-", 8, can_down ? d->color : d->dim, false);
+    screens_button(d, app_goal_plus_rect(), 0, oy, "+", 8, can_up ? d->color : d->dim, can_up);
+
+    snprintf(text, sizeof(text), "TODAY %lu", (unsigned long)s->steps_today);
+    px_text_center(text, 240, oy + 326, 3, s->steps_today >= s->step_goal ? d->accent : d->dim, d->gap);
+}
+
 void screens_draw_overlay(const draw_ctx_t *d, app_overlay_t overlay, int oy)
 {
     switch (overlay) {
     case APP_OVERLAY_MENU: draw_menu(d, oy); break;
     case APP_OVERLAY_STYLE: draw_style(d, oy); break;
     case APP_OVERLAY_STORE: draw_store(d, oy); break;
+    case APP_OVERLAY_GOAL: draw_goal(d, oy); break;
     default: break;
     }
 }

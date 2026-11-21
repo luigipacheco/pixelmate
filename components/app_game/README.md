@@ -29,13 +29,15 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
 ## Units and rules
 
 - Ticks are 30 Hz updates and wrap modulo 2^32. Coordinates are panel pixels, clamped.
-- 20 steps earn 1 spark. The daily goal is 8000 steps; reaching it gives friendship.
+- 20 steps earn 1 spark. The daily goal defaults to 8000 steps and is set in the
+  Goal panel (1000..30000 in 1000-step taps); reaching it gives friendship and
+  full happiness once per day. Changing the goal never re-awards the same day.
 - Hunger (fullness) drops 1 point every 2 minutes, happiness every 3 minutes
   (twice as fast while hungry). Petting, food and card wins raise them.
 - A swipe is at least 70 px of horizontal travel; a tap moves at most 28 px.
   Left/right swipes move between Home, Steps, Feed and Cards.
 - A downward drag (>= 70 px) starting in the top 90 px opens the menu overlay;
-  an upward drag closes any overlay. The menu leads to Style and Store; their
+  an upward drag closes any overlay. The menu leads to Store, Style and Goal; their
   BACK button returns to the menu. In the store, left/right swipes change page.
 - Store: colors, pixel styles and animations cost sparks (see `s_store` in
   `app_game.c`). Lime and chunky are free. Buying deducts sparks and equips the

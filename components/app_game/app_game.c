@@ -10,7 +10,6 @@
 
 #define TICKS_PER_SECOND 30U
 enum {
-    STEP_GOAL = 8000,
     STEPS_PER_SPARK = APP_STEPS_PER_SPARK,
     START_SPARKS = 30,
     START_HUNGER = 70,
@@ -75,6 +74,7 @@ struct app_game {
     uint8_t store_page;
     uint32_t owned;
     uint8_t anims_on;
+    uint32_t step_goal;
     uint32_t events;
     uint32_t save_seq;
 
@@ -142,7 +142,7 @@ static void credit_steps(app_game_handle_t g, uint32_t steps)
     g->walk_ticks = 0;
     g->idle_ticks = 0;
     g->events |= APP_EVENT_STEP;
-    if (!g->goal_awarded && g->steps_today >= STEP_GOAL) {
+    if (!g->goal_awarded && g->steps_today >= g->step_goal) {
         g->goal_awarded = true;
         add_friendship(g, GOAL_FRIENDSHIP);
         g->happiness = STAT_MAX;
@@ -159,6 +159,7 @@ static void fresh_pet(app_game_handle_t g)
     g->store_page = 0;
     g->owned = FREE_OWNED;
     g->anims_on = 0;
+    g->step_goal = APP_GOAL_DEFAULT;
     g->steps_total = g->steps_today = 0;
     g->day = 0;
     g->sparks = START_SPARKS;
@@ -431,12 +432,37 @@ static void tap_store(app_game_handle_t g, int32_t x, int32_t y)
     }
 }
 
+/* Goal changes never re-award today's bonus: goal_awarded stays set until the
+ * day rolls over, and a lowered goal pays out only on the next counted step. */
+static void tap_goal(app_game_handle_t g, int32_t x, int32_t y)
+{
+    if (app_rect_hit(app_panel_back_rect(), x, y)) {
+        set_overlay(g, APP_OVERLAY_MENU);
+        return;
+    }
+    uint32_t goal = g->step_goal;
+    if (app_rect_hit(app_goal_minus_rect(), x, y) && goal > APP_GOAL_MIN) {
+        goal -= APP_GOAL_STEP;
+        react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
+    } else if (app_rect_hit(app_goal_plus_rect(), x, y) && goal < APP_GOAL_MAX) {
+        goal += APP_GOAL_STEP;
+        react(g, APP_MOOD_HAPPY, REACT_SURPRISE_TICKS);
+    } else {
+        return;
+    }
+    g->step_goal = goal;
+    g->events |= APP_EVENT_SETTINGS;
+    changed(g);
+}
+
 static void tap_menu(app_game_handle_t g, int32_t x, int32_t y)
 {
     if (app_rect_hit(app_menu_store_rect(), x, y)) {
         set_overlay(g, APP_OVERLAY_STORE);
     } else if (app_rect_hit(app_menu_style_rect(), x, y)) {
         set_overlay(g, APP_OVERLAY_STYLE);
+    } else if (app_rect_hit(app_menu_goal_rect(), x, y)) {
+        set_overlay(g, APP_OVERLAY_GOAL);
     } else if (y >= APP_MENU_H) {
         set_overlay(g, APP_OVERLAY_NONE);
     }
@@ -448,6 +474,7 @@ static void handle_tap(app_game_handle_t g, int32_t x, int32_t y)
     case APP_OVERLAY_MENU: tap_menu(g, x, y); return;
     case APP_OVERLAY_STYLE: tap_style(g, x, y); return;
     case APP_OVERLAY_STORE: tap_store(g, x, y); return;
+    case APP_OVERLAY_GOAL: tap_goal(g, x, y); return;
     default: break;
     }
     switch (g->screen) {
@@ -652,7 +679,7 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .anims_on = g->anims_on,
         .steps_total = g->steps_total,
         .steps_today = g->steps_today,
-        .step_goal = STEP_GOAL,
+        .step_goal = g->step_goal,
         .sparks = g->sparks,
         .hunger = g->hunger,
         .happiness = g->happiness,
@@ -720,6 +747,7 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->goal_awarded = g->goal_awarded;
     r->owned = g->owned;
     r->anims_on = g->anims_on;
+    r->goal_k = (uint8_t)(g->step_goal / 1000U);
 }
 
 void app_game_import(app_game_handle_t g, const app_game_record_t *r)
@@ -748,6 +776,8 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
                      ? (app_pixel_style_t)r->pixel_style : APP_PIXEL_CHUNKY;
     g->color_index = r->color_index < APP_COLOR_COUNT && (g->owned & APP_OWN_COLOR_BIT(r->color_index))
                      ? r->color_index : 0;
+    const uint32_t goal = r->goal_k * 1000UL;
+    g->step_goal = goal >= APP_GOAL_MIN && goal <= APP_GOAL_MAX ? goal : APP_GOAL_DEFAULT;
     g->cards.view.best_streak = r->best_streak;
     g->goal_awarded = r->goal_awarded != 0;
     g->events |= APP_EVENT_SETTINGS;
