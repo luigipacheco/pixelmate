@@ -37,6 +37,7 @@ enum {
     REACT_SURPRISE_TICKS = 26,
     REACT_GOAL_TICKS = 90,
     SLOTS_BIG_WIN = 30,          /* Sparks; bigger wins get the long celebration. */
+    STUCK_TOUCH_TICKS = 10 * TICKS_PER_SECOND,
 };
 
 static const app_food_t s_foods[APP_FOOD_COUNT] = {
@@ -81,6 +82,7 @@ struct app_game {
     app_power_t power;
     uint32_t screen_idle_ticks;   /* Touch-free ticks; steps do not reset it. */
     bool swallow_touch;           /* The touch that woke the screen does nothing else. */
+    uint32_t pointer_still_ticks; /* Ticks since the last pointer sample while pressed. */
     int8_t battery_pct;
     bool battery_charging;
     uint32_t events;
@@ -384,7 +386,12 @@ static uint32_t doze_after_ticks(const struct app_game *g)
 
 static void update_power(app_game_handle_t g)
 {
-    if (g->power == APP_POWER_DOZE || g->pointer_down) {
+    if (g->power == APP_POWER_DOZE) {
+        return;
+    }
+    /* A held finger keeps the screen on, but a press with no update for
+     * STUCK_TOUCH_TICKS is treated as a lost release so dozing still happens. */
+    if (g->pointer_down && ++g->pointer_still_ticks < STUCK_TOUCH_TICKS) {
         return;
     }
     ++g->screen_idle_ticks;
@@ -631,6 +638,7 @@ void app_game_set_pointer(app_game_handle_t g, int32_t x, int32_t y, bool presse
     g->pointer_x = x;
     g->pointer_y = y;
     g->pointer_down = pressed;
+    g->pointer_still_ticks = 0;
     if (g->paused) {
         return;
     }

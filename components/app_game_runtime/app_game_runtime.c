@@ -35,6 +35,7 @@ enum {
     BRIGHTNESS_AWAKE_PCT = 80,
     BRIGHTNESS_DIM_PCT = 12,
     CHARGING_MIN_MA = 5,          /* Gauge current above this counts as charging. */
+    POWER_RETRY_TICKS = GAME_TICK_HZ,
     VALID_EPOCH = 1700000000,     /* Earlier clocks are unsynchronized. */
 };
 #endif
@@ -56,6 +57,8 @@ typedef struct {
     uint8_t sensor_attempts;
     uint32_t sensor_timer, day_timer, battery_timer;
     int applied_power;            /* Last app_power_t sent to the panel, -1 = none. */
+    uint16_t power_retry;         /* Ticks until a failed panel switch is retried. */
+    int logged_power;             /* Last model power state logged, for diagnostics. */
 #endif
 } host_state_t;
 
@@ -157,10 +160,15 @@ static void poll_battery(host_state_t *state)
     }
 }
 
-/* Mirror the model's power state onto the panel, only when it changes. */
+/* Mirror the model's power state onto the panel, only when it changes.
+ * A failed switch is logged and retried once per second. */
 static void apply_power(host_state_t *state, app_power_t power)
 {
     if ((int)power == state->applied_power) {
+        state->power_retry = 0;
+        return;
+    }
+    if (state->power_retry && --state->power_retry) {
         return;
     }
     esp_err_t err;
@@ -169,9 +177,13 @@ static void apply_power(host_state_t *state, app_power_t power)
     case APP_POWER_DIM: err = app_power_hw_display(true, BRIGHTNESS_DIM_PCT); break;
     default: err = app_power_hw_display(true, BRIGHTNESS_AWAKE_PCT); break;
     }
+    const char *name = power == APP_POWER_DOZE ? "off" : (power == APP_POWER_DIM ? "dim" : "on");
     if (err == ESP_OK) {
         state->applied_power = (int)power;
-        ESP_LOGI(TAG, "screen %s", power == APP_POWER_DOZE ? "off" : (power == APP_POWER_DIM ? "dim" : "on"));
+        ESP_LOGI(TAG, "screen %s", name);
+    } else {
+        state->power_retry = POWER_RETRY_TICKS;
+        ESP_LOGW(TAG, "screen %s failed: %s", name, esp_err_to_name(err));
     }
 }
 
@@ -203,6 +215,7 @@ static int initialize(void *value, const char *asset_root)
     }
 #if defined(RAYLIB_LITE_GAME_NATIVE)
     state->applied_power = -1;
+    state->logged_power = -1;
     load_save(state);
 #else
     app_game_set_battery(state->game, HOST_BATTERY_PCT, false);
@@ -234,6 +247,13 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
     switch (event->type) {
     case RAYLIB_LITE_GAME_INPUT_POINTER:
         if (event->track_id == 0) {
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+            const app_game_snapshot_t before = app_game_read(state->game);
+            if (before.power != APP_POWER_AWAKE && before.pointer_down != event->pressed) {
+                ESP_LOGI(TAG, "touch %s at %ld,%ld while screen %s", event->pressed ? "down" : "up",
+                         (long)event->x, (long)event->y, before.power == APP_POWER_DIM ? "dim" : "off");
+            }
+#endif
             app_game_set_pointer(state->game, event->x, event->y, event->pressed);
         }
         break;
@@ -280,6 +300,11 @@ static void update(void *value)
     const app_game_snapshot_t snapshot = app_game_read(state->game);
     pet_view_update(&state->view, &snapshot, events);
 #if defined(RAYLIB_LITE_GAME_NATIVE)
+    if ((int)snapshot.power != state->logged_power) {
+        state->logged_power = (int)snapshot.power;
+        ESP_LOGI(TAG, "power state %d (pointer %s)", (int)snapshot.power,
+                 snapshot.pointer_down ? "down" : "up");
+    }
     apply_power(state, snapshot.power);
     maybe_save(state, events);
 #endif
