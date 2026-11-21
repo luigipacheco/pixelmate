@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 /* Stats web server: GET / (page), GET /api/stats (JSON), POST /api/tz, plus
- * the setup portal routes (app_net_portal.c). One server on port 80 answers on
- * both the home network and the setup hotspot. Handlers run on the httpd task. The JSON is a snapshot published by the game
+ * the setup portal routes (app_net_portal.c) and the photo booth gallery
+ * (app_net_photos.c). One server on port 80 answers on both the home network
+ * and the setup hotspot. Handlers run on the httpd task. The JSON is a snapshot published by the game
  * loop under a mutex; the timezone travels back through a spinlocked slot. */
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,7 @@ enum {
     QUERY_MAX = 48,
     HTTPD_STACK = 6144,
     HTTPD_SOCKETS = 5,    /* Leaves lwIP sockets for captive DNS and ESP-Iris TCP. */
+    HTTPD_ROUTES = 16,    /* Stats, time zone and gallery routes, with room to grow. */
 };
 
 static SemaphoreHandle_t s_json_lock;
@@ -55,7 +57,8 @@ static const char PAGE[] =
     "<section><div class=row><span>TOTAL</span><span id=total></span></div>"
     "<div class=row><span>SPARKS</span><span id=sparks></span></div>"
     "<div class=row><span>BATTERY</span><span id=batt></span></div>"
-    "<div class=row><span>MOOD</span><span id=mood></span></div></section></main><script>"
+    "<div class=row><span>MOOD</span><span id=mood></span></div></section>"
+    "<section><a href=/photos style='color:var(--c)'>PHOTO BOOTH GALLERY</a></section></main><script>"
     "const $=i=>document.getElementById(i);"
     "fetch('/api/tz?offset='+new Date().getTimezoneOffset(),{method:'POST'}).catch(()=>{});"
     "const pct=(a,b)=>Math.min(100,b?Math.round(a*100/b):0)+'%';"
@@ -174,6 +177,7 @@ esp_err_t app_net_web_start(void)
     config.stack_size = HTTPD_STACK;
     config.lru_purge_enable = true;
     config.max_open_sockets = HTTPD_SOCKETS;
+    config.max_uri_handlers = HTTPD_ROUTES;
     esp_err_t err = httpd_start(&s_server, &config);
     if (err != ESP_OK) {
         return err;
@@ -192,6 +196,10 @@ esp_err_t app_net_web_start(void)
     err = app_net_portal_register(s_server);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "setup portal: %s", esp_err_to_name(err));
+    }
+    err = app_net_photos_register(s_server);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "photo gallery: %s", esp_err_to_name(err));
     }
     return ESP_OK;
 }

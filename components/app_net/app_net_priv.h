@@ -48,3 +48,5 @@ esp_err_t app_net_portal_page(httpd_req_t *req);
  * the event loop task only; stop waits for the server task to exit. */
 esp_err_t app_net_dns_start(uint32_t ipv4);
 void app_net_dns_stop(void);
+/** Add the photo booth gallery routes (/photos, /api/photos, /photo). */
+esp_err_t app_net_photos_register(httpd_handle_t server);

@@ -81,7 +81,16 @@ network can change the Wi-Fi.
   - `POST /api/tz?offset=<minutes>` – the page sends JavaScript's
     `getTimezoneOffset()` on load (minutes west of UTC, −840..720).
   - Setup routes above; unknown paths are 404 outside setup.
-  - At most 5 open sockets, leaving lwIP sockets for captive DNS and ESP-Iris.
+  - At most 5 open sockets, leaving lwIP sockets for captive DNS and ESP-Iris,
+    and up to 16 routes (`max_uri_handlers`).
+  - Photo booth gallery (`app_net_photos.c`): `GET /photos` is a page that
+    lists `/api/photos` (`{"photos","gifs","max_photos","max_gifs","items":
+    [{"id","gif","filter","res"}]}`, newest first) every 10 s;
+    `GET /photo?id=<seq>` returns a photo as PNG or a GIF as an animated GIF,
+    encoded on the fly from `app_photo_store`, upscaled by whole pixels to about
+    `&px=` pixels (default 256, at most 512). Per-request
+    buffers (about 170 KB) come from PSRAM; a GIF too big at the requested
+    scale is sent at 1x. The stats page links to it.
 
 ## Threading
 
@@ -103,4 +112,5 @@ network can change the Wi-Fi.
   saved copy in NVS is plain text, like Vibe Mode's own.
 
 The server is unauthenticated and read-only apart from the timezone (and, during
-setup only, the Wi-Fi form); it is meant for the home LAN.
+setup only, the Wi-Fi form); it is meant for the home LAN. Anyone on that
+network can see the photo booth gallery.
