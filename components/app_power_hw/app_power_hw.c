@@ -41,8 +41,12 @@ esp_err_t app_power_hw_display(bool on, uint8_t brightness_pct)
         return ESP_ERR_INVALID_STATE;
     }
     if (!on) {
+        /* Brightness 0 first: on this AMOLED "display off" alone can leave the
+         * last picture visible, which looks like a frozen screen. */
+        const esp_err_t dim = esp_lcd_panel_co5300_set_brightness(p, 0);
         s_display_on = false;
-        return esp_lcd_panel_disp_on_off(p, false);
+        const esp_err_t off = esp_lcd_panel_disp_on_off(p, false);
+        return off != ESP_OK ? off : dim;
     }
     if (!s_display_on) {
         const esp_err_t err = esp_lcd_panel_disp_on_off(p, true);
