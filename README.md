@@ -36,7 +36,11 @@ react to how much you walk, what you feed it and how you play with it.
   serves a stats page at `http://pixelpal.local` (or the IP in the menu):
   today, food, health, 7-day chart, streak, sparks and battery. Opening it once
   sets the pet's timezone.
-- **Style:** pick among the pixel sizes and colors you own.
+- **Style:** pick among the pixel sizes and colors you own, and set SOUND
+  (ON / LOUD / OFF).
+- **Sound:** short 8-bit blips for sparks, petting, eating, buying, menus and
+  every arcade game; a victory jingle when the pet is fed. Silent while the
+  screen is off.
 - Progress is saved to NVS.
 
 Swipe left/right between Home, Steps, Feed and Arcade. Pull down from the top
@@ -76,6 +80,8 @@ IDF_EXTRA_ACTIONS_PATH=projects/pixel_pal/managed_components/espressif__esp_boar
 | `components/app_pedometer_hw` | BMI270 on-chip step counter (device only) |
 | `components/app_power_hw` | Screen power and battery gauge (device only) |
 | `components/app_net` | Wi-Fi, network time, mDNS, stats web server (device only) |
+| `components/app_sfx` | 8-bit sound effects from model events (device only) |
+| `assets_src/generate_sfx.py` | Generates the sound clips at build time |
 | `main/game_entry.c` | Selects the runtime module for the Engine |
 | `game.sim.json` | Sources shared by the Host simulator and firmware |
 

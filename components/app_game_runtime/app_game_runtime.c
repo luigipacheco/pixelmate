@@ -17,6 +17,7 @@
 #include "app_net.h"
 #include "app_pedometer_hw.h"
 #include "app_power_hw.h"
+#include "app_sfx.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "nvs.h"
@@ -361,6 +362,7 @@ static void shutdown(void *value)
         state->save_due_ms = 1;   /* Force a final flush. */
         maybe_save(state, 0);
     }
+    app_sfx_close();
 #endif
     app_game_destroy(&state->game);
 }
@@ -440,6 +442,7 @@ static void update(void *value)
                  snapshot.pointer_down ? "down" : "up");
     }
     maybe_save(state, events);
+    app_sfx_update(events, &snapshot);
 #endif
 }
 
