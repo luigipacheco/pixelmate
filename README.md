@@ -20,7 +20,7 @@ react to how much you walk, what you feed it and how you play with it.
 - **Store:** walking pays for unlocks. Buy eye colors (40–120 sparks), finer
   pixel styles (80–150) and animations (100–300): a spark trail as you walk, a
   dance every 100 steps, star eyes when happy and rainbow eyes while walking.
-  Home always shows how many steps until your next unlock.
+  The menu shows how many steps until your next unlock; Home stays just the pet.
 - **Spark Slots (unlockable, 250 sparks):** a three-reel slot machine where
   you stop each reel yourself; 3 sparks a spin, 7-7-7 pays 150.
 - **Low-energy mode:** after 20 s without a touch the pet dozes off and the

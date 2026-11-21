@@ -8,7 +8,7 @@ persists the pet, polls the hardware pedometer and tracks the calendar day.
 | --- | --- |
 | `app_game_runtime.c` | Module ABI, input mapping, save, sensor and day polling |
 | `pet_view.c` | Transitions, particles, floaters, card/food animations, chrome |
-| `pet_screens.c` | Home (with next-unlock hint), steps ring, feed and cards content |
+| `pet_screens.c` | Home (pet only), steps ring, feed, cards and slots content |
 | `pet_panels.c` | Pull-down menu, style picker, store and daily goal panels |
 | `pet_eyes.c` | Eye shapes per mood with spring physics, blinks and gaze |
 | `pixel_draw.c` | Grid rasterizer, 5x7 font, icons, palette |

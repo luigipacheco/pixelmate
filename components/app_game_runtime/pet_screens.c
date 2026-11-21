@@ -105,53 +105,21 @@ static void draw_steps(const draw_ctx_t *d, int ox)
 
 /* ---- Home ------------------------------------------------------------ */
 
+/* Home is just the pet. The eyes carry the mood; text appears only when the
+ * pet has fainted, because that is the one state that needs an instruction.
+ * Progress and unlock hints live in the menu and on the Steps/Feed screens. */
 static void draw_home(const draw_ctx_t *d, int ox)
 {
     const app_game_snapshot_t *s = d->snap;
-    const char *hint = NULL;
-    char walk_hint[32];
-    const unsigned long to_food = s->steps_today < s->food_need ? s->food_need - s->steps_today : 0;
-    if (s->fainted && s->overlay == APP_OVERLAY_NONE) {
-        px_text_center("WALK TO REVIVE", 240 + ox, 392, 3, WARN, d->gap);
-        snprintf(walk_hint, sizeof(walk_hint), "%lu STEPS", to_food);
-        px_text_center(walk_hint, 240 + ox, 420, 2, d->dim, false);
-        return;
-    }
-    if (s->mood == APP_MOOD_HUNGRY) {
-        /* Walking is the food: say how far, not "feed me". */
-        snprintf(walk_hint, sizeof(walk_hint), "WALK %lu MORE", to_food);
-        hint = to_food ? walk_hint : "SNACK TIME";
-        if ((d->view->t / 12U) % 2U == 0U) {
-            px_icon(PX_ICON_BATTERY_LOW, 240 + ox - 14, 72, 4, d->color, WARN, d->gap);
-        }
-    } else if (s->mood == APP_MOOD_SAD) {
-        hint = "PLAY WITH ME";
-    } else if (s->mood == APP_MOOD_WALK) {
-        hint = "WALKING";
-    }
     if (s->overlay != APP_OVERLAY_NONE) {
-        return;   /* The menu's eyes peek where the hint would be. */
-    }
-    if (hint) {
-        px_text_center(hint, 240 + ox, 402, 3, d->dim, d->gap);
         return;
     }
-    /* Otherwise nudge toward the next unlock: that's what walking buys. */
-    const app_store_item_t *next = screens_next_unlock(s);
-    if (!next) {
+    if (s->fainted) {
+        px_text_center("WALK TO REVIVE", 240 + ox, 402, 3, WARN, d->gap);
         return;
     }
-    char text[32];
-    if (s->sparks >= next->cost) {
-        snprintf(text, sizeof(text), "%s READY", next->name);
-        px_text_center(text, 240 + ox, 396, 3, d->accent, d->gap);
-        px_text_center("PULL DOWN FOR STORE", 240 + ox, 424, 2, d->dim, false);
-    } else {
-        snprintf(text, sizeof(text), "NEXT: %s", next->name);
-        px_text_center(text, 240 + ox, 392, 2, d->dim, false);
-        snprintf(text, sizeof(text), "%lu STEPS TO GO",
-                 (unsigned long)(next->cost - s->sparks) * APP_STEPS_PER_SPARK);
-        px_text_center(text, 240 + ox, 412, 3, d->color, d->gap);
+    if (s->mood == APP_MOOD_HUNGRY && (d->view->t / 12U) % 2U == 0U) {
+        px_icon(PX_ICON_BATTERY_LOW, 240 + ox - 14, 72, 4, d->color, WARN, d->gap);
     }
 }
 
