@@ -46,6 +46,7 @@ static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay, int arcad
     switch (screen) {
     case 0: return (app_eye_anchor_t) {240, 236, 1.0f};    /* home */
     case 2: return (app_eye_anchor_t) {240, 150, 0.62f};   /* feed */
+    case 4: return (app_eye_anchor_t) {416, 92, 0.22f};    /* booth: peeking over the viewfinder */
     case 3:                                                 /* arcade */
         switch (arcade) {
         case 1: return (app_eye_anchor_t) {240, 104, 0.46f};   /* HI-LO */
@@ -135,6 +136,35 @@ static inline app_rect_t app_bits_switch_rect(int i)
 static inline app_rect_t app_bits_button_rect(void)
 {
     return (app_rect_t) {130, 384, 220, 56};
+}
+
+/* Photo booth: the photo fills a 256 px square (32/64/128 px lenses at 8/4/2x),
+ * arrows either side (looks, or items in the gallery), a lens chip top-left and
+ * three buttons: GIF | SNAP | ROLL, or BACK | - | DEL. */
+static inline app_rect_t app_booth_lens_rect(void)
+{
+    return (app_rect_t) {12, 70, 110, 44};
+}
+static inline app_rect_t app_booth_view_rect(void)
+{
+    return (app_rect_t) {112, 120, 256, 256};
+}
+static inline app_rect_t app_booth_prev_rect(void)
+{
+    return (app_rect_t) {8, 176, 100, 144};
+}
+static inline app_rect_t app_booth_next_rect(void)
+{
+    return (app_rect_t) {372, 176, 100, 144};
+}
+static inline app_rect_t app_booth_button_rect(int i)
+{
+    return (app_rect_t) {(int16_t)(16 + i * 152), 388, 144, 56};
+}
+/* Locked booth: the teaser's button to the store. */
+static inline app_rect_t app_booth_unlock_rect(void)
+{
+    return (app_rect_t) {110, 352, 260, 64};
 }
 
 /* Pull-down menu entries (inside the APP_MENU_H panel). The top row holds the

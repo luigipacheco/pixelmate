@@ -12,6 +12,7 @@ touch gestures, feeding and the high-low card game.
 | `slots.c` | Spark Slots: 3 player-stopped reels, pay table |
 | `grid.c` | Spark Grid: 5x5 flip puzzle with row/column hints |
 | `bits.c` | Bit Flip: binary target race with a shrinking timer |
+| `booth.c` | Photo booth: look and lens pickers, countdown, GIF recording, gallery |
 | `include/app_game_layout.h` | Button and eye geometry shared with the view |
 
 ```c
@@ -46,7 +47,8 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
 - Happiness drops 1 point every 3 minutes (twice as fast while hungry);
   petting, food and card wins raise it.
 - A swipe is at least 70 px of horizontal travel; a tap moves at most 28 px.
-  Left/right swipes move between Home, Steps, Feed and Arcade. The Arcade
+  Left/right swipes move between Home, Steps, Feed, Arcade and, only while
+  a camera is detected (`app_game_set_camera`), the Booth page. The Arcade
   shows cabinets (`app_arcade_cabinet_rect`); a tap opens HI-LO, opens Slots
   if owned (else the store at that item), and the SOON cabinet only shakes.
   Inside a game, EXIT (`app_arcade_exit_rect`) returns to the cabinets.
@@ -94,6 +96,41 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
   leftmost spinning reel after it finishes its symbol plus 0..2 random slip.
   Three of a kind pays 150 (7) / 60 / 30 / 20 / 10 / 8 (shoe); any pair refunds
   the bet. Blind play returns about 72%, so the machine is a spark sink.
+- Camera: the runtime reports a camera module in the left slot with
+  `app_game_set_camera()`. Only then does the Booth page exist (after Arcade;
+  page dots and swipe bounds follow) and does the store list PHOTO BOOTH and
+  the filters (`app_game_store_visible*()` map store positions to catalog
+  entries). Ownership never changes with the camera. If the camera goes away
+  while the Booth page is shown, `booth.unplugged` is set (the view asks to plug
+  it in) and after `APP_CAMERA_GONE_S` seconds still without it the page
+  returns Home.
+- Photo booth is a store item (300 sparks). Before it is bought the Booth page
+  is a teaser whose UNLOCK button (`app_booth_unlock_rect`) opens the store at
+  it; buying it opens the page. A photo is a lens plus a look. Lenses are
+  `APP_ITEM_LENS` items (`lenses_owned`, `APP_OWN_LENS_BIT`): LO RES 32x32 is
+  free, MID RES 64x64 costs 80, HI RES 128x128 180. Looks are `APP_ITEM_FILTER`
+  items (`filters_owned`, `APP_OWN_FILTER_BIT`): PLAIN is free; DITHER 50,
+  SCANLINES 60, GAME-GREEN 80, HALFTONE 100, THERMAL 120, ASCII 120,
+  EYE STICKERS 150. Lenses and looks can only be bought once the booth is owned
+  (tapping one earlier jumps to the booth's store item). Buying or tapping an
+  owned one selects it; both selections are saved.
+- Booth flow (`snapshot.booth`): LIVE shows the feed; the side arrows
+  (`app_booth_prev_rect`/`next_rect`) cycle owned looks, the lens chip
+  (`app_booth_lens_rect`) cycles owned lenses; GIF/SNAP/ROLL are
+  `app_booth_button_rect(0..2)`. SNAP: COUNTDOWN 3-2-1 (20 ticks each), FLASH
+  (8 ticks) with an `APP_BOOTH_REQ_PHOTO` request, then REVIEW (75 ticks or a
+  tap). GIF: the same countdown, then RECORD requests frames 0..7 every 4 ticks
+  (`APP_BOOTH_REQ_GIF_FRAME`; the runtime saves on frame 7). ROLL opens the
+  GALLERY: arrows browse (0 = newest), BACK returns, DELETE asks SURE? and then
+  sends `APP_BOOTH_REQ_DELETE`. A full kind (12 photos / 2 GIFs) goes straight
+  to REVIEW with `APP_BOOTH_RESULT_FULL`.
+- The model never holds pixels. The runtime takes one request at a time with
+  `app_game_take_booth_request()`, answers with `app_game_booth_result()`, and
+  reports `app_game_set_booth(camera, photos, gifs)` every tick. Without a
+  camera, or while fainted, SNAP/GIF raise `APP_EVENT_BLOCKED` (the gallery
+  still works). Leaving the booth (swipe, a panel, screen off, unplug) cancels a
+  countdown or recording; a partial GIF is never saved. Capturing keeps the
+  screen awake.
 - Step sources: `app_game_set_sensor_steps()` (a cumulative hardware count; the
   first reading is a baseline) disables the software detector fed by
   `app_game_add_accel()`. `app_game_add_steps()` credits directly.
@@ -106,6 +143,10 @@ The creator owns the handle and serializes every call on one loop; there are no
 locks, waits or ISR-safe entry points. Only create/destroy allocate. Snapshots
 and `app_game_record_t` are plain values. `app_game_import()` clamps every field,
 so a corrupt or older record cannot put the model out of range.
+
+`app_game_record_t` is version 6 (76 bytes): v5 appended the Bit Flip best, v6
+the owned and selected photo looks and lenses; v2..v5 records are prefixes and
+migrate in the runtime.
 
 `save_seq` increments on every persistent change; the runtime decides when to
 write. Events in `APP_EVENTS_SAVE_NOW` (spending, settings, goal) deserve a

@@ -2,6 +2,9 @@
 #pragma once
 #include <stdbool.h>
 #include <stdint.h>
+/* Filter ids (app_photo_filter_t) are shared with the photo codec. Relative
+ * path: the Host simulator compiles sources without component include paths. */
+#include "../../app_photo/include/app_photo.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,6 +25,7 @@ typedef enum {
     APP_SCREEN_STEPS,
     APP_SCREEN_FEED,
     APP_SCREEN_ARCADE,     /**< Row of game cabinets; a game opens inside it. */
+    APP_SCREEN_BOOTH,      /**< Photo booth; a page only while a camera is detected. */
     APP_SCREEN_COUNT,
 } app_screen_t;
 
@@ -150,6 +154,7 @@ typedef enum {
     APP_GAME_SLOTS = 0,
     APP_GAME_GRID,
     APP_GAME_BITS,
+    APP_GAME_PHOTO,        /**< Photo booth page (needs the camera module). */
     APP_GAME_COUNT,
 } app_minigame_t;
 
@@ -215,7 +220,66 @@ typedef enum {
     APP_ITEM_STYLE,
     APP_ITEM_ANIM,
     APP_ITEM_GAME,
+    APP_ITEM_FILTER,       /**< Photo look (app_photo_filter_t); needs the booth. */
+    APP_ITEM_LENS,         /**< Photo resolution (app_photo_res_t); needs the booth. */
 } app_item_kind_t;
+
+/* ---- Photo booth ---- */
+enum {
+    APP_BOOTH_PHOTOS = 12,       /**< Stored photo slots. */
+    APP_BOOTH_GIFS = 2,          /**< Stored GIF slots (APP_PHOTO_GIF_FRAMES each). */
+    APP_CAMERA_GONE_S = 3,       /**< Booth page without a camera returns Home after this. */
+};
+
+typedef enum {
+    APP_BOOTH_LIVE = 0,          /**< Viewfinder; look arrows, lens chip, GIF/SNAP/ROLL. */
+    APP_BOOTH_COUNTDOWN,         /**< 3-2-1 before a photo or GIF. */
+    APP_BOOTH_FLASH,             /**< White flash; the photo was requested. */
+    APP_BOOTH_RECORD,            /**< GIF frames being requested. */
+    APP_BOOTH_REVIEW,            /**< The capture (or why it failed) is shown. */
+    APP_BOOTH_GALLERY,           /**< Browse and delete stored items. */
+} app_booth_phase_t;
+
+typedef enum {
+    APP_BOOTH_RESULT_NONE = 0,   /**< Pending (saving). */
+    APP_BOOTH_RESULT_SAVED,
+    APP_BOOTH_RESULT_FULL,       /**< No free slot of that kind. */
+    APP_BOOTH_RESULT_FAILED,     /**< Camera or storage error. */
+    APP_BOOTH_RESULT_DELETED,
+} app_booth_result_t;
+
+/** Work the runtime must do; taken with app_game_take_booth_request(). */
+typedef enum {
+    APP_BOOTH_REQ_NONE = 0,
+    APP_BOOTH_REQ_PHOTO,         /**< Save the current filtered frame as a photo. */
+    APP_BOOTH_REQ_GIF_FRAME,     /**< Record GIF frame `frame`; the last one saves. */
+    APP_BOOTH_REQ_DELETE,        /**< Delete gallery item `index` (0 = newest). */
+} app_booth_request_kind_t;
+
+typedef struct {
+    app_booth_request_kind_t kind;
+    uint8_t filter;              /**< app_photo_filter_t to bake in. */
+    uint8_t res;                 /**< app_photo_res_t (GIFs are capped at APP_PHOTO_GIF_MAX_RES). */
+    uint8_t frame;               /**< GIF frame 0..APP_PHOTO_GIF_FRAMES-1. */
+    uint8_t index;               /**< Gallery item for DELETE. */
+} app_booth_request_t;
+
+typedef struct {
+    app_booth_phase_t phase;
+    uint16_t phase_ticks;        /**< Ticks in the current phase. */
+    bool gif;                    /**< The current/last capture is a GIF. */
+    uint8_t count;               /**< Countdown digit, 3..1. */
+    uint8_t frame;               /**< GIF frames requested so far. */
+    uint8_t filter;              /**< Selected look; always owned. */
+    uint8_t res;                 /**< Selected lens (app_photo_res_t); always owned. */
+    bool camera;                 /**< Runtime has a live camera. */
+    uint8_t photos, gifs;        /**< Stored items, reported by the runtime. */
+    uint8_t index;               /**< Gallery item shown, 0 = newest. */
+    bool confirm_delete;         /**< DEL was tapped once; tap again to delete. */
+    app_booth_result_t result;   /**< Last capture/delete outcome. */
+    bool unplugged;              /**< On the booth page with the camera gone. */
+    uint8_t seq;                 /**< Bumped on every phase, picker or result change (wraps). */
+} app_booth_snapshot_t;
 
 /* ---- Spark Slots ---- */
 enum {
@@ -263,6 +327,9 @@ enum { APP_STORE_PER_PAGE = 4 };
 #define APP_OWN_STYLE_BIT(i) (1UL << (8 + (i)))
 #define APP_OWN_ANIM_BIT(i)  (1UL << (16 + (i)))
 #define APP_OWN_GAME_BIT(i)  (1UL << (24 + (i)))
+/* Looks and lenses use their own bytes: snapshot filters_owned / lenses_owned. */
+#define APP_OWN_FILTER_BIT(i) (1U << (i))
+#define APP_OWN_LENS_BIT(i) (1U << (i))
 
 typedef enum {
     APP_CARDS_READY = 0,   /**< Waiting for a paid deal. */
@@ -352,6 +419,8 @@ typedef struct {
     bool battery_charging;
     app_mood_t mood;
     uint32_t owned;             /**< APP_OWN_*_BIT flags. */
+    uint8_t filters_owned;      /**< APP_OWN_FILTER_BIT flags; NONE always set. */
+    uint8_t lenses_owned;       /**< APP_OWN_LENS_BIT flags; LOW always set. */
     uint8_t anims_on;           /**< Bit per app_anim_t; only owned ones can be on. */
     app_sound_t sound;
     uint8_t settings_page;      /**< 0..1. */
@@ -374,6 +443,7 @@ typedef struct {
     app_net_state_t net;
     uint32_t ipv4;              /**< Address in network byte order when ONLINE. */
     char setup_ap[APP_SETUP_AP_MAX];  /**< Hotspot to join while net is SETUP, else "". */
+    bool camera_present;        /**< Camera module detected in the left slot (runtime). */
     uint16_t friendship;        /**< 0..999; hearts = friendship / 100. */
     app_pixel_style_t pixel_style;
     uint8_t color_index;        /**< 0..APP_COLOR_COUNT-1. */
@@ -383,10 +453,11 @@ typedef struct {
     app_grid_snapshot_t grid;
     app_bits_snapshot_t bits;
     uint8_t arcade_row;         /**< Cabinet row shown in the arcade lobby. */
+    app_booth_snapshot_t booth;
     uint32_t save_seq;          /**< Increments whenever persistent data changes. */
 } app_game_snapshot_t;
 
-/** Persistent record: plain data, 68 bytes. Bump the save version on layout change;
+/** Persistent record: plain data, 76 bytes. Bump the save version on layout change;
  * fields are only ever appended so older records can be migrated by prefix. */
 typedef struct {
     uint32_t steps_total;
@@ -417,12 +488,18 @@ typedef struct {
     /* v5 */
     uint16_t bits_best;         /**< Bit Flip best run (hits). */
     uint16_t reserved3;
+    /* v6 */
+    uint8_t filters_owned;      /**< APP_OWN_FILTER_BIT flags. */
+    uint8_t filter;             /**< Selected photo look. */
+    uint8_t lenses_owned;       /**< APP_OWN_LENS_BIT flags. */
+    uint8_t lens;               /**< Selected photo resolution. */
 } app_game_record_t;
 
 /** Sizes of older records (prefixes of the current one), for save migration. */
 #define APP_GAME_RECORD_V2_SIZE 32U
 #define APP_GAME_RECORD_V3_SIZE 36U
 #define APP_GAME_RECORD_V4_SIZE 68U
+#define APP_GAME_RECORD_V5_SIZE 72U
 
 typedef struct {
     uint16_t width;    /**< Viewport width in pixels, 1..65535. */
@@ -459,6 +536,15 @@ void app_game_set_network(app_game_handle_t handle, app_net_state_t state, uint3
 /** Report the setup hotspot name shown while the state is APP_NET_SETUP
  * (copied, truncated to APP_SETUP_AP_MAX-1; NULL clears it). */
 void app_game_set_setup_ap(app_game_handle_t handle, const char *name);
+/** Report whether a camera module is in the left slot. It adds the booth page
+ * and the booth's store items; it does not change what is owned. */
+void app_game_set_camera(app_game_handle_t handle, bool present);
+/** Report the photo booth's camera and stored item counts (every tick or on change). */
+void app_game_set_booth(app_game_handle_t handle, bool camera, uint8_t photos, uint8_t gifs);
+/** Take the booth's pending capture/delete request; false when there is none. */
+bool app_game_take_booth_request(app_game_handle_t handle, app_booth_request_t *request);
+/** Report how the last booth request ended. */
+void app_game_booth_result(app_game_handle_t handle, app_booth_result_t result);
 /** Wake the screen (button press, external event). No-op when awake. */
 void app_game_wake(app_game_handle_t handle);
 /** Advance one 30 Hz tick unless paused. No rendering or hardware access. */
@@ -473,6 +559,10 @@ const app_food_t *app_game_food(int index);
 const app_store_item_t *app_game_store_item(int index);
 /** Number of store catalog entries. */
 int app_game_store_count(void);
+/** Store items shown with or without a camera (booth items need one). */
+int app_game_store_visible_count(bool camera);
+/** Catalog index of the `position`-th shown item, or -1. */
+int app_game_store_visible(bool camera, int position);
 /** Catalog index selling this item, or -1 if it is free/not sold. */
 int app_game_store_find(app_item_kind_t kind, uint8_t value);
 /** Symbol shown on a reel at `row` (0 = pay line, +1 = next symbol up). */

@@ -5,6 +5,7 @@
 #include <string.h>
 #include "include/app_game.h"
 #include "include/app_game_layout.h"
+#include "private/booth.h"
 #include "private/cards.h"
 #include "private/pedometer.h"
 #include "private/bits.h"
@@ -72,11 +73,24 @@ static const app_store_item_t s_store[] = {
     {APP_ITEM_GAME, APP_GAME_GRID, 200, "SPARK GRID", "FLIP TILES DODGE DUDS"},
     {APP_ITEM_GAME, APP_GAME_SLOTS, 250, "SPARK SLOTS", "STOP THE REELS TO WIN"},
     {APP_ITEM_ANIM, APP_ANIM_RAINBOW, 300, "RAINBOW", "COLORS WHILE WALKING"},
+    {APP_ITEM_GAME, APP_GAME_PHOTO, 300, "PHOTO BOOTH", "LO-RES PICS AND GIFS"},
+    {APP_ITEM_FILTER, APP_FILTER_DITHER, 50, "DITHER", "RETRO DOT SHADING"},
+    {APP_ITEM_FILTER, APP_FILTER_SCANLINES, 60, "SCANLINES", "OLD TV LINES"},
+    {APP_ITEM_LENS, APP_PHOTO_RES_MID, 80, "MID RES", "SHARPER 64X64 PHOTOS"},
+    {APP_ITEM_FILTER, APP_FILTER_GREEN, 80, "GAME-GREEN", "FOUR POCKET GREENS"},
+    {APP_ITEM_FILTER, APP_FILTER_HALFTONE, 100, "HALFTONE", "NEWSPAPER DOTS"},
+    {APP_ITEM_FILTER, APP_FILTER_THERMAL, 120, "THERMAL", "HEAT CAMERA LOOK"},
+    {APP_ITEM_FILTER, APP_FILTER_ASCII, 120, "ASCII", "PICTURES MADE OF TEXT"},
+    {APP_ITEM_FILTER, APP_FILTER_STICKERS, 150, "EYE STICKERS", "YOUR PAL PHOTOBOMBS"},
+    {APP_ITEM_LENS, APP_PHOTO_RES_HIGH, 180, "HI RES", "CRISP 128X128 PHOTOS"},
 };
 #define STORE_COUNT ((int)(sizeof(s_store) / sizeof(s_store[0])))
 #define STORE_PAGES ((STORE_COUNT + APP_STORE_PER_PAGE - 1) / APP_STORE_PER_PAGE)
 #define FREE_OWNED (APP_OWN_COLOR_BIT(0) | APP_OWN_STYLE_BIT(APP_PIXEL_CHUNKY))
+#define FREE_FILTERS APP_OWN_FILTER_BIT(APP_FILTER_NONE)
+#define FREE_LENSES APP_OWN_LENS_BIT(APP_PHOTO_RES_LOW)
 #define DANCE_EVERY_STEPS 100U
+_Static_assert(sizeof(app_game_record_t) == 76, "bump SAVE_VERSION and migrate when the record changes");
 
 struct app_game {
     app_game_config_t config;
@@ -94,6 +108,8 @@ struct app_game {
     bool reset_armed;                  /* Finger went down on RESET PET. */
     uint16_t reset_hold_ticks;
     uint32_t owned;
+    uint8_t filters_owned;
+    uint8_t lenses_owned;
     uint8_t anims_on;
     app_sound_t sound;
     uint32_t step_goal;
@@ -135,6 +151,9 @@ struct app_game {
     grid_t grid;
     bits_t bits;
     uint8_t arcade_row;
+    booth_t booth;
+    bool camera_present;
+    uint16_t camera_gone_ticks;   /* On the booth page without a camera. */
 };
 
 static uint8_t add_stat(uint8_t value, int delta)
@@ -231,6 +250,8 @@ static void fresh_pet(app_game_handle_t g)
     g->arcade = APP_ARCADE_LOBBY;
     g->store_page = 0;
     g->owned = FREE_OWNED;
+    g->filters_owned = FREE_FILTERS;
+    g->lenses_owned = FREE_LENSES;
     g->anims_on = 0;
     g->sound = APP_SOUND_MID;
     g->settings_page = 0;
@@ -270,6 +291,10 @@ static void fresh_pet(app_game_handle_t g)
     g->bits.view.best = 0;
     bits_init(&g->bits, g->bits.rng);
     g->arcade_row = 0;
+    /* Keep what the runtime reported about the camera and stored photos. */
+    const app_booth_snapshot_t status = g->booth.view;
+    booth_init(&g->booth);
+    booth_set_status(&g->booth, status.camera, status.photos, status.gifs);
     pedometer_reset(&g->pedometer);
 }
 
@@ -337,10 +362,23 @@ void app_game_set_paused(app_game_handle_t g, bool paused)
     }
 }
 
+/* Games live inside the arcade; the photo booth is a page of its own that
+ * exists only while a camera module is plugged in. */
 static int last_screen(const struct app_game *g)
 {
-    (void)g;
-    return APP_SCREEN_ARCADE;   /* Games live inside the arcade, not on extra pages. */
+    return g->camera_present ? APP_SCREEN_BOOTH : APP_SCREEN_ARCADE;
+}
+
+static void set_screen(app_game_handle_t g, app_screen_t screen)
+{
+    if (g->screen == screen) {
+        return;
+    }
+    g->screen = screen;
+    g->events |= APP_EVENT_SCREEN;
+    if (screen == APP_SCREEN_BOOTH) {
+        booth_enter(&g->booth);
+    }
 }
 
 static void go_screen(app_game_handle_t g, int delta)
@@ -349,8 +387,7 @@ static void go_screen(app_game_handle_t g, int delta)
     if (next < 0 || next > last_screen(g)) {
         return;
     }
-    g->screen = (app_screen_t)next;
-    g->events |= APP_EVENT_SCREEN;
+    set_screen(g, (app_screen_t)next);
 }
 
 static void tap_home(app_game_handle_t g, int32_t x, int32_t y)
@@ -479,10 +516,7 @@ static void set_power(app_game_handle_t g, app_power_t power)
 static void doze(app_game_handle_t g)
 {
     set_overlay(g, APP_OVERLAY_NONE);
-    if (g->screen != APP_SCREEN_HOME) {
-        g->screen = APP_SCREEN_HOME;
-        g->events |= APP_EVENT_SCREEN;
-    }
+    set_screen(g, APP_SCREEN_HOME);
     set_power(g, APP_POWER_DOZE);
 }
 
@@ -537,17 +571,58 @@ static uint32_t item_bit(const app_store_item_t *item)
     case APP_ITEM_COLOR: return APP_OWN_COLOR_BIT(item->value);
     case APP_ITEM_STYLE: return APP_OWN_STYLE_BIT(item->value);
     case APP_ITEM_GAME: return APP_OWN_GAME_BIT(item->value);
+    case APP_ITEM_FILTER: return APP_OWN_FILTER_BIT(item->value);
+    case APP_ITEM_LENS: return APP_OWN_LENS_BIT(item->value);
     default: return APP_OWN_ANIM_BIT(item->value);
     }
+}
+
+/* Looks and lenses live in their own bytes; everything else in `owned`. */
+static bool owns_item(const struct app_game *g, const app_store_item_t *item)
+{
+    switch (item->kind) {
+    case APP_ITEM_FILTER: return (g->filters_owned & item_bit(item)) != 0;
+    case APP_ITEM_LENS: return (g->lenses_owned & item_bit(item)) != 0;
+    default: return (g->owned & item_bit(item)) != 0;
+    }
+}
+
+static void grant_item(app_game_handle_t g, const app_store_item_t *item)
+{
+    switch (item->kind) {
+    case APP_ITEM_FILTER: g->filters_owned |= (uint8_t)item_bit(item); break;
+    case APP_ITEM_LENS: g->lenses_owned |= (uint8_t)item_bit(item); break;
+    default: g->owned |= item_bit(item); break;
+    }
+}
+
+static bool booth_item(const app_store_item_t *item)
+{
+    return item->kind == APP_ITEM_FILTER || item->kind == APP_ITEM_LENS
+           || (item->kind == APP_ITEM_GAME && item->value == APP_GAME_PHOTO);
+}
+
+static bool item_visible(const app_store_item_t *item, bool camera)
+{
+    return camera || !booth_item(item);
+}
+
+static int store_pages(const struct app_game *g)
+{
+    const int count = app_game_store_visible_count(g->camera_present);
+    return count ? (count + APP_STORE_PER_PAGE - 1) / APP_STORE_PER_PAGE : 1;
 }
 
 static void open_game(app_game_handle_t g, app_minigame_t game)
 {
     set_overlay(g, APP_OVERLAY_NONE);
-    if (g->screen != APP_SCREEN_ARCADE) {
-        g->screen = APP_SCREEN_ARCADE;
-        g->events |= APP_EVENT_SCREEN;
+    if (game == APP_GAME_PHOTO) {
+        if (g->camera_present) {
+            set_screen(g, APP_SCREEN_BOOTH);
+        }
+        return;
     }
+    set_screen(g, APP_SCREEN_ARCADE);
     const app_arcade_t cabinet = game == APP_GAME_GRID ? APP_ARCADE_GRID
                                  : (game == APP_GAME_BITS ? APP_ARCADE_BITS : APP_ARCADE_SLOTS);
     g->arcade_row = (uint8_t)((cabinet - 1) / APP_ARCADE_PER_ROW);
@@ -557,8 +632,11 @@ static void open_game(app_game_handle_t g, app_minigame_t game)
 static void open_store_at(app_game_handle_t g, app_item_kind_t kind, uint8_t value)
 {
     const int index = app_game_store_find(kind, value);
-    if (index >= 0) {
-        g->store_page = (uint8_t)(index / APP_STORE_PER_PAGE);
+    for (int pos = 0; index >= 0 && pos < app_game_store_visible_count(g->camera_present); ++pos) {
+        if (app_game_store_visible(g->camera_present, pos) == index) {
+            g->store_page = (uint8_t)(pos / APP_STORE_PER_PAGE);
+            break;
+        }
     }
     set_overlay(g, APP_OVERLAY_STORE);
 }
@@ -570,6 +648,8 @@ static void equip(app_game_handle_t g, const app_store_item_t *item, bool just_b
     case APP_ITEM_COLOR: g->color_index = item->value; break;
     case APP_ITEM_STYLE: g->pixel_style = (app_pixel_style_t)item->value; break;
     case APP_ITEM_GAME: open_game(g, (app_minigame_t)item->value); break;
+    case APP_ITEM_FILTER: booth_select_filter(&g->booth, item->value); break;
+    case APP_ITEM_LENS: booth_select_lens(&g->booth, item->value); break;
     default:
         if (just_bought) {
             g->anims_on |= (uint8_t)(1U << item->value);
@@ -625,17 +705,23 @@ static void tap_store(app_game_handle_t g, int32_t x, int32_t y)
         return;
     }
     for (int row = 0; row < APP_STORE_PER_PAGE; ++row) {
-        const int index = g->store_page * APP_STORE_PER_PAGE + row;
-        if (index >= STORE_COUNT) {
+        const int index = app_game_store_visible(g->camera_present, g->store_page * APP_STORE_PER_PAGE + row);
+        if (index < 0) {
             return;
         }
         if (!app_rect_hit(app_store_row_rect(row), x, y)) {
             continue;
         }
         const app_store_item_t *item = &s_store[index];
-        const uint32_t bit = item_bit(item);
-        if (g->owned & bit) {
+        if (owns_item(g, item)) {
             equip(g, item, false);
+            return;
+        }
+        if (booth_item(item) && item->kind != APP_ITEM_GAME && !(g->owned & APP_OWN_GAME_BIT(APP_GAME_PHOTO))) {
+            /* Looks and lenses need the booth: show it instead of selling a dead item. */
+            open_store_at(g, APP_ITEM_GAME, APP_GAME_PHOTO);
+            react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
+            g->events |= APP_EVENT_STORE_PAGE;
             return;
         }
         if (g->sparks < item->cost) {
@@ -644,7 +730,7 @@ static void tap_store(app_game_handle_t g, int32_t x, int32_t y)
             return;
         }
         g->sparks -= item->cost;
-        g->owned |= bit;
+        grant_item(g, item);
         equip(g, item, true);
         react(g, APP_MOOD_HAPPY, REACT_WIN_TICKS);
         g->events |= APP_EVENT_BOUGHT;
@@ -894,6 +980,35 @@ static bool cabinet_owned(const struct app_game *g, app_arcade_t game)
     return game == APP_ARCADE_CARDS || (g->owned & APP_OWN_GAME_BIT(cabinet_game(game)));
 }
 
+static bool booth_owned(const struct app_game *g)
+{
+    return (g->owned & APP_OWN_GAME_BIT(APP_GAME_PHOTO)) != 0;
+}
+
+static void tap_booth(app_game_handle_t g, int32_t x, int32_t y)
+{
+    if (!g->camera_present) {
+        return;   /* "Plug the camera in" is all the page shows. */
+    }
+    if (!booth_owned(g)) {
+        if (app_rect_hit(app_booth_unlock_rect(), x, y)) {
+            open_store_at(g, APP_ITEM_GAME, APP_GAME_PHOTO);
+        }
+        return;
+    }
+    const uint32_t events = booth_tap(&g->booth, x, y, g->filters_owned, g->lenses_owned, g->fainted);
+    g->events |= events;
+    const app_booth_snapshot_t *v = &g->booth.view;
+    if (events & APP_EVENT_SETTINGS) {
+        react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
+        changed(g);   /* The selected filter is saved. */
+    } else if (v->phase == APP_BOOTH_REVIEW && v->result == APP_BOOTH_RESULT_FULL) {
+        react(g, APP_MOOD_SAD, REACT_LOSE_TICKS);
+    } else if (v->phase == APP_BOOTH_COUNTDOWN) {
+        react(g, APP_MOOD_HAPPY, REACT_PET_TICKS);
+    }
+}
+
 /* Lobby: a tap on a cabinet opens its game (or the store for a locked one).
  * In a game: EXIT returns to the cabinets, anything else goes to the game. */
 static void tap_arcade(app_game_handle_t g, int32_t x, int32_t y)
@@ -942,6 +1057,7 @@ static void handle_tap(app_game_handle_t g, int32_t x, int32_t y)
     case APP_SCREEN_HOME: tap_home(g, x, y); break;
     case APP_SCREEN_FEED: tap_feed(g, x, y); break;
     case APP_SCREEN_ARCADE: tap_arcade(g, x, y); break;
+    case APP_SCREEN_BOOTH: tap_booth(g, x, y); break;
     default: break;
     }
 }
@@ -970,7 +1086,7 @@ static void handle_swipe(app_game_handle_t g, int32_t dx, int32_t dy)
     }
     if (g->overlay == APP_OVERLAY_STORE) {
         const int page = (int)g->store_page + (dx < 0 ? 1 : -1);
-        if (page >= 0 && page < STORE_PAGES) {
+        if (page >= 0 && page < store_pages(g)) {
             g->store_page = (uint8_t)page;
             g->events |= APP_EVENT_STORE_PAGE;
         }
@@ -1095,6 +1211,50 @@ void app_game_set_battery(app_game_handle_t g, int percent, bool charging)
     g->battery_charging = charging && percent >= 0;
 }
 
+void app_game_set_camera(app_game_handle_t g, bool present)
+{
+    if (!g || g->camera_present == present) {
+        return;
+    }
+    g->camera_present = present;
+    const int pages = store_pages(g);
+    if (g->store_page >= pages) {
+        g->store_page = (uint8_t)(pages - 1);
+        g->events |= APP_EVENT_STORE_PAGE;
+    }
+}
+
+void app_game_set_booth(app_game_handle_t g, bool camera, uint8_t photos, uint8_t gifs)
+{
+    if (g) {
+        booth_set_status(&g->booth, camera, photos, gifs);
+    }
+}
+
+bool app_game_take_booth_request(app_game_handle_t g, app_booth_request_t *request)
+{
+    if (!g || !request || g->booth.request.kind == APP_BOOTH_REQ_NONE) {
+        return false;
+    }
+    *request = g->booth.request;
+    g->booth.request.kind = APP_BOOTH_REQ_NONE;
+    return true;
+}
+
+void app_game_booth_result(app_game_handle_t g, app_booth_result_t result)
+{
+    if (!g) {
+        return;
+    }
+    g->events |= booth_result(&g->booth, result);
+    switch (result) {
+    case APP_BOOTH_RESULT_SAVED: react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS); break;
+    case APP_BOOTH_RESULT_FULL:
+    case APP_BOOTH_RESULT_FAILED: react(g, APP_MOOD_SAD, REACT_LOSE_TICKS); break;
+    default: break;
+    }
+}
+
 void app_game_wake(app_game_handle_t g)
 {
     if (g) {
@@ -1145,6 +1305,43 @@ void app_game_set_day(app_game_handle_t g, int32_t day)
     changed(g);
 }
 
+static bool booth_open(const struct app_game *g)
+{
+    return g->screen == APP_SCREEN_BOOTH && g->camera_present && booth_owned(g)
+           && g->overlay == APP_OVERLAY_NONE && g->power != APP_POWER_DOZE;
+}
+
+static bool booth_capturing(const struct app_game *g)
+{
+    const app_booth_phase_t p = g->booth.view.phase;
+    return p == APP_BOOTH_COUNTDOWN || p == APP_BOOTH_FLASH || p == APP_BOOTH_RECORD;
+}
+
+static void update_booth(app_game_handle_t g)
+{
+    /* Unplugged on the booth page: say so, then go Home if it stays gone. */
+    const bool gone = g->screen == APP_SCREEN_BOOTH && !g->camera_present;
+    g->camera_gone_ticks = gone ? (uint16_t)(g->camera_gone_ticks + 1) : 0;
+    g->booth.view.unplugged = gone;
+    if (g->camera_gone_ticks >= APP_CAMERA_GONE_S * TICKS_PER_SECOND) {
+        g->camera_gone_ticks = 0;
+        set_screen(g, APP_SCREEN_HOME);
+    }
+    if (!booth_open(g)) {
+        booth_cancel(&g->booth);
+        return;
+    }
+    if (booth_capturing(g)) {
+        g->screen_idle_ticks = 0;   /* Holding still for a photo is not idling. */
+    }
+    const app_booth_phase_t before = g->booth.view.phase;
+    g->events |= booth_update(&g->booth);
+    const app_booth_phase_t after = g->booth.view.phase;
+    if (before != after && (after == APP_BOOTH_FLASH || after == APP_BOOTH_RECORD)) {
+        react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
+    }
+}
+
 static app_mood_t compute_mood(const struct app_game *g)
 {
     if (g->power != APP_POWER_AWAKE) {
@@ -1177,6 +1374,9 @@ static app_mood_t compute_mood(const struct app_game *g)
     if (g->overlay == APP_OVERLAY_NONE && g->screen == APP_SCREEN_ARCADE
             && g->arcade == APP_ARCADE_BITS && g->bits.view.phase == APP_BITS_PLAYING) {
         return APP_MOOD_THINKING;
+    }
+    if (booth_open(g) && g->booth.view.phase == APP_BOOTH_COUNTDOWN) {
+        return APP_MOOD_THINKING;   /* Holding still for the photo. */
     }
     if (fullness(g) < LOW_STAT) {
         return APP_MOOD_HUNGRY;
@@ -1223,6 +1423,7 @@ void app_game_update(app_game_handle_t g)
         --g->pet_cooldown;
     }
     decay_stats(g);
+    update_booth(g);
     update_power(g);
     update_reset(g);
     const uint32_t won = cards_update(&g->cards, &g->events);
@@ -1281,6 +1482,8 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .battery_charging = g->battery_charging,
         .mood = g->mood,
         .owned = g->owned,
+        .filters_owned = g->filters_owned,
+        .lenses_owned = g->lenses_owned,
         .anims_on = g->anims_on,
         .sound = g->sound,
         .settings_page = g->settings_page,
@@ -1300,6 +1503,7 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .day = g->day,
         .net = g->net,
         .ipv4 = g->ipv4,
+        .camera_present = g->camera_present,
         .happiness = g->happiness,
         .friendship = g->friendship,
         .pixel_style = g->pixel_style,
@@ -1310,6 +1514,7 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .grid = g->grid.view,
         .bits = g->bits.view,
         .arcade_row = g->arcade_row,
+        .booth = g->booth.view,
         .save_seq = g->save_seq,
     };
     memcpy(snap.history, g->history, sizeof(snap.history));
@@ -1340,6 +1545,25 @@ const app_store_item_t *app_game_store_item(int index)
 int app_game_store_count(void)
 {
     return STORE_COUNT;
+}
+
+int app_game_store_visible_count(bool camera)
+{
+    int n = 0;
+    for (int i = 0; i < STORE_COUNT; ++i) {
+        n += item_visible(&s_store[i], camera);
+    }
+    return n;
+}
+
+int app_game_store_visible(bool camera, int position)
+{
+    for (int i = 0; i < STORE_COUNT && position >= 0; ++i) {
+        if (item_visible(&s_store[i], camera) && position-- == 0) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 int app_game_store_find(app_item_kind_t kind, uint8_t value)
@@ -1382,6 +1606,10 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->sleep_code = g->sleep_idx == DEFAULT_SLEEP_IDX ? 0 : (uint8_t)(g->sleep_idx + 1);
     r->bright_code = g->bright_idx == DEFAULT_BRIGHT_IDX ? 0 : (uint8_t)(g->bright_idx + 1);
     r->goal_k = (uint8_t)(g->step_goal / 1000U);
+    r->filters_owned = g->filters_owned;
+    r->filter = g->booth.view.filter;
+    r->lenses_owned = g->lenses_owned;
+    r->lens = g->booth.view.res;
 }
 
 void app_game_import(app_game_handle_t g, const app_game_record_t *r)
@@ -1417,6 +1645,12 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
                    ? (uint8_t)(r->sleep_code - 1) : DEFAULT_SLEEP_IDX;
     g->bright_idx = r->bright_code && r->bright_code <= APP_BRIGHT_OPTIONS
                     ? (uint8_t)(r->bright_code - 1) : DEFAULT_BRIGHT_IDX;
+    g->filters_owned = (uint8_t)(r->filters_owned | FREE_FILTERS);
+    g->lenses_owned = (uint8_t)((r->lenses_owned & ((1U << APP_PHOTO_RES_COUNT) - 1U)) | FREE_LENSES);
+    booth_select_lens(&g->booth, r->lens < APP_PHOTO_RES_COUNT
+                      && (g->lenses_owned & APP_OWN_LENS_BIT(r->lens)) ? r->lens : APP_PHOTO_RES_LOW);
+    booth_select_filter(&g->booth, r->filter < APP_FILTER_COUNT
+                        && (g->filters_owned & APP_OWN_FILTER_BIT(r->filter)) ? r->filter : APP_FILTER_NONE);
     g->pixel_style = r->pixel_style < APP_PIXEL_COUNT && (g->owned & APP_OWN_STYLE_BIT(r->pixel_style))
                      ? (app_pixel_style_t)r->pixel_style : APP_PIXEL_CHUNKY;
     g->color_index = r->color_index < APP_COLOR_COUNT && (g->owned & APP_OWN_COLOR_BIT(r->color_index))
