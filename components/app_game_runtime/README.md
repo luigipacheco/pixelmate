@@ -35,7 +35,8 @@ advance the model, take its event bits, advance the view, then save if due.
 - Steps: the BMI270 on-chip counter via `app_pedometer_hw`, so walking counts
   even while the pet is idle. Start is retried 6 times (every 5 s); if it
   never succeeds the model's software detector uses the board's IMU events.
-- Save: NVS namespace `pixel_pal`, key `pet`, version 1, the 36-byte
+- Save: NVS namespace `pixel_pal`, key `pet`, version 2 (v1 records are
+  ignored; early builds could store an all-zero pet), the 36-byte
   `app_game_record_t`. Spending, settings and goals save after 2 s; step and stat
   drift after 30 s, to bound flash wear.
 - Day: from `time()` once the clock is set (after network time sync); until

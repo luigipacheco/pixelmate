@@ -22,7 +22,8 @@
 
 static const char *TAG = "pixel_pal";
 enum {
-    SAVE_VERSION = 1,
+    /* v1 builds could store an all-zero pet; v2 ignores those records. */
+    SAVE_VERSION = 2,
     SAVE_SOON_MS = 2000,          /* After spending, settings or a goal. */
     SAVE_LATER_MS = 30000,        /* After step/stat drift; limits flash wear. */
     SENSOR_POLL_TICKS = GAME_TICK_HZ,          /* 1 s */
@@ -76,8 +77,11 @@ static void load_save(host_state_t *state)
     if (!state->save_ready) {
         return;
     }
-    app_game_record_t record;
-    if (raylib_lite_save_load(&state->save, &record, NULL) == RAYLIB_LITE_OK) {
+    /* The loader reports success with the defaults when nothing is stored yet,
+     * so the defaults must be the fresh pet, not zeros. */
+    app_game_record_t fresh, record;
+    app_game_export(state->game, &fresh);
+    if (raylib_lite_save_load(&state->save, &record, &fresh) == RAYLIB_LITE_OK) {
         app_game_import(state->game, &record);
         ESP_LOGI(TAG, "restored pet: %lu steps, %lu sparks",
                  (unsigned long)record.steps_total, (unsigned long)record.sparks);
