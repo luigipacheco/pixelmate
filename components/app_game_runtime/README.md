@@ -36,9 +36,9 @@ advance the model, take its event bits, advance the view, then save if due.
 - Steps: the BMI270 on-chip counter via `app_pedometer_hw`, so walking counts
   even while the pet is idle. Start is retried 6 times (every 5 s); if it
   never succeeds the model's software detector uses the board's IMU events.
-- Save: NVS namespace `pixel_pal`, key `pet`, version 3 (v2 records migrate by
-  prefix with full health; v1 records are ignored since early builds could
-  store an all-zero pet), the 36-byte
+- Save: NVS namespace `pixel_pal`, key `pet`, version 4 (v2/v3 records migrate by
+  prefix, v2 with full health; v1 records are ignored since early builds could
+  store an all-zero pet), the 68-byte
   `app_game_record_t`. Spending, settings and goals save after 2 s; step and stat
   drift after 30 s, to bound flash wear.
 - Day: from `time()` once the clock is set (after network time sync); until
@@ -49,6 +49,14 @@ advance the model, take its event bits, advance the view, then save if due.
   (steps, stats) keep running at 30 Hz. Touch stays active to wake it.
 - Battery: the BQ27220 gauge is read every 10 s; current above 5 mA counts as
   charging. A failed read reports "unknown" (menu shows NO BATT).
+- Network: `app_net` starts 1 s after boot (first frame first). Every second
+  the runtime reports Wi-Fi status/IP to the model (shown in the menu) and
+  publishes stats JSON for `http://pixelpal.local` / the menu's IP. A timezone
+  from the web page is applied as a POSIX `TZ` and saved in NVS
+  (`pixel_pal/tz_min`), then reloaded on boot.
+- Day: the local calendar date as days since 1970 (consecutive across New
+  Year). A date that moves backwards (clock or timezone correction) keeps
+  today's progress; a forward jump is a new day.
 - Board buttons never reset the pet. Only the Engine's explicit reset control does.
 
 ## Host simulator

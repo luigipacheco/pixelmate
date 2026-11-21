@@ -12,19 +12,22 @@
 #include "raylib_lite_raylib.h"
 
 #if defined(RAYLIB_LITE_GAME_NATIVE)
+#include <stdlib.h>
 #include <time.h>
+#include "app_net.h"
 #include "app_pedometer_hw.h"
 #include "app_power_hw.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "nvs.h"
 #include "nvs_flash.h"
 #include "raylib_lite_clock.h"
 #include "raylib_lite_save.h"
 
 static const char *TAG = "pixel_pal";
 enum {
-    /* v1 builds could store an all-zero pet (ignored); v2 lacks health (migrated). */
-    SAVE_VERSION = 3,
+    /* v1 builds could store an all-zero pet (ignored); v2/v3 migrate by prefix. */
+    SAVE_VERSION = 4,
     SAVE_SOON_MS = 2000,          /* After spending, settings or a goal. */
     SAVE_LATER_MS = 30000,        /* After step/stat drift; limits flash wear. */
     SENSOR_POLL_TICKS = GAME_TICK_HZ,          /* 1 s */
@@ -37,7 +40,13 @@ enum {
     CHARGING_MIN_MA = 5,          /* Gauge current above this counts as charging. */
     POWER_RETRY_TICKS = GAME_TICK_HZ,
     VALID_EPOCH = 1700000000,     /* Earlier clocks are unsynchronized. */
+    NET_START_TICK = GAME_TICK_HZ,             /* Start Wi-Fi 1 s after boot. */
+    NET_POLL_TICKS = GAME_TICK_HZ,
+    STATS_JSON_MAX = APP_NET_JSON_MAX,
 };
+#define NET_HOSTNAME "pixelpal"
+#define TZ_NVS_NAMESPACE "pixel_pal"
+#define TZ_NVS_KEY "tz_min"
 #endif
 
 /* Host builds: the space key ("jump" action) credits steps for quick testing,
@@ -49,11 +58,13 @@ enum {
     HOST_BATTERY_PCT = 76,
     HOST_FIRST_DAY = 20000,
 };
+#define HOST_LOOPBACK_IPV4 0x0100007FUL   /* 127.0.0.1 in network byte order. */
 
 typedef struct {
     app_game_handle_t game;
     pet_view_t view;
     bool debug_key_down, debug_day_down;
+    bool blanked;                 /* Black frame already submitted while the screen is off. */
     int32_t host_day;
 #if defined(RAYLIB_LITE_GAME_NATIVE)
     raylib_lite_save_t save;
@@ -67,6 +78,9 @@ typedef struct {
     uint16_t power_retry;         /* Ticks until a failed panel switch is retried. */
     int logged_power;             /* Last model power state logged, for diagnostics. */
     uint8_t clock_logged;         /* 0 = not yet, 1 = logged invalid, 2 = logged valid. */
+    uint32_t net_timer;
+    bool net_started;
+    char stats_json[STATS_JSON_MAX];   /* Instance-owned buffer for /api/stats. */
 #endif
 } host_state_t;
 
@@ -77,16 +91,22 @@ static uint64_t now_ms(void)
 }
 
 /* v2 -> v3: same prefix; the appended health fields start full. */
+/* v2 (32 B) and v3 (36 B) are prefixes of the current record: copy them and
+ * default the appended fields (v2 had no health, so it starts full). */
 static raylib_lite_result_t migrate_save(uint16_t old_version, const void *old_data, size_t old_size,
                                         void *new_data, size_t new_size)
 {
-    if (old_version != 2 || old_size != APP_GAME_RECORD_V2_SIZE || new_size != sizeof(app_game_record_t)) {
+    const bool v2 = old_version == 2 && old_size == APP_GAME_RECORD_V2_SIZE;
+    const bool v3 = old_version == 3 && old_size == APP_GAME_RECORD_V3_SIZE;
+    if ((!v2 && !v3) || new_size != sizeof(app_game_record_t)) {
         return RAYLIB_LITE_INVALID_VERSION;
     }
     app_game_record_t *record = new_data;
     memset(record, 0, sizeof(*record));
     memcpy(record, old_data, old_size);
-    record->hp = APP_HP_MAX;
+    if (v2) {
+        record->hp = APP_HP_MAX;
+    }
     return RAYLIB_LITE_OK;
 }
 
@@ -210,6 +230,18 @@ static void apply_power(host_state_t *state, app_power_t power)
     }
 }
 
+/* Days since 1970-01-01 for a civil date (proleptic Gregorian). Unlike
+ * year*400+yday it stays consecutive across New Year. */
+static int32_t days_from_civil(int y, int m, int d)
+{
+    y -= m <= 2;
+    const int era = (y >= 0 ? y : y - 399) / 400;
+    const int yoe = y - era * 400;
+    const int doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    const int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + doe - 719468;
+}
+
 static void poll_day(host_state_t *state)
 {
     if (state->day_timer++ % DAY_POLL_TICKS) {
@@ -228,7 +260,99 @@ static void poll_day(host_state_t *state)
         state->clock_logged = 2;
         ESP_LOGI(TAG, "clock valid: %04d-%02d-%02d", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
     }
-    app_game_set_day(state->game, (local.tm_year - 100) * 400 + local.tm_yday + 1);
+    app_game_set_day(state->game, days_from_civil(local.tm_year + 1900, local.tm_mon + 1, local.tm_mday));
+}
+
+/* ---- Wi-Fi, timezone and stats --------------------------------------- */
+
+/* POSIX TZ from JavaScript's getTimezoneOffset(): minutes WEST of UTC, which is
+ * also POSIX's sign convention ("UTC5:00" = five hours behind UTC). */
+static void apply_timezone(int minutes_west)
+{
+    const int magnitude = abs(minutes_west);
+    char tz[16];
+    snprintf(tz, sizeof(tz), "UTC%s%d:%02d", minutes_west < 0 ? "-" : "", magnitude / 60, magnitude % 60);
+    setenv("TZ", tz, 1);
+    tzset();
+    ESP_LOGI(TAG, "timezone %s", tz);
+}
+
+static void load_timezone(void)
+{
+    nvs_handle_t h;
+    int32_t minutes = 0;
+    if (nvs_open(TZ_NVS_NAMESPACE, NVS_READONLY, &h) == ESP_OK) {
+        if (nvs_get_i32(h, TZ_NVS_KEY, &minutes) == ESP_OK) {
+            apply_timezone((int)minutes);
+        }
+        nvs_close(h);
+    }
+}
+
+static void save_timezone(int minutes)
+{
+    nvs_handle_t h;
+    if (nvs_open(TZ_NVS_NAMESPACE, NVS_READWRITE, &h) == ESP_OK) {
+        if (nvs_set_i32(h, TZ_NVS_KEY, minutes) == ESP_OK) {
+            nvs_commit(h);
+        }
+        nvs_close(h);
+    }
+}
+
+static int build_stats_json(const app_game_snapshot_t *s, char *out, size_t cap)
+{
+    static const char *const moods[APP_MOOD_COUNT] = {
+        "idle", "happy", "sleepy", "hungry", "sad", "walk", "eating", "thinking", "surprised", "grumpy",
+        "fainted"
+    };
+    int n = snprintf(out, cap,
+                     "{\"steps_today\":%lu,\"goal\":%lu,\"food_need\":%lu,\"fed_today\":%s,"
+                     "\"fullness\":%u,\"hp\":%u,\"hp_max\":%d,\"fainted\":%s,\"streak\":%u,"
+                     "\"steps_total\":%lu,\"sparks\":%lu,\"friendship\":%u,\"mood\":\"%s\","
+                     "\"battery\":%d,\"charging\":%s,\"clock\":%s,\"history\":[",
+                     (unsigned long)s->steps_today, (unsigned long)s->step_goal,
+                     (unsigned long)s->food_need, s->fed_today ? "true" : "false", s->hunger, s->hp,
+                     APP_HP_MAX, s->fainted ? "true" : "false", s->fed_streak,
+                     (unsigned long)s->steps_total, (unsigned long)s->sparks, s->friendship,
+                     moods[s->mood < APP_MOOD_COUNT ? s->mood : 0], s->battery_pct,
+                     s->battery_charging ? "true" : "false", s->day > 0 ? "true" : "false");
+    for (int i = 0; i < APP_HISTORY_DAYS && n > 0 && (size_t)n < cap; ++i) {
+        n += snprintf(out + n, cap - (size_t)n, "%s%lu", i ? "," : "", (unsigned long)s->history[i]);
+    }
+    if (n > 0 && (size_t)n < cap) {
+        n += snprintf(out + n, cap - (size_t)n, "]}");
+    }
+    return n > 0 && (size_t)n < cap ? n : -1;
+}
+
+static void poll_net(host_state_t *state)
+{
+    ++state->net_timer;
+    if (!state->net_started) {
+        if (state->net_timer >= NET_START_TICK) {
+            state->net_started = true;
+            app_net_start(NET_HOSTNAME);   /* Logs and reports NO_CONFIG itself. */
+        }
+        return;
+    }
+    int minutes_west = 0;
+    if (app_net_take_timezone(&minutes_west)) {
+        apply_timezone(minutes_west);
+        save_timezone(minutes_west);
+        state->day_timer = 0;              /* Re-evaluate the day right away. */
+    }
+    if (state->net_timer % NET_POLL_TICKS) {
+        return;
+    }
+    uint32_t ip = 0;
+    static const app_net_state_t map[] = {APP_NET_OFF, APP_NET_NO_CONFIG, APP_NET_CONNECTING, APP_NET_ONLINE};
+    const app_net_status_t status = app_net_status(&ip);
+    app_game_set_network(state->game, map[status <= APP_NET_STATUS_ONLINE ? status : 0], ip);
+    const app_game_snapshot_t snapshot = app_game_read(state->game);
+    if (build_stats_json(&snapshot, state->stats_json, sizeof(state->stats_json)) > 0) {
+        app_net_publish(state->stats_json);
+    }
 }
 #endif
 
@@ -248,8 +372,10 @@ static int initialize(void *value, const char *asset_root)
     state->applied_power = -1;
     state->logged_power = -1;
     load_save(state);
+    load_timezone();
 #else
     app_game_set_battery(state->game, HOST_BATTERY_PCT, false);
+    app_game_set_network(state->game, APP_NET_ONLINE, HOST_LOOPBACK_IPV4);
     state->host_day = HOST_FIRST_DAY;
     app_game_set_day(state->game, state->host_day);
 #endif
@@ -333,6 +459,7 @@ static void update(void *value)
     poll_sensor(state);
     poll_day(state);
     poll_battery(state);
+    poll_net(state);
 #endif
     app_game_update(state->game);
     const uint32_t events = app_game_take_events(state->game);
@@ -356,12 +483,13 @@ static int render(void *value)
         return -1;
     }
     const bool screen_off = app_game_read(state->game).power == APP_POWER_DOZE;
-#if defined(RAYLIB_LITE_GAME_NATIVE)
-    /* Panel is off: submit nothing, saving the render and the QSPI transfer. */
-    if (screen_off && state->applied_power == APP_POWER_DOZE) {
+    /* Screen off: push one black frame (so nothing stale can stay visible even
+     * if the panel ignores "off"), then submit nothing until it wakes. */
+    if (!screen_off) {
+        state->blanked = false;
+    } else if (state->blanked) {
         return 0;
     }
-#endif
     BeginDrawing();
     if (!raylib_lite_raylib_frame_available()) {
         EndDrawing();
@@ -369,8 +497,8 @@ static int render(void *value)
     }
     const app_game_snapshot_t snapshot = app_game_read(state->game);
     if (screen_off) {
-        /* Host stand-in for a dark panel (on the device the panel is off). */
         ClearBackground(BLACK);
+        state->blanked = true;
     } else {
         pet_view_draw(&state->view, &snapshot);
     }

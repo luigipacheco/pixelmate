@@ -85,6 +85,16 @@ enum {
     APP_LOW_BATTERY_DOZE_S = 12,
 };
 
+/** Network state reported by the runtime (display only). */
+typedef enum {
+    APP_NET_OFF = 0,       /**< No Wi-Fi hardware or not started (Host). */
+    APP_NET_NO_CONFIG,     /**< No Wi-Fi set in Vibe Mode. */
+    APP_NET_CONNECTING,
+    APP_NET_ONLINE,
+} app_net_state_t;
+
+enum { APP_HISTORY_DAYS = 7 };
+
 /** Unlockable animations, bought in the store and toggled on/off. */
 typedef enum {
     APP_ANIM_TRAIL = 0,    /**< Sparks fall from the eyes on every step. */
@@ -244,6 +254,11 @@ typedef struct {
     uint8_t hp;                 /**< Health hearts, 0..APP_HP_MAX. */
     bool fainted;
     bool fed_today;
+    uint16_t fed_streak;        /**< Consecutive fed days ending yesterday. */
+    uint32_t history[APP_HISTORY_DAYS];  /**< Steps per past day; [0] = yesterday. */
+    int32_t day;                /**< Current calendar day key, 0 = clock unknown. */
+    app_net_state_t net;
+    uint32_t ipv4;              /**< Address in network byte order when ONLINE. */
     uint16_t friendship;        /**< 0..999; hearts = friendship / 100. */
     app_pixel_style_t pixel_style;
     uint8_t color_index;        /**< 0..APP_COLOR_COUNT-1. */
@@ -253,7 +268,7 @@ typedef struct {
     uint32_t save_seq;          /**< Increments whenever persistent data changes. */
 } app_game_snapshot_t;
 
-/** Persistent record: plain data, 36 bytes. Bump the save version on layout change;
+/** Persistent record: plain data, 68 bytes. Bump the save version on layout change;
  * fields are only ever appended so older records can be migrated by prefix. */
 typedef struct {
     uint32_t steps_total;
@@ -276,10 +291,15 @@ typedef struct {
     uint8_t fainted;
     uint8_t fed_today;
     uint8_t reserved;
+    /* v4 */
+    uint32_t history[APP_HISTORY_DAYS];
+    uint16_t fed_streak;
+    uint16_t reserved2;
 } app_game_record_t;
 
-/** Size of the v2 record (prefix of the current one), for save migration. */
+/** Sizes of older records (prefixes of the current one), for save migration. */
 #define APP_GAME_RECORD_V2_SIZE 32U
+#define APP_GAME_RECORD_V3_SIZE 36U
 
 typedef struct {
     uint16_t width;    /**< Viewport width in pixels, 1..65535. */
@@ -311,6 +331,8 @@ void app_game_add_steps(app_game_handle_t handle, uint32_t steps);
 void app_game_set_day(app_game_handle_t handle, int32_t day);
 /** Report the battery: percent 0..100 (negative = unknown) and charging state. */
 void app_game_set_battery(app_game_handle_t handle, int percent, bool charging);
+/** Report network state and IPv4 address (network byte order) for display. */
+void app_game_set_network(app_game_handle_t handle, app_net_state_t state, uint32_t ipv4);
 /** Wake the screen (button press, external event). No-op when awake. */
 void app_game_wake(app_game_handle_t handle);
 /** Advance one 30 Hz tick unless paused. No rendering or hardware access. */

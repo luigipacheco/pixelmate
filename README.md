@@ -28,6 +28,10 @@ react to how much you walk, what you feed it and how you play with it.
   the menu does it at once. Steps keep counting; tap the screen to wake.
 - **Battery:** percentage in the pull-down menu; a top-bar icon appears while
   charging or when the battery is low.
+- **Wi-Fi stats:** joins the Wi-Fi set in Vibe Mode, syncs the clock, and
+  serves a stats page at `http://pixelpal.local` (or the IP in the menu):
+  today, food, health, 7-day chart, streak, sparks and battery. Opening it once
+  sets the pet's timezone.
 - **Style:** pick among the pixel sizes and colors you own.
 - Progress is saved to NVS.
 
@@ -66,6 +70,8 @@ IDF_EXTRA_ACTIONS_PATH=projects/pixel_pal/managed_components/espressif__esp_boar
 | `components/app_game` | Pure C pet rules: steps, stats, moods, gestures, cards |
 | `components/app_game_runtime` | Engine adapter, pixel renderer, eyes, screens, save |
 | `components/app_pedometer_hw` | BMI270 on-chip step counter (device only) |
+| `components/app_power_hw` | Screen power and battery gauge (device only) |
+| `components/app_net` | Wi-Fi, network time, mDNS, stats web server (device only) |
 | `main/game_entry.c` | Selects the runtime module for the Engine |
 | `game.sim.json` | Sources shared by the Host simulator and firmware |
 

@@ -94,6 +94,10 @@ struct app_game {
     uint8_t snack, happiness;     /* snack = temporary fullness from food */
     uint8_t hp;
     bool fainted, fed_today;
+    uint16_t fed_streak;
+    uint32_t history[APP_HISTORY_DAYS];
+    app_net_state_t net;
+    uint32_t ipv4;
     bool goal_awarded;
     app_pixel_style_t pixel_style;
     uint8_t color_index;
@@ -218,6 +222,8 @@ static void fresh_pet(app_game_handle_t g)
     g->hp = APP_HP_MAX;
     g->fainted = false;
     g->fed_today = false;
+    g->fed_streak = 0;
+    memset(g->history, 0, sizeof(g->history));
     g->happiness = START_HAPPINESS;
     g->goal_awarded = false;
     g->pixel_style = APP_PIXEL_CHUNKY;
@@ -762,6 +768,14 @@ void app_game_add_steps(app_game_handle_t g, uint32_t steps)
     }
 }
 
+void app_game_set_network(app_game_handle_t g, app_net_state_t state, uint32_t ipv4)
+{
+    if (g) {
+        g->net = state;
+        g->ipv4 = state == APP_NET_ONLINE ? ipv4 : 0;
+    }
+}
+
 void app_game_set_battery(app_game_handle_t g, int percent, bool charging)
 {
     if (!g) {
@@ -783,12 +797,29 @@ void app_game_set_day(app_game_handle_t g, int32_t day)
     if (!g || day <= 0 || day == g->day) {
         return;
     }
-    if (g->day > 0 && day > g->day) {
+    if (day < g->day) {
+        /* The clock or timezone moved backwards (e.g. UTC first, local time
+         * later): a correction, not a new day, so today's progress stays. */
+        g->day = day;
+        changed(g);
+        return;
+    }
+    if (g->day > 0) {
         /* Settle the day that ended, then every day the pet went unwalked. */
         const int32_t missed = day - g->day - 1;
         int hp = g->hp + (g->fed_today ? 1 : -1) - (missed > APP_HP_MAX ? APP_HP_MAX : missed);
         hp = hp < 0 ? 0 : (hp > APP_HP_MAX ? APP_HP_MAX : hp);
         g->hp = (uint8_t)hp;
+        /* Skipped days are unfed and more recent, so they break the streak. */
+        g->fed_streak = (g->fed_today && missed == 0) ? (uint16_t)(g->fed_streak + 1) : 0;
+        /* History: yesterday first, then a zero for each skipped day. */
+        const int32_t shift = 1 + (missed >= APP_HISTORY_DAYS ? APP_HISTORY_DAYS : missed);
+        for (int i = APP_HISTORY_DAYS - 1; i >= 0; --i) {
+            g->history[i] = i >= shift ? g->history[i - shift] : 0;
+        }
+        if (shift - 1 < APP_HISTORY_DAYS) {
+            g->history[shift - 1] = g->steps_today;
+        }
         if (g->hp == 0 && !g->fainted) {
             g->fainted = true;
             set_overlay(g, APP_OVERLAY_NONE);
@@ -904,7 +935,7 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
             0
         };
     }
-    return (app_game_snapshot_t) {
+    app_game_snapshot_t snap = (app_game_snapshot_t) {
         .tick = g->tick,
         .pointer_x = g->pointer_x,
         .pointer_y = g->pointer_y,
@@ -928,6 +959,10 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .hp = g->hp,
         .fainted = g->fainted,
         .fed_today = g->fed_today,
+        .fed_streak = g->fed_streak,
+        .day = g->day,
+        .net = g->net,
+        .ipv4 = g->ipv4,
         .happiness = g->happiness,
         .friendship = g->friendship,
         .pixel_style = g->pixel_style,
@@ -937,6 +972,8 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .slots = g->slots.view,
         .save_seq = g->save_seq,
     };
+    memcpy(snap.history, g->history, sizeof(snap.history));
+    return snap;
 }
 
 uint32_t app_game_take_events(app_game_handle_t g)
@@ -990,6 +1027,8 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->hp = g->hp;
     r->fainted = g->fainted;
     r->fed_today = g->fed_today;
+    memcpy(r->history, g->history, sizeof(r->history));
+    r->fed_streak = g->fed_streak;
     r->happiness = g->happiness;
     r->pixel_style = (uint8_t)g->pixel_style;
     r->color_index = g->color_index;
@@ -1015,6 +1054,8 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
     g->hp = r->hp > APP_HP_MAX ? APP_HP_MAX : r->hp;
     g->fainted = r->fainted && g->hp == 0;
     g->fed_today = r->fed_today != 0;
+    memcpy(g->history, r->history, sizeof(g->history));
+    g->fed_streak = r->fed_streak;
     g->happiness = r->happiness > STAT_MAX ? STAT_MAX : r->happiness;
     /* Only owned things can be selected or switched on. */
     g->owned = r->owned | FREE_OWNED;

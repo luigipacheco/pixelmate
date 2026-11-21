@@ -69,8 +69,20 @@ static void draw_menu(const draw_ctx_t *d, int oy)
     screens_button(d, goal, 0, oy, "GOAL", 4, d->color, false);
     px_icon(PX_ICON_SHOE, goal.x + 22, goal.y + oy + 21, 4, d->color, d->accent, d->gap);
 
-    const app_store_item_t *next = screens_next_unlock(s);
     char text[40];
+    /* Network line: where to open the stats page. */
+    switch (s->net) {
+    case APP_NET_ONLINE:
+        snprintf(text, sizeof(text), "WEB %lu.%lu.%lu.%lu", (unsigned long)(s->ipv4 & 0xFF),
+                 (unsigned long)((s->ipv4 >> 8) & 0xFF), (unsigned long)((s->ipv4 >> 16) & 0xFF),
+                 (unsigned long)(s->ipv4 >> 24));
+        px_text_center(text, 240, oy + 298, 2, d->color, false);
+        break;
+    case APP_NET_CONNECTING: px_text_center("WIFI CONNECTING", 240, oy + 298, 2, d->dim, false); break;
+    case APP_NET_NO_CONFIG: px_text_center("WIFI NOT SET IN VIBE MODE", 240, oy + 298, 2, d->dim, false); break;
+    default: break;
+    }
+    const app_store_item_t *next = screens_next_unlock(s);
     if (!next) {
         snprintf(text, sizeof(text), "YOU OWN EVERYTHING");
     } else if (s->sparks >= next->cost) {
@@ -79,7 +91,7 @@ static void draw_menu(const draw_ctx_t *d, int oy)
         snprintf(text, sizeof(text), "%s IN %lu STEPS", next->name,
                  (unsigned long)(next->cost - s->sparks) * APP_STEPS_PER_SPARK);
     }
-    px_text_center(text, 240, oy + 296, 2, d->accent, false);
+    px_text_center(text, 240, oy + 322, 2, d->accent, false);
     draw_grabber(oy + APP_MENU_H - 18, d->dim);
 }
 

@@ -23,7 +23,7 @@ enum {
     APP_TAP_SLOP_PX = 28,     /**< Movement still accepted as a tap. */
     APP_PULL_ZONE_H = 90,     /**< A downward drag starting above this opens the menu. */
     APP_PULL_MIN_PX = 70,     /**< Vertical travel that opens/closes a panel. */
-    APP_MENU_H = 330,         /**< Height of the pull-down menu panel. */
+    APP_MENU_H = 362,         /**< Height of the pull-down menu panel. */
 };
 
 /* Eye placement: center and scale relative to the home eyes (0 = hidden). */
@@ -35,7 +35,7 @@ typedef struct {
 static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay)
 {
     switch (overlay) {
-    case 1: return (app_eye_anchor_t) {240, 398, 0.46f};   /* menu: peeking below */
+    case 1: return (app_eye_anchor_t) {240, 412, 0.4f};    /* menu: peeking below */
     case 2: return (app_eye_anchor_t) {240, 160, 0.72f};   /* style preview */
     case 3: return (app_eye_anchor_t) {240, 140, 0.0f};    /* store: hidden */
     case 4: return (app_eye_anchor_t) {240, 400, 0.42f};   /* goal: watching the number */
