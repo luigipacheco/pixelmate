@@ -81,6 +81,7 @@ struct app_game {
     uint8_t store_page;
     uint32_t owned;
     uint8_t anims_on;
+    app_sound_t sound;
     uint32_t step_goal;
     app_power_t power;
     uint32_t screen_idle_ticks;   /* Touch-free ticks; steps do not reset it. */
@@ -214,6 +215,7 @@ static void fresh_pet(app_game_handle_t g)
     g->store_page = 0;
     g->owned = FREE_OWNED;
     g->anims_on = 0;
+    g->sound = APP_SOUND_ON;
     g->step_goal = APP_GOAL_DEFAULT;
     g->power = APP_POWER_AWAKE;
     g->screen_idle_ticks = 0;
@@ -532,6 +534,12 @@ static void tap_style(app_game_handle_t g, int32_t x, int32_t y)
 {
     if (app_rect_hit(app_panel_back_rect(), x, y)) {
         set_overlay(g, APP_OVERLAY_MENU);
+        return;
+    }
+    if (app_rect_hit(app_style_sound_rect(), x, y)) {
+        g->sound = (app_sound_t)((g->sound + 1) % APP_SOUND_COUNT);   /* ON -> LOUD -> OFF */
+        g->events |= APP_EVENT_SETTINGS;
+        changed(g);
         return;
     }
     for (int i = 0; i < APP_PIXEL_COUNT; ++i) {
@@ -1060,6 +1068,7 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .mood = g->mood,
         .owned = g->owned,
         .anims_on = g->anims_on,
+        .sound = g->sound,
         .steps_total = g->steps_total,
         .steps_today = g->steps_today,
         .step_goal = g->step_goal,
@@ -1147,6 +1156,7 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->goal_awarded = g->goal_awarded;
     r->owned = g->owned;
     r->anims_on = g->anims_on;
+    r->sound = (uint8_t)g->sound;
     r->goal_k = (uint8_t)(g->step_goal / 1000U);
 }
 
@@ -1177,6 +1187,7 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
         }
     }
     g->anims_on = anims;
+    g->sound = r->sound < APP_SOUND_COUNT ? (app_sound_t)r->sound : APP_SOUND_ON;
     g->pixel_style = r->pixel_style < APP_PIXEL_COUNT && (g->owned & APP_OWN_STYLE_BIT(r->pixel_style))
                      ? (app_pixel_style_t)r->pixel_style : APP_PIXEL_CHUNKY;
     g->color_index = r->color_index < APP_COLOR_COUNT && (g->owned & APP_OWN_COLOR_BIT(r->color_index))

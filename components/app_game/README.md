@@ -56,6 +56,9 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
   `app_game.c`). Lime and chunky are free. Buying deducts sparks and equips the
   item; tapping an owned color/style selects it, an owned animation toggles.
   Style only selects owned items; a locked one opens the store at that item.
+  Style's SOUND button cycles `sound` ON -> LOUD -> OFF (`APP_EVENT_SETTINGS`,
+  saved in the record's former `reserved` byte, so older saves read ON). The
+  model only stores it; the runtime's `app_sfx` plays the sounds.
 - `owned` uses the `APP_OWN_*_BIT` layout; `app_game_import()` always restores
   the free items and drops selections or animations that are not owned.
 - With STEP DANCE on, crossing each 100 total steps raises `APP_EVENT_DANCE`.
