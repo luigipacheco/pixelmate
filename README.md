@@ -58,7 +58,8 @@ the `pixel_pal` name so existing pets carry over.)
   Booth page appears after the Arcade. Tap SNAP for a 3-2-1 photo or GIF for
   an 8-frame clip; ROLL browses and deletes them. A photo is a lens plus a
   look: LO RES 32x32 is free, MID RES 64x64 (80) and HI RES 128x128 (180) are
-  sold; PLAIN is free, DITHER, SCANLINES, GAME-GREEN, HALFTONE, THERMAL, ASCII
+  sold; COLOR FILM (200) adds real 16-color photos (B/W chip next to the lens);
+  PLAIN is free, DITHER, SCANLINES, GAME-GREEN, HALFTONE, THERMAL, ASCII
   and EYE STICKERS are sold (50-150). Photos keep the pet's palette. Up to 12
   photos and 2 GIFs are kept in NVS (HI RES photos fill it sooner), and the
   stats page links to a gallery (`/photos`) to save them as PNG/GIF. Without a

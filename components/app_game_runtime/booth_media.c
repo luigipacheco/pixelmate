@@ -30,35 +30,59 @@ void booth_media_init(booth_media_t *m)
 }
 
 #if !defined(RAYLIB_LITE_GAME_NATIVE)
-/* Host: a face drifting across a gradient with sensor-like noise, so every
- * booth screen and filter can be exercised without a camera. */
+/* Host: a face drifting over sky and grass, a red ball, sensor-like noise, so
+ * every booth screen, look and both films can be exercised without a camera. */
 static void fake_frame(booth_media_t *m)
 {
-    enum { S = APP_PHOTO_MAX_SIDE };
+    enum { S = APP_PHOTO_MAX_SIDE, N = S * S };
     const float t = (float)m->fake_t * 0.06f;
     const int cx = S / 2 + (int)(28.0f * sinf(t)), cy = S / 2 - 4 + (int)(8.0f * cosf(t * 1.3f));
     uint32_t rng = m->fake_t * 2654435761U + 1U;
     for (int y = 0; y < S; ++y) {
         for (int x = 0; x < S; ++x) {
-            const int dx = x - cx, dy = y - cy;
-            int v = 40 + y + x / 4;
+            const int dx = x - cx, dy = y - cy, bx = x - 104, by = y - 100;
+            int r = y < S / 2 ? 60 + y : 50, g = y < S / 2 ? 110 + y : 150 + (y - S / 2) / 2,
+                b = y < S / 2 ? 230 : 60;   /* Sky, then grass. */
             if (dx * dx + dy * dy < 34 * 34) {
-                v = 196;
+                r = 230, g = 180, b = 140;   /* Face. */
             }
             const int ex = abs(dx) - 12, ey = dy + 8;
             if (ex * ex + ey * ey < 28 || ((dy == 14 || dy == 15) && abs(dx) < 14)) {
-                v = 36;   /* Eyes and a smile. */
+                r = g = b = 36;   /* Eyes and a smile. */
+            }
+            if (bx * bx + by * by < 12 * 12) {
+                r = 220, g = 40, b = 40;   /* Red ball. */
             }
             rng ^= rng << 13;
             rng ^= rng >> 17;
             rng ^= rng << 5;
-            v += (int)(rng >> 28) - 8;
-            m->luma[y * S + x] = (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v));
+            const int noise = (int)(rng >> 28) - 8;
+            const int Y = (299 * r + 587 * g + 114 * b) / 1000 + noise;
+            const int U = 128 + (b - Y) * 564 / 1000, V = 128 + (r - Y) * 713 / 1000;
+            m->yuv[y * S + x] = (uint8_t)(Y < 0 ? 0 : (Y > 255 ? 255 : Y));
+            m->yuv[N + y * S + x] = (uint8_t)(U < 0 ? 0 : (U > 255 ? 255 : U));
+            m->yuv[2 * N + y * S + x] = (uint8_t)(V < 0 ? 0 : (V > 255 ? 255 : V));
         }
     }
     ++m->luma_seq;
 }
 #endif
+
+/* Feed scaled to a lens (all three planes for color, Y alone for B&W), then
+ * through the look: palette indices, one byte per pixel. */
+static void filter_frame(booth_media_t *m, int res, int filter, bool color, uint8_t *out)
+{
+    enum { N = APP_PHOTO_MAX_PIXELS };
+    const int side = app_photo_side(res), n = side * side;
+    for (int plane = 0; plane < (color ? 3 : 1); ++plane) {
+        app_photo_downscale(m->yuv + plane * N, APP_PHOTO_MAX_SIDE, m->work_yuv + plane * n, side);
+    }
+    if (color) {
+        app_photo_filter_color(m->work_yuv, side, (app_photo_filter_t)filter, out);
+    } else {
+        app_photo_filter(m->work_yuv, side, (app_photo_filter_t)filter, out);
+    }
+}
 
 static bool booth_open(const app_game_snapshot_t *s)
 {
@@ -87,7 +111,7 @@ static void run_feed(booth_media_t *m, const app_game_snapshot_t *s)
     const app_camera_state_t state = app_camera_hw_state();
     m->camera = (unsigned)state < sizeof(map) / sizeof(map[0]) ? map[state] : BOOTH_CAMERA_ERROR;
     if (want) {
-        app_camera_hw_frame(m->luma, &m->luma_seq);
+        app_camera_hw_frame(m->yuv, &m->luma_seq);
     }
 #else
     (void)presence_wanted;
@@ -97,25 +121,28 @@ static void run_feed(booth_media_t *m, const app_game_snapshot_t *s)
         fake_frame(m);
     }
 #endif
+    const bool color = s->booth.color && app_photo_filter_has_color(s->booth.filter);
     if (m->luma_seq && (m->live_seq != m->luma_seq || m->live_filter != s->booth.filter
-                        || m->live_res != s->booth.res)) {
-        const int side = app_photo_side(s->booth.res);
-        app_photo_downscale(m->luma, APP_PHOTO_MAX_SIDE, m->work_luma, side);
-        app_photo_filter(m->work_luma, side, (app_photo_filter_t)s->booth.filter, m->live);
+                        || m->live_res != s->booth.res || m->live_color != color)) {
+        filter_frame(m, s->booth.res, s->booth.filter, color, m->live);
         m->live_seq = m->luma_seq;
         m->live_filter = s->booth.filter;
         m->live_res = s->booth.res;
+        m->live_color = color;
     }
 }
 
-/* One packed frame of the current feed at a lens and look. Captures are made
- * fresh (not from `live`) so a GIF at HI RES can record at its capped lens. */
-static void make_frame(booth_media_t *m, int res, int filter, uint8_t *packed)
+/* One packed frame of the current feed at a lens, look and film. Captures are
+ * made fresh (not from `live`) so a GIF can record at its capped lens. */
+static void make_frame(booth_media_t *m, int res, int filter, bool color, uint8_t *packed)
 {
     const int side = app_photo_side(res);
-    app_photo_downscale(m->luma, APP_PHOTO_MAX_SIDE, m->work_luma, side);
-    app_photo_filter(m->work_luma, side, (app_photo_filter_t)filter, m->work_shades);
-    app_photo_pack(m->work_shades, side * side, packed);
+    filter_frame(m, res, filter, color, m->work_shades);
+    if (color) {
+        app_photo_pack4(m->work_shades, side * side, packed);
+    } else {
+        app_photo_pack(m->work_shades, side * side, packed);
+    }
 }
 
 static app_booth_result_t save_capture(booth_media_t *m)
@@ -138,7 +165,9 @@ static void begin_capture(booth_media_t *m, const app_booth_request_t *req, uint
     m->capture.header.filter = req->filter;
     m->capture.header.frames = frames;
     m->capture.header.base = base;
-    m->capture.header.res = frames > 1 && req->res > APP_PHOTO_GIF_MAX_RES ? APP_PHOTO_GIF_MAX_RES : req->res;
+    const uint8_t cap = req->color ? APP_PHOTO_GIF_MAX_RES_COLOR : APP_PHOTO_GIF_MAX_RES;
+    const uint8_t lens = frames > 1 && req->res > cap ? cap : req->res;
+    m->capture.header.res = (uint8_t)(lens | (req->color ? APP_PHOTO_COLOR_FLAG : 0));
 }
 
 static void serve_request(booth_media_t *m, app_game_handle_t game, app_photo_rgb_t base)
@@ -155,7 +184,7 @@ static void serve_request(booth_media_t *m, app_game_handle_t game, app_photo_rg
             return;
         }
         begin_capture(m, &req, 1, base);
-        make_frame(m, m->capture.header.res, req.filter, app_photo_frame(&m->capture, 0));
+        make_frame(m, app_photo_lens(&m->capture.header), req.filter, req.color, app_photo_frame(&m->capture, 0));
         app_game_booth_result(game, save_capture(m));
         return;
     case APP_BOOTH_REQ_GIF_FRAME:
@@ -166,7 +195,8 @@ static void serve_request(booth_media_t *m, app_game_handle_t game, app_photo_rg
             app_game_booth_result(game, APP_BOOTH_RESULT_FAILED);
             return;
         }
-        make_frame(m, m->capture.header.res, req.filter, app_photo_frame(&m->capture, req.frame));
+        make_frame(m, app_photo_lens(&m->capture.header), req.filter, req.color,
+                   app_photo_frame(&m->capture, req.frame));
         if (req.frame == APP_PHOTO_GIF_FRAMES - 1) {
             app_game_booth_result(game, save_capture(m));
         }

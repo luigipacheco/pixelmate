@@ -38,9 +38,11 @@ bool app_camera_hw_present(void);
 /** Current state; any task. */
 app_camera_state_t app_camera_hw_state(void);
 
-/** Copy the newest frame (row-major, upright, 8-bit luminance) when its number
- * differs from *seq, then update *seq. Returns true when a frame was copied. */
-bool app_camera_hw_frame(uint8_t luma[APP_PHOTO_MAX_PIXELS], uint32_t *seq);
+/** Copy the newest frame when its number differs from *seq, then update *seq:
+ * three upright 128x128 planes, Y then U then V (U/V centered on 128).
+ * Returns true when a frame was copied. */
+enum { APP_CAMERA_FRAME_BYTES = 3 * APP_PHOTO_MAX_PIXELS };
+bool app_camera_hw_frame(uint8_t yuv[APP_CAMERA_FRAME_BYTES], uint32_t *seq);
 
 #ifdef __cplusplus
 }

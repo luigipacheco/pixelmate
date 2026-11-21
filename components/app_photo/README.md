@@ -49,12 +49,24 @@ percentile (THERMAL: 10th..90th), so a dim room still uses all four shades.
 Palettes: shade 0 is darkest. The pet's color at 7/35/67/100 % for every look
 except GAME-GREEN (fixed greens) and THERMAL (indigo/magenta/orange/yellow).
 
+## Color film
+
+`app_photo_filter_color()` turns a Y/U/V image into indices of
+`app_photo_color_palette`, a fixed 16-color retro palette (index 0 black,
+3 white), with ordered dithering (wider for DITHER). Luma gets half the B&W
+contrast stretch and chroma a 1.5x boost. SCANLINES darkens odd rows, EYE
+STICKERS uses white/black, ASCII and HALFTONE paint each cell in its own hue.
+GAME-GREEN and THERMAL have no color version. Color frames are 4 bits per
+pixel: 512 / 2048 / 8192 bytes at LO / MID / HI, so color GIFs (8 frames)
+record at LO.
+
 ## Format
 
 - Frames are square, 4 shades (2 bits per pixel), packed MSB-first, row-major.
 - `app_photo_header_t` (12 bytes, little-endian `seq`) precedes the frames:
-  magic `0x50`, version 2, look, frame count (1, or 8 for a GIF), the pet's
-  color at capture (RGB), the lens and a capture sequence number.
+  magic `0x50`, version 3, look, frame count (1, or 8 for a GIF), the pet's
+  color at capture (RGB), the lens (bit 7 = `APP_PHOTO_COLOR_FLAG`) and a
+  capture sequence number. Version 2 photos (no color) stay readable.
   `app_photo_record_size()` gives 268 / 1036 / 4108 bytes for LO / MID / HI
   photos and 2060 / 8204 for LO / MID GIFs. `app_photo_t.data` holds 8 KB.
 - `app_photo_header_valid()` rejects unknown versions, lenses, looks, frame

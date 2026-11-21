@@ -113,7 +113,11 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
   SCANLINES 60, GAME-GREEN 80, HALFTONE 100, THERMAL 120, ASCII 120,
   EYE STICKERS 150. Lenses and looks can only be bought once the booth is owned
   (tapping one earlier jumps to the booth's store item). Buying or tapping an
-  owned one selects it; both selections are saved.
+  owned one selects it; both selections are saved. COLOR FILM (200,
+  `APP_ITEM_FILM`, `APP_OWN_FILM_BIT` = bit 7 of `lenses_owned`) unlocks the
+  film chip (`app_booth_film_rect`), which toggles `booth.color` (B/W or
+  COLOR, saved as bit 7 of the record's `lens`, so no save bump). GAME-GREEN
+  and THERMAL always shoot B/W; requests carry `color` already resolved.
 - Booth flow (`snapshot.booth`): LIVE shows the feed; the side arrows
   (`app_booth_prev_rect`/`next_rect`) cycle owned looks, the lens chip
   (`app_booth_lens_rect`) cycles owned lenses; GIF/SNAP/ROLL are

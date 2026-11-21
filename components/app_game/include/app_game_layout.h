@@ -145,8 +145,8 @@ static inline app_rect_t app_booth_lens_rect(void)
 {
     return (app_rect_t) {12, 70, 110, 44};
 }
-/* Color chip under the lens chip: tap to cycle the photo's color. */
-static inline app_rect_t app_booth_tint_rect(void)
+/* Film chip under the lens chip: B&W or COLOR (once COLOR FILM is owned). */
+static inline app_rect_t app_booth_film_rect(void)
 {
     return (app_rect_t) {12, 122, 84, 46};
 }

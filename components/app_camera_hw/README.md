@@ -67,8 +67,9 @@ esp_video/esp_cam_sensor stack and copies only the slot sequence it needs
 
 - Format: the sensor's Kconfig default, UYVY 1024x768 at 25 fps, 2 mmap
   buffers (about 3 MB of PSRAM). Every dequeued buffer is requeued at once.
-- Each frame is center-cropped to 768x768 and reduced to 128x128 by averaging
-  four luminance samples per 6x6 block (16 KB, in PSRAM). The sensor is mounted sideways; like the
+- Each frame is center-cropped and reduced to 128x128 planar Y, U, V (48 KB,
+  PSRAM): four luminance samples per block, chroma from one macropixel in two
+  rows. `app_camera_hw_frame()` copies all three planes. The sensor is mounted sideways; like the
   BSP example's PPA setup (rotate 270° CCW, then mirror Y) the output is
   `out(x, y) = in(S-1-y, S-1-x)`.
 - The first two frames after each start are dropped (exposure settling) before

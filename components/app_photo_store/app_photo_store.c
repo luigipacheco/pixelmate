@@ -11,6 +11,7 @@ typedef struct {
     uint8_t frames;
     uint8_t filter;
     uint8_t res;
+    bool color;
 } slot_t;
 
 /* Single shared index (one gallery per device); guarded by the backend lock. */
@@ -49,7 +50,7 @@ app_photo_store_err_t app_photo_store_init(void)
             continue;
         }
         s_slots[s] = (slot_t) {
-            true, h->seq, h->frames, h->filter, h->res
+            true, h->seq, h->frames, h->filter, (uint8_t)app_photo_lens(h), app_photo_is_color(h)
         };
         if (h->seq >= s_next_seq) {
             s_next_seq = h->seq + 1;
@@ -88,7 +89,7 @@ int app_photo_store_list(app_photo_entry_t *out, int max)
     for (int i = 0; out && i < n && written < max; ++i) {
         const slot_t *slot = &s_slots[order[i]];
         out[written++] = (app_photo_entry_t) {
-            slot->seq, slot->frames, slot->filter, slot->res
+            slot->seq, slot->frames, slot->filter, slot->res, slot->color
         };
     }
     photo_backend_unlock();
@@ -153,7 +154,8 @@ app_photo_store_err_t app_photo_store_save(app_photo_t *photo)
     }
     if (err == APP_PHOTO_STORE_OK) {
         s_slots[slot] = (slot_t) {
-            true, s_next_seq++, photo->header.frames, photo->header.filter, photo->header.res
+            true, s_next_seq++, photo->header.frames, photo->header.filter,
+            (uint8_t)app_photo_lens(&photo->header), app_photo_is_color(&photo->header)
         };
         ++s_revision;
     }

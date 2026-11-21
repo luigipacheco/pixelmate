@@ -31,7 +31,8 @@ typedef struct {
     uint32_t seq;      /**< Unique, increasing capture number; stable id for URLs. */
     uint8_t frames;    /**< 1 = photo, APP_PHOTO_GIF_FRAMES = GIF. */
     uint8_t filter;    /**< app_photo_filter_t. */
-    uint8_t res;       /**< app_photo_res_t. */
+    uint8_t res;       /**< app_photo_res_t (lens only). */
+    bool color;        /**< Color film. */
 } app_photo_entry_t;
 
 /** Load the index (device: reads every stored blob once). Idempotent. */

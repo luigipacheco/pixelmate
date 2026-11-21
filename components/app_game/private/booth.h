@@ -17,7 +17,7 @@ void booth_enter(booth_t *b);
 void booth_cancel(booth_t *b);
 /** Tap inside the open booth; returns APP_EVENT_* bits. */
 uint32_t booth_tap(booth_t *b, int32_t x, int32_t y, uint8_t filters_owned, uint8_t lenses_owned,
-                   uint32_t colors_owned, bool fainted);
+                   bool film_owned, bool fainted);
 /** One 30 Hz tick; returns APP_EVENT_* bits. */
 uint32_t booth_update(booth_t *b);
 /** Runtime status: camera usable and stored item counts. */
@@ -27,3 +27,4 @@ uint32_t booth_result(booth_t *b, app_booth_result_t result);
 /** Select a look or lens (caller checks ownership). */
 void booth_select_filter(booth_t *b, uint8_t filter);
 void booth_select_lens(booth_t *b, uint8_t res);
+void booth_select_color(booth_t *b, bool color);

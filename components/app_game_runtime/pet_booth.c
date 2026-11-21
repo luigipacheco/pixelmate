@@ -40,23 +40,36 @@ static void palette_colors(int filter, Color base, float level, Color out[APP_PH
     }
 }
 
-static uint8_t shade_at(const uint8_t *data, bool packed, int i)
+/* Pixel i of `data`: one byte each (bits 0) or packed at 2 or 4 bits. */
+static uint8_t index_at(const uint8_t *data, int bits, int i)
 {
-    return packed ? (uint8_t)((data[i >> 2] >> (6 - 2 * (i & 3))) & 3U) : data[i];
+    switch (bits) {
+    case 2: return (uint8_t)((data[i >> 2] >> (6 - 2 * (i & 3))) & 3U);
+    case 4: return (uint8_t)((data[i >> 1] >> ((i & 1) ? 0 : 4)) & 15U);
+    default: return data[i];
+    }
 }
 
-/* One rectangle per horizontal run of equal shades keeps this to a few
- * hundred draw calls per frame instead of 4096. */
-static void draw_photo(const uint8_t *data, bool packed, int w, int h, int x0, int y0, int px,
-                       const Color pal[APP_PHOTO_SHADES])
+/* Color film palette at the screen's brightness. */
+static void film_colors(float level, Color out[APP_PHOTO_COLORS])
+{
+    for (int i = 0; i < APP_PHOTO_COLORS; ++i) {
+        out[i] = to_color(app_photo_color_palette[i], level);
+    }
+}
+
+/* One rectangle per horizontal run of equal indices keeps this to a few
+ * hundred draw calls per frame instead of thousands. */
+static void draw_photo(const uint8_t *data, int bits, int w, int h, int x0, int y0, int px,
+                       const Color pal[APP_PHOTO_COLORS])
 {
     for (int y = 0; y < h; ++y) {
         int start = 0;
-        uint8_t cur = shade_at(data, packed, y * w);
+        uint8_t cur = index_at(data, bits, y * w);
         for (int x = 1; x <= w; ++x) {
-            const uint8_t next = x < w ? shade_at(data, packed, y * w + x) : 0xFF;
+            const uint8_t next = x < w ? index_at(data, bits, y * w + x) : 0xFF;
             if (next != cur) {
-                DrawRectangle(x0 + start * px, y0 + y * px, (x - start) * px, px, pal[cur & 3U]);
+                DrawRectangle(x0 + start * px, y0 + y * px, (x - start) * px, px, pal[cur & 15U]);
                 start = x;
                 cur = next;
             }
@@ -66,13 +79,18 @@ static void draw_photo(const uint8_t *data, bool packed, int w, int h, int x0, i
 
 static void draw_stored(const draw_ctx_t *d, const app_photo_t *photo, int x, int y, uint32_t t)
 {
-    const int side = app_photo_side(photo->header.res), px = app_booth_view_rect().w / side;
-    Color pal[APP_PHOTO_SHADES];
-    const Color base = {photo->header.base.r, photo->header.base.g, photo->header.base.b, 255};
-    palette_colors(photo->header.filter, base, d->level, pal);
+    const int side = app_photo_side(app_photo_lens(&photo->header)), px = app_booth_view_rect().w / side;
+    const bool color = app_photo_is_color(&photo->header);
+    Color pal[APP_PHOTO_COLORS];
+    if (color) {
+        film_colors(d->level, pal);
+    } else {
+        const Color base = {photo->header.base.r, photo->header.base.g, photo->header.base.b, 255};
+        palette_colors(photo->header.filter, base, d->level, pal);
+    }
     const int frames = photo->header.frames ? photo->header.frames : 1;
     const int frame = (int)((t / GIF_SHOW_TICKS) % (uint32_t)frames);
-    draw_photo(app_photo_frame_const(photo, frame), true, side, side, x, y, px, pal);
+    draw_photo(app_photo_frame_const(photo, frame), color ? 4 : 2, side, side, x, y, px, pal);
 }
 
 static void draw_frame(app_rect_t r, int ox, Color c)
@@ -120,12 +138,6 @@ static int count_bits(unsigned bits)
     return n;
 }
 
-/* Color index the booth photographs in: the chosen tint or the pet's color. */
-static int booth_tint_index(const app_game_snapshot_t *s)
-{
-    return s->booth.tint == APP_BOOTH_TINT_PET ? s->color_index : s->booth.tint;
-}
-
 static void draw_live_picture(const draw_ctx_t *d, int ox)
 {
     const booth_media_t *m = d->view->media;
@@ -141,10 +153,14 @@ static void draw_live_picture(const draw_ctx_t *d, int ox)
         }
         return;
     }
-    Color pal[APP_PHOTO_SHADES];
-    palette_colors(s->booth.filter, px_color(booth_tint_index(s)), d->level, pal);
+    Color pal[APP_PHOTO_COLORS];
+    if (m->live_color) {
+        film_colors(d->level, pal);
+    } else {
+        palette_colors(s->booth.filter, px_color(s->color_index), d->level, pal);
+    }
     const int side = app_photo_side(m->live_res);
-    draw_photo(m->live, false, side, side, r.x + ox, r.y, r.w / side, pal);
+    draw_photo(m->live, 0, side, side, r.x + ox, r.y, r.w / side, pal);
 }
 
 static void draw_live(const draw_ctx_t *d, int ox)
@@ -160,12 +176,12 @@ static void draw_live(const draw_ctx_t *d, int ox)
     const bool lenses = count_bits(s->lenses_owned | APP_OWN_LENS_BIT(APP_PHOTO_RES_LOW)) > 1;
     screens_button(d, app_booth_lens_rect(), ox, 0, app_photo_res_name(b->res), 2,
                    lenses ? d->color : d->dim, false);
-    /* Color chip: PET follows the eyes; otherwise a swatch of the chosen color.
-     * GREEN and THERMAL have fixed palettes, so the chip dims for them. */
-    const bool tints = b->filter != APP_FILTER_GREEN && b->filter != APP_FILTER_THERMAL;
-    const Color tc = px_scale(px_color(booth_tint_index(s)), d->level);
-    screens_button(d, app_booth_tint_rect(), ox, 0, b->tint == APP_BOOTH_TINT_PET ? "PET" : "HUE", 2,
-                   tints ? tc : d->dim, tints && b->tint != APP_BOOTH_TINT_PET);
+    /* Film chip: B/W or COLOR. Dim until COLOR FILM is owned, and for GREEN
+     * and THERMAL, which always shoot B/W. */
+    const bool film = (s->lenses_owned & APP_OWN_FILM_BIT) && app_photo_filter_has_color(b->filter);
+    const bool color = b->color && app_photo_filter_has_color(b->filter);
+    screens_button(d, app_booth_film_rect(), ox, 0, color ? "COLOR" : "B/W", 2,
+                   film ? (color ? d->accent : d->color) : d->dim, color);
     const bool ready = b->camera && !s->fainted;
     screens_button(d, app_booth_button_rect(0), ox, 0, "GIF", 4,
                    ready && b->gifs < APP_BOOTH_GIFS ? d->accent : d->dim, false);
@@ -330,6 +346,16 @@ void screens_camera_icon(const draw_ctx_t *d, int x, int y, int w, Color c)
     px_box(x + w / 2 - h / 8, y + h / 6 + h / 4, h / 4, h / 4, 0, d->accent);
 }
 
+/* Store art for COLOR FILM: the 16 film colors. */
+void screens_film_swatch(const draw_ctx_t *d, int x, int y, bool owned)
+{
+    Color pal[APP_PHOTO_COLORS];
+    film_colors(owned ? d->level : 0.6f * d->level, pal);
+    for (int i = 0; i < APP_PHOTO_COLORS; ++i) {
+        DrawRectangle(x + (i % 4) * 15, y + (i / 4) * 15, 14, 14, pal[i]);
+    }
+}
+
 /* Store art for a lens: the same square at its pixel density. */
 void screens_lens_swatch(const draw_ctx_t *d, int res, int x, int y, bool owned)
 {
@@ -353,13 +379,13 @@ void screens_filter_swatch(const draw_ctx_t *d, int filter, int x, int y, bool o
         const int px = i % N, py = i / N, dx = px - 9, dy = py - 6;
         luma[i] = (uint8_t)(dx * dx + dy * dy < 12 ? 250 : 20 + (px + py) * 8);
     }
-    app_photo_filter(luma, N, (app_photo_filter_t)filter, shades);
+    app_photo_filter(luma, N, (app_photo_filter_t)filter, shades);   /* B/W art. */
     if (filter == APP_FILTER_STICKERS) {
         for (int k = 0; k < 2; ++k) {   /* Two tiny pal eyes in the corner. */
             shades[1 * N + 2 + k * 3] = shades[2 * N + 2 + k * 3] = 3;
         }
     }
-    Color pal[APP_PHOTO_SHADES];
+    Color pal[APP_PHOTO_COLORS];
     palette_colors(filter, d->color, owned ? 1.0f : 0.6f, pal);
-    draw_photo(shades, false, N, N, x, y, CELL, pal);
+    draw_photo(shades, 0, N, N, x, y, CELL, pal);
 }

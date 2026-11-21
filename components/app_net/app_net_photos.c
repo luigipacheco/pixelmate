@@ -47,7 +47,7 @@ static const char PAGE[] =
     "document.getElementById('grid').innerHTML=g.items.map(p=>{const e=p.gif?'gif':'png';"
     "return '<a href=\"/photo?id='+p.id+'\" download=\"pixelmate-'+p.id+'.'+e+'\">'"
     "+'<img loading=lazy src=\"/photo?id='+p.id+'&px=128\" alt=\"'+p.filter+'\"><span>'"
-    "+(p.gif?'GIF ':'')+p.res+' '+p.filter+'</span></a>'}).join('')"
+    "+(p.gif?'GIF ':'')+(p.color?'COLOR ':'')+p.res+' '+p.filter+'</span></a>'}).join('')"
     "}catch(e){document.getElementById('count').textContent='PET OFFLINE'}}"
     "load();setInterval(load,10000);"
     "</script></body></html>";
@@ -72,9 +72,10 @@ static esp_err_t get_list(httpd_req_t *req)
                        photos, gifs, APP_PHOTO_STORE_PHOTOS, APP_PHOTO_STORE_GIFS);
     for (int i = 0; i < n && len > 0 && len < LIST_JSON_MAX; ++i) {
         len += snprintf(json + len, LIST_JSON_MAX - (size_t)len,
-                        "%s{\"id\":%lu,\"gif\":%s,\"filter\":\"%s\",\"res\":\"%s\"}",
+                        "%s{\"id\":%lu,\"gif\":%s,\"filter\":\"%s\",\"res\":\"%s\",\"color\":%s}",
                         i ? "," : "", (unsigned long)entries[i].seq, entries[i].frames > 1 ? "true" : "false",
-                        app_photo_filter_name(entries[i].filter), app_photo_res_name(entries[i].res));
+                        app_photo_filter_name(entries[i].filter), app_photo_res_name(entries[i].res),
+                        entries[i].color ? "true" : "false");
     }
     if (len > 0 && len < LIST_JSON_MAX) {
         len += snprintf(json + len, LIST_JSON_MAX - (size_t)len, "]}");
@@ -135,7 +136,7 @@ static esp_err_t get_photo(httpd_req_t *req)
     } else if (app_photo_store_load_seq((uint32_t)id, photo) != APP_PHOTO_STORE_OK) {
         err = httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "no such photo");
     } else {
-        const long side = app_photo_side(photo->header.res);
+        const long side = app_photo_side(app_photo_lens(&photo->header));
         long scale = px / side;
         scale = scale < 1 ? 1 : (scale * side > APP_PHOTO_MAX_OUT ? APP_PHOTO_MAX_OUT / side : scale);
         const size_t size = encode(photo, (int)scale, work, out);

@@ -87,7 +87,7 @@ static _Atomic int s_mode = APP_CAMERA_MODE_OFF;
 static _Atomic bool s_present;
 static TaskHandle_t s_task;
 static SemaphoreHandle_t s_frame_lock;
-static EXT_RAM_BSS_ATTR uint8_t s_frame[APP_PHOTO_MAX_PIXELS];   /* 16 KB: PSRAM. */
+static EXT_RAM_BSS_ATTR uint8_t s_frame[APP_CAMERA_FRAME_BYTES];   /* Y, U, V planes, 48 KB: PSRAM. */
 static uint32_t s_frame_seq;
 
 /* Owned by the worker task only. */
@@ -102,7 +102,7 @@ static struct {
     bool streaming, tuned;
     bool slot_idle;                     /* Slot pins already parked for discovery. */
 } s_cam = {.fd = -1};
-static EXT_RAM_BSS_ATTR uint8_t s_luma[APP_PHOTO_MAX_PIXELS];   /* Worker's frame in progress. */
+static EXT_RAM_BSS_ATTR uint8_t s_luma[APP_CAMERA_FRAME_BYTES];   /* Worker's frame in progress. */
 
 static void set_state(app_camera_state_t state)
 {
@@ -374,8 +374,14 @@ static void downsample(const uint8_t *uyvy)
         for (uint32_t bx = 0; bx < APP_PHOTO_MAX_SIDE; ++bx) {
             const size_t xa = (size_t)(x0 + bx * block + a) * 2U + 1U, xb = (size_t)(x0 + bx * block + b) * 2U + 1U;
             const uint32_t sum = row_a[xa] + row_a[xb] + row_b[xa] + row_b[xb];
+            /* Chroma: the U/V pair of the macropixel holding sample a, both rows. */
+            const size_t mc = ((size_t)(x0 + bx * block + a) & ~(size_t)1U) * 2U;
+            const uint32_t u = row_a[mc] + row_b[mc], v = row_a[mc + 2] + row_b[mc + 2];
             const uint32_t ox = APP_PHOTO_MAX_SIDE - 1U - by, oy = APP_PHOTO_MAX_SIDE - 1U - bx;
-            s_luma[oy * APP_PHOTO_MAX_SIDE + ox] = (uint8_t)(sum / 4U);
+            const size_t o = oy * APP_PHOTO_MAX_SIDE + ox;
+            s_luma[o] = (uint8_t)(sum / 4U);
+            s_luma[APP_PHOTO_MAX_PIXELS + o] = (uint8_t)(u / 2U);
+            s_luma[2 * APP_PHOTO_MAX_PIXELS + o] = (uint8_t)(v / 2U);
         }
     }
 }
@@ -597,15 +603,15 @@ app_camera_state_t app_camera_hw_state(void)
     return (app_camera_state_t)atomic_load(&s_state);
 }
 
-bool app_camera_hw_frame(uint8_t luma[APP_PHOTO_MAX_PIXELS], uint32_t *seq)
+bool app_camera_hw_frame(uint8_t yuv[APP_CAMERA_FRAME_BYTES], uint32_t *seq)
 {
-    if (!s_frame_lock || !luma || !seq) {
+    if (!s_frame_lock || !yuv || !seq) {
         return false;
     }
     bool copied = false;
     xSemaphoreTake(s_frame_lock, portMAX_DELAY);
     if (s_frame_seq && s_frame_seq != *seq) {
-        memcpy(luma, s_frame, sizeof(s_frame));
+        memcpy(yuv, s_frame, sizeof(s_frame));
         *seq = s_frame_seq;
         copied = true;
     }

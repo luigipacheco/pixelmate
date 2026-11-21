@@ -20,12 +20,13 @@ typedef struct {
     booth_camera_t camera;
     bool present;                       /* Camera module detected (last probe). */
     bool host_present;                  /* Host simulator's pretend camera. */
-    uint8_t luma[APP_PHOTO_MAX_PIXELS]; /* Latest feed frame, 128x128. */
+    uint8_t yuv[3 * APP_PHOTO_MAX_PIXELS];   /* Latest feed frame: 128x128 Y, U, V planes. */
     uint32_t luma_seq;                  /* Changes with every new frame. */
-    uint8_t live[APP_PHOTO_MAX_PIXELS]; /* Feed through the selected lens and look, shades 0..3. */
+    uint8_t live[APP_PHOTO_MAX_PIXELS]; /* Feed through lens, look and film: palette indices. */
     uint32_t live_seq;                  /* luma_seq that `live` was made from. */
     uint8_t live_filter, live_res;
-    uint8_t work_luma[APP_PHOTO_MAX_PIXELS];     /* Feed scaled to a lens. */
+    bool live_color;                    /* `live` holds color-film indices (0..15). */
+    uint8_t work_yuv[3 * APP_PHOTO_MAX_PIXELS];  /* Feed scaled to a lens. */
     uint8_t work_shades[APP_PHOTO_MAX_PIXELS];   /* A capture's frame before packing. */
     app_photo_t capture;                /* Being recorded, then shown in REVIEW. */
     app_photo_t shown;                  /* Gallery item on screen. */

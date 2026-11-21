@@ -83,6 +83,7 @@ static const app_store_item_t s_store[] = {
     {APP_ITEM_FILTER, APP_FILTER_ASCII, 120, "ASCII", "PICTURES MADE OF TEXT"},
     {APP_ITEM_FILTER, APP_FILTER_STICKERS, 150, "EYE STICKERS", "YOUR PAL PHOTOBOMBS"},
     {APP_ITEM_LENS, APP_PHOTO_RES_HIGH, 180, "HI RES", "CRISP 128X128 PHOTOS"},
+    {APP_ITEM_FILM, 0, 200, "COLOR FILM", "REAL 16-COLOR PHOTOS"},
 };
 #define STORE_COUNT ((int)(sizeof(s_store) / sizeof(s_store[0])))
 #define STORE_PAGES ((STORE_COUNT + APP_STORE_PER_PAGE - 1) / APP_STORE_PER_PAGE)
@@ -573,6 +574,7 @@ static uint32_t item_bit(const app_store_item_t *item)
     case APP_ITEM_GAME: return APP_OWN_GAME_BIT(item->value);
     case APP_ITEM_FILTER: return APP_OWN_FILTER_BIT(item->value);
     case APP_ITEM_LENS: return APP_OWN_LENS_BIT(item->value);
+    case APP_ITEM_FILM: return APP_OWN_FILM_BIT;
     default: return APP_OWN_ANIM_BIT(item->value);
     }
 }
@@ -582,7 +584,8 @@ static bool owns_item(const struct app_game *g, const app_store_item_t *item)
 {
     switch (item->kind) {
     case APP_ITEM_FILTER: return (g->filters_owned & item_bit(item)) != 0;
-    case APP_ITEM_LENS: return (g->lenses_owned & item_bit(item)) != 0;
+    case APP_ITEM_LENS:
+    case APP_ITEM_FILM: return (g->lenses_owned & item_bit(item)) != 0;
     default: return (g->owned & item_bit(item)) != 0;
     }
 }
@@ -591,14 +594,15 @@ static void grant_item(app_game_handle_t g, const app_store_item_t *item)
 {
     switch (item->kind) {
     case APP_ITEM_FILTER: g->filters_owned |= (uint8_t)item_bit(item); break;
-    case APP_ITEM_LENS: g->lenses_owned |= (uint8_t)item_bit(item); break;
+    case APP_ITEM_LENS:
+    case APP_ITEM_FILM: g->lenses_owned |= (uint8_t)item_bit(item); break;
     default: g->owned |= item_bit(item); break;
     }
 }
 
 static bool booth_item(const app_store_item_t *item)
 {
-    return item->kind == APP_ITEM_FILTER || item->kind == APP_ITEM_LENS
+    return item->kind == APP_ITEM_FILTER || item->kind == APP_ITEM_LENS || item->kind == APP_ITEM_FILM
            || (item->kind == APP_ITEM_GAME && item->value == APP_GAME_PHOTO);
 }
 
@@ -650,6 +654,7 @@ static void equip(app_game_handle_t g, const app_store_item_t *item, bool just_b
     case APP_ITEM_GAME: open_game(g, (app_minigame_t)item->value); break;
     case APP_ITEM_FILTER: booth_select_filter(&g->booth, item->value); break;
     case APP_ITEM_LENS: booth_select_lens(&g->booth, item->value); break;
+    case APP_ITEM_FILM: booth_select_color(&g->booth, true); break;
     default:
         if (just_bought) {
             g->anims_on |= (uint8_t)(1U << item->value);
@@ -996,7 +1001,8 @@ static void tap_booth(app_game_handle_t g, int32_t x, int32_t y)
         }
         return;
     }
-    const uint32_t events = booth_tap(&g->booth, x, y, g->filters_owned, g->lenses_owned, g->owned, g->fainted);
+    const uint32_t events = booth_tap(&g->booth, x, y, g->filters_owned, g->lenses_owned,
+                                      (g->lenses_owned & APP_OWN_FILM_BIT) != 0, g->fainted);
     g->events |= events;
     const app_booth_snapshot_t *v = &g->booth.view;
     if (events & APP_EVENT_SETTINGS) {
@@ -1609,7 +1615,7 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->filters_owned = g->filters_owned;
     r->filter = g->booth.view.filter;
     r->lenses_owned = g->lenses_owned;
-    r->lens = g->booth.view.res;
+    r->lens = (uint8_t)(g->booth.view.res | (g->booth.view.color ? APP_RECORD_LENS_COLOR : 0));
 }
 
 void app_game_import(app_game_handle_t g, const app_game_record_t *r)
@@ -1646,9 +1652,12 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
     g->bright_idx = r->bright_code && r->bright_code <= APP_BRIGHT_OPTIONS
                     ? (uint8_t)(r->bright_code - 1) : DEFAULT_BRIGHT_IDX;
     g->filters_owned = (uint8_t)(r->filters_owned | FREE_FILTERS);
-    g->lenses_owned = (uint8_t)((r->lenses_owned & ((1U << APP_PHOTO_RES_COUNT) - 1U)) | FREE_LENSES);
-    booth_select_lens(&g->booth, r->lens < APP_PHOTO_RES_COUNT
-                      && (g->lenses_owned & APP_OWN_LENS_BIT(r->lens)) ? r->lens : APP_PHOTO_RES_LOW);
+    g->lenses_owned = (uint8_t)((r->lenses_owned & (((1U << APP_PHOTO_RES_COUNT) - 1U) | APP_OWN_FILM_BIT))
+                                | FREE_LENSES);
+    const uint8_t lens = (uint8_t)(r->lens & ~APP_RECORD_LENS_COLOR);
+    booth_select_lens(&g->booth, lens < APP_PHOTO_RES_COUNT
+                      && (g->lenses_owned & APP_OWN_LENS_BIT(lens)) ? lens : APP_PHOTO_RES_LOW);
+    booth_select_color(&g->booth, (r->lens & APP_RECORD_LENS_COLOR) && (g->lenses_owned & APP_OWN_FILM_BIT));
     booth_select_filter(&g->booth, r->filter < APP_FILTER_COUNT
                         && (g->filters_owned & APP_OWN_FILTER_BIT(r->filter)) ? r->filter : APP_FILTER_NONE);
     g->pixel_style = r->pixel_style < APP_PIXEL_COUNT && (g->owned & APP_OWN_STYLE_BIT(r->pixel_style))

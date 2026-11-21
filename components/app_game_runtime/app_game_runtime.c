@@ -501,8 +501,7 @@ static void update(void *value)
     poll_net(state);
 #endif
     app_game_update(state->game);
-    const app_game_snapshot_t before = app_game_read(state->game);
-    const Color pet = px_color(before.booth.tint == APP_BOOTH_TINT_PET ? before.color_index : before.booth.tint);
+    const Color pet = px_color(app_game_read(state->game).color_index);
     booth_media_update(&state->media, state->game, (app_photo_rgb_t) {pet.r, pet.g, pet.b});
     const uint32_t events = app_game_take_events(state->game);
     handle_wifi_events(state, events);
@@ -595,7 +594,7 @@ static int state_json(const void *value, char *output, size_t capacity)
                         "\"slots\":{\"phase\":%d,\"payout\":%u,\"line\":[%u,%u,%u]},"
                         "\"bits\":{\"phase\":%d,\"target\":%u,\"switches\":%u,\"hits\":%u,\"payout\":%u,\"best\":%u},"
                         "\"arcade\":%d,\"arcade_row\":%u,\"camera_present\":%s,\"filters_owned\":%u,"
-                        "\"lenses_owned\":%u,\"booth\":{\"phase\":%d,\"filter\":%u,\"res\":%u,\"unplugged\":%s,"
+                        "\"lenses_owned\":%u,\"booth\":{\"phase\":%d,\"filter\":%u,\"res\":%u,\"color\":%s,\"unplugged\":%s,"
                         "\"camera\":%s,\"photos\":%u,\"gifs\":%u,\"index\":%u,\"result\":%d,"
                         "\"confirm\":%s},"
                         "\"pointer_x\":%ld,\"pointer_y\":%ld,\"pointer_down\":%s,\"state_hash\":\"%08lx\"}",
@@ -617,7 +616,7 @@ static int state_json(const void *value, char *output, size_t capacity)
                         app_game_slot_symbol(s.slots.pos_q[2], 0),
                         (int)s.bits.phase, s.bits.target, s.bits.switches, s.bits.hits, s.bits.payout, s.bits.best,
                         (int)s.arcade, s.arcade_row, s.camera_present ? "true" : "false", s.filters_owned,
-                        s.lenses_owned, (int)s.booth.phase, s.booth.filter, s.booth.res,
+                        s.lenses_owned, (int)s.booth.phase, s.booth.filter, s.booth.res, s.booth.color ? "true" : "false",
                         s.booth.unplugged ? "true" : "false",
                         s.booth.camera ? "true" : "false", s.booth.photos, s.booth.gifs, s.booth.index,
                         (int)s.booth.result, s.booth.confirm_delete ? "true" : "false",

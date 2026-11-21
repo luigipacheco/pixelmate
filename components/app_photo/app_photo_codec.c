@@ -48,7 +48,7 @@ static bool size_ok(int res, int scale)
 
 static bool scale_ok(const app_photo_t *photo, int scale)
 {
-    return photo && app_photo_header_valid(&photo->header) && size_ok(photo->header.res, scale);
+    return photo && app_photo_header_valid(&photo->header) && size_ok(app_photo_lens(&photo->header), scale);
 }
 
 /* ---- PNG -------------------------------------------------------------- */
@@ -67,10 +67,11 @@ static uint32_t crc32_update(uint32_t crc, const uint8_t *data, size_t len)
     return ~crc;
 }
 
-static size_t png_raw_size(int res, int scale)
+/* Filter byte + packed row, per row: 4 pixels per byte (B&W) or 2 (color). */
+static size_t png_raw_size(int res, int scale, bool color)
 {
     const size_t w = (size_t)app_photo_side(res) * scale;
-    return w * (1 + w / 4);
+    return w * (1 + w / (color ? 2U : 4U));
 }
 
 size_t app_photo_png_bound(int res, int scale)
@@ -78,10 +79,10 @@ size_t app_photo_png_bound(int res, int scale)
     if (!size_ok(res, scale)) {
         return 0;
     }
-    const size_t raw = png_raw_size(res, scale);
+    const size_t raw = png_raw_size(res, scale, true);   /* Color is the larger. */
     const size_t blocks = raw / DEFLATE_STORED_MAX + 1;
     /* signature + IHDR + PLTE + IDAT(zlib header, block headers, adler) + IEND */
-    return 8 + 25 + (12 + 3 * APP_PHOTO_SHADES) + 12 + 2 + raw + blocks * 5 + 4 + 12;
+    return 8 + 25 + (12 + 3 * APP_PHOTO_COLORS) + 12 + 2 + raw + blocks * 5 + 4 + 12;
 }
 
 /* Begin a chunk; returns the offset of its type field for the CRC. */
@@ -104,11 +105,13 @@ static void chunk_end(writer_t *w, size_t type_at)
 static uint8_t png_row_byte(const app_photo_t *photo, int scale, int y, int byte_index)
 {
     const uint8_t *frame = app_photo_frame_const(photo, 0);
-    const int side = app_photo_side(photo->header.res);
+    const int side = app_photo_side(app_photo_lens(&photo->header));
+    const bool color = app_photo_is_color(&photo->header);
+    const int per_byte = color ? 2 : 4, bits = color ? 4 : 2;
     uint8_t b = 0;
-    for (int k = 0; k < 4; ++k) {
-        const int x = (byte_index * 4 + k) / scale;
-        b = (uint8_t)((b << 2) | app_photo_shade_at(frame, side, x, y / scale));
+    for (int k = 0; k < per_byte; ++k) {
+        const int x = (byte_index * per_byte + k) / scale;
+        b = (uint8_t)((b << bits) | app_photo_pixel_at(frame, side, color, x, y / scale));
     }
     return b;
 }
@@ -122,21 +125,22 @@ size_t app_photo_encode_png(const app_photo_t *photo, int scale, uint8_t *out, s
     static const uint8_t signature[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
     put_bytes(&w, signature, sizeof(signature));
 
-    const uint32_t width = (uint32_t)app_photo_side(photo->header.res) * scale, height = width;
+    const bool color = app_photo_is_color(&photo->header);
+    const uint32_t width = (uint32_t)app_photo_side(app_photo_lens(&photo->header)) * scale, height = width;
     size_t at = chunk_begin(&w, "IHDR", 13);
     put_be32(&w, width);
     put_be32(&w, height);
-    put(&w, 2);   /* bit depth */
+    put(&w, color ? 4 : 2);   /* bit depth */
     put(&w, 3);   /* indexed color */
     put(&w, 0);
     put(&w, 0);
     put(&w, 0);
     chunk_end(&w, at);
 
-    app_photo_rgb_t palette[APP_PHOTO_SHADES];
-    app_photo_palette((app_photo_filter_t)photo->header.filter, photo->header.base, palette);
-    at = chunk_begin(&w, "PLTE", 3 * APP_PHOTO_SHADES);
-    for (int i = 0; i < APP_PHOTO_SHADES; ++i) {
+    app_photo_rgb_t palette[APP_PHOTO_COLORS];
+    const int colors = app_photo_header_palette(&photo->header, palette);
+    at = chunk_begin(&w, "PLTE", (uint32_t)(3 * colors));
+    for (int i = 0; i < colors; ++i) {
         put(&w, palette[i].r);
         put(&w, palette[i].g);
         put(&w, palette[i].b);
@@ -144,12 +148,12 @@ size_t app_photo_encode_png(const app_photo_t *photo, int scale, uint8_t *out, s
     chunk_end(&w, at);
 
     /* zlib stream of stored (uncompressed) deflate blocks: the image is tiny. */
-    const size_t raw = png_raw_size(photo->header.res, scale);
+    const size_t raw = png_raw_size(app_photo_lens(&photo->header), scale, color);
     const size_t blocks = (raw + DEFLATE_STORED_MAX - 1) / DEFLATE_STORED_MAX;
     at = chunk_begin(&w, "IDAT", (uint32_t)(2 + raw + blocks * 5 + 4));
     put(&w, 0x78);
     put(&w, 0x01);
-    const size_t row_bytes = width / 4;
+    const size_t row_bytes = width / (color ? 2U : 4U);
     uint32_t a = 1, b = 0;   /* Adler-32 */
     size_t done = 0, in_block = 0;
     for (uint32_t y = 0; y < height; ++y) {
@@ -179,10 +183,6 @@ size_t app_photo_encode_png(const app_photo_t *photo, int scale, uint8_t *out, s
 /* ---- GIF -------------------------------------------------------------- */
 
 enum {
-    LZW_MIN_BITS = 2,               /* 4 colors. */
-    LZW_CLEAR = 1 << LZW_MIN_BITS,
-    LZW_EOI = LZW_CLEAR + 1,
-    LZW_FIRST = LZW_CLEAR + 2,
     LZW_MAX_BITS = 12,
     LZW_LIMIT = (1 << LZW_MAX_BITS) - 1,
     LZW_HASH = 5003,                /* Prime > 4096, the classic table size. */
@@ -194,6 +194,7 @@ typedef struct {
     int32_t *keys;                  /* (prefix << 8 | pixel), -1 = empty */
     uint16_t *codes;
     int next, bits;
+    int min_bits, clear, eoi, first;   /* 2 bits for 4 shades, 4 for 16 colors. */
     uint32_t acc;
     int acc_bits;
     uint8_t block[GIF_SUBBLOCK];
@@ -222,8 +223,8 @@ static void lzw_reset(lzw_t *z)
     for (int i = 0; i < LZW_HASH; ++i) {
         z->keys[i] = -1;
     }
-    z->next = LZW_FIRST;
-    z->bits = LZW_MIN_BITS + 1;
+    z->next = z->first;
+    z->bits = z->min_bits + 1;
 }
 
 /* Emit with the current width; the decoder lags one table entry behind, so
@@ -242,24 +243,24 @@ static void lzw_emit(lzw_t *z, int code)
     }
 }
 
-static uint8_t gif_pixel(const uint8_t *frame, int side, int scale, int i)
+static uint8_t gif_pixel(const uint8_t *frame, int side, bool color, int scale, int i)
 {
     const int width = side * scale;
-    return app_photo_shade_at(frame, side, (i % width) / scale, (i / width) / scale);
+    return app_photo_pixel_at(frame, side, color, (i % width) / scale, (i / width) / scale);
 }
 
-static void lzw_frame(lzw_t *z, const uint8_t *frame, int side, int scale)
+static void lzw_frame(lzw_t *z, const uint8_t *frame, int side, bool color, int scale)
 {
     const int count = side * scale * side * scale;
-    put(z->w, LZW_MIN_BITS);
+    put(z->w, (uint8_t)z->min_bits);
     z->acc = 0;
     z->acc_bits = 0;
     z->block_n = 0;
     lzw_reset(z);
-    lzw_emit(z, LZW_CLEAR);
-    int prefix = gif_pixel(frame, side, scale, 0);
+    lzw_emit(z, z->clear);
+    int prefix = gif_pixel(frame, side, color, scale, 0);
     for (int i = 1; i < count; ++i) {
-        const int c = gif_pixel(frame, side, scale, i);
+        const int c = gif_pixel(frame, side, color, scale, i);
         const int32_t key = (int32_t)((prefix << 8) | c);
         int h = (int)(((uint32_t)c << 4 ^ (uint32_t)prefix) % LZW_HASH);
         while (z->keys[h] != -1 && z->keys[h] != key) {
@@ -274,13 +275,13 @@ static void lzw_frame(lzw_t *z, const uint8_t *frame, int side, int scale)
             z->keys[h] = key;
             z->codes[h] = (uint16_t)z->next++;
         } else {
-            lzw_emit(z, LZW_CLEAR);
+            lzw_emit(z, z->clear);
             lzw_reset(z);
         }
         prefix = c;
     }
     lzw_emit(z, prefix);
-    lzw_emit(z, LZW_EOI);
+    lzw_emit(z, z->eoi);
     if (z->acc_bits > 0) {
         lzw_byte(z, (uint8_t)z->acc);
     }
@@ -298,7 +299,7 @@ size_t app_photo_gif_bound(int res, int frames, int scale)
     const size_t px = side * side;
     const size_t lzw = px * 3 / 2 + 8;
     const size_t frame = 8 + 10 + 1 + lzw + lzw / GIF_SUBBLOCK + 2;
-    return 13 + 3 * APP_PHOTO_SHADES + 19 + (size_t)frames * frame + 1;
+    return 13 + 3 * APP_PHOTO_COLORS + 19 + (size_t)frames * frame + 1;
 }
 
 size_t app_photo_encode_gif(const app_photo_t *photo, int scale, int frame_ms, void *work,
@@ -308,17 +309,18 @@ size_t app_photo_encode_gif(const app_photo_t *photo, int scale, int frame_ms, v
         return 0;
     }
     writer_t w = {out, 0, cap, false};
-    const int side = app_photo_side(photo->header.res);
+    const int side = app_photo_side(app_photo_lens(&photo->header));
+    const bool color = app_photo_is_color(&photo->header);
     const uint16_t width = (uint16_t)(side * scale), height = width;
     put_bytes(&w, "GIF89a", 6);
     put_le16(&w, width);
     put_le16(&w, height);
-    put(&w, 0x91);   /* global table, 2-bit color resolution, 4 entries */
+    put(&w, color ? 0xB3 : 0x91);   /* global table: 16 entries (4-bit) or 4 (2-bit) */
     put(&w, 0);
     put(&w, 0);
-    app_photo_rgb_t palette[APP_PHOTO_SHADES];
-    app_photo_palette((app_photo_filter_t)photo->header.filter, photo->header.base, palette);
-    for (int i = 0; i < APP_PHOTO_SHADES; ++i) {
+    app_photo_rgb_t palette[APP_PHOTO_COLORS];
+    const int colors = app_photo_header_palette(&photo->header, palette);
+    for (int i = 0; i < colors; ++i) {
         put(&w, palette[i].r);
         put(&w, palette[i].g);
         put(&w, palette[i].b);
@@ -330,7 +332,10 @@ size_t app_photo_encode_gif(const app_photo_t *photo, int scale, int frame_ms, v
         };
         put_bytes(&w, loop, sizeof(loop));
     }
-    lzw_t z = {.w = &w, .keys = work, .codes = (uint16_t *)((int32_t *)work + LZW_HASH)};
+    const int min_bits = color ? 4 : 2;
+    lzw_t z = {.w = &w, .keys = work, .codes = (uint16_t *)((int32_t *)work + LZW_HASH),
+               .min_bits = min_bits, .clear = 1 << min_bits, .eoi = (1 << min_bits) + 1,
+               .first = (1 << min_bits) + 2};
     const uint16_t delay = (uint16_t)(frame_ms > 0 ? (frame_ms + 5) / 10 : 0);
     for (int f = 0; f < frames; ++f) {
         static const uint8_t gce_head[3] = {0x21, 0xF9, 0x04};
@@ -345,7 +350,7 @@ size_t app_photo_encode_gif(const app_photo_t *photo, int scale, int frame_ms, v
         put_le16(&w, width);
         put_le16(&w, height);
         put(&w, 0);
-        lzw_frame(&z, app_photo_frame_const(photo, f), side, scale);
+        lzw_frame(&z, app_photo_frame_const(photo, f), side, color, scale);
     }
     put(&w, 0x3B);
     return w.overflow ? 0 : w.n;

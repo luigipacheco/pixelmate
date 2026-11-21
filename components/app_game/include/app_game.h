@@ -99,7 +99,6 @@ enum {
 };
 
 #define APP_PET_NAME "BITSY"     /* The pet's name (the app is PixelMate). */
-#define APP_BOOTH_TINT_PET 0xFFU /* Booth photos follow the pet's eye color. */
 
 enum {
     APP_COLOR_COUNT = 6,
@@ -225,6 +224,7 @@ typedef enum {
     APP_ITEM_GAME,
     APP_ITEM_FILTER,       /**< Photo look (app_photo_filter_t); needs the booth. */
     APP_ITEM_LENS,         /**< Photo resolution (app_photo_res_t); needs the booth. */
+    APP_ITEM_FILM,         /**< COLOR FILM (value 0); needs the booth. */
 } app_item_kind_t;
 
 /* ---- Photo booth ---- */
@@ -262,7 +262,8 @@ typedef enum {
 typedef struct {
     app_booth_request_kind_t kind;
     uint8_t filter;              /**< app_photo_filter_t to bake in. */
-    uint8_t res;                 /**< app_photo_res_t (GIFs are capped at APP_PHOTO_GIF_MAX_RES). */
+    uint8_t res;                 /**< app_photo_res_t (GIFs are capped, see app_photo.h). */
+    bool color;                  /**< Color film for this capture (look permitting). */
     uint8_t frame;               /**< GIF frame 0..APP_PHOTO_GIF_FRAMES-1. */
     uint8_t index;               /**< Gallery item for DELETE. */
 } app_booth_request_t;
@@ -275,7 +276,8 @@ typedef struct {
     uint8_t frame;               /**< GIF frames requested so far. */
     uint8_t filter;              /**< Selected look; always owned. */
     uint8_t res;                 /**< Selected lens (app_photo_res_t); always owned. */
-    uint8_t tint;                /**< Photo color: an owned color index, or APP_BOOTH_TINT_PET. */
+    bool color;                  /**< COLOR film selected (owned); B&W otherwise. GREEN and
+                                      THERMAL looks always shoot B&W. */
     bool camera;                 /**< Runtime has a live camera. */
     uint8_t photos, gifs;        /**< Stored items, reported by the runtime. */
     uint8_t index;               /**< Gallery item shown, 0 = newest. */
@@ -334,6 +336,8 @@ enum { APP_STORE_PER_PAGE = 4 };
 /* Looks and lenses use their own bytes: snapshot filters_owned / lenses_owned. */
 #define APP_OWN_FILTER_BIT(i) (1U << (i))
 #define APP_OWN_LENS_BIT(i) (1U << (i))
+/* COLOR FILM shares the lens byte (lenses use bits 0..2). */
+#define APP_OWN_FILM_BIT (1U << 7)
 
 typedef enum {
     APP_CARDS_READY = 0,   /**< Waiting for a paid deal. */
@@ -496,7 +500,7 @@ typedef struct {
     uint8_t filters_owned;      /**< APP_OWN_FILTER_BIT flags. */
     uint8_t filter;             /**< Selected photo look. */
     uint8_t lenses_owned;       /**< APP_OWN_LENS_BIT flags. */
-    uint8_t lens;               /**< Selected photo resolution. */
+    uint8_t lens;               /**< Selected photo resolution, | APP_RECORD_LENS_COLOR for color film. */
 } app_game_record_t;
 
 /** Sizes of older records (prefixes of the current one), for save migration. */
@@ -504,6 +508,7 @@ typedef struct {
 #define APP_GAME_RECORD_V3_SIZE 36U
 #define APP_GAME_RECORD_V4_SIZE 68U
 #define APP_GAME_RECORD_V5_SIZE 72U
+#define APP_RECORD_LENS_COLOR 0x80U   /* app_game_record_t.lens: color film selected. */
 
 typedef struct {
     uint16_t width;    /**< Viewport width in pixels, 1..65535. */
