@@ -8,6 +8,7 @@
 #include <string.h>
 #include "app_cam_stream.h"
 #include "app_camera_hw.h"
+#include "app_net.h"
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -137,6 +138,8 @@ void app_cam_stream_set(bool on_air, int code)
         return;
     }
     app_camera_hw_set_webcam(on_air);
+    /* Streaming needs prompt Wi-Fi: hold the station out of deep power save. */
+    app_net_set_low_latency(on_air);
     if (on_air) {
         start();
     } else if (s_server) {

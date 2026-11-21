@@ -18,6 +18,9 @@ app_cam_stream_set(snapshot.booth.on_air, snapshot.booth.cam_code);   /* every t
   while someone watches. Two sockets, LRU purge. Its own control port (32771).
 - Going off air clears the flag first; the stream handler notices within 15 ms
   and returns, then the server is stopped.
+- While on air the Wi-Fi station is held out of deep power save
+  (`app_net_set_low_latency(true)`, `WIFI_PS_MIN_MODEM`); going off air
+  returns it to the battery-saving mode.
 
 OBS: add a *Media Source*, untick *Local File*, input
 `http://<board-ip>:81/cam?k=<code>` (or a *Browser* source with that URL).
