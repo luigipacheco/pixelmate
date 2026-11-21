@@ -75,6 +75,7 @@ struct app_game {
     int32_t press_x, press_y;
     app_screen_t screen;
     app_overlay_t overlay;
+    app_arcade_t arcade;
     uint8_t store_page;
     uint32_t owned;
     uint8_t anims_on;
@@ -206,6 +207,7 @@ static void fresh_pet(app_game_handle_t g)
 {
     g->screen = APP_SCREEN_HOME;
     g->overlay = APP_OVERLAY_NONE;
+    g->arcade = APP_ARCADE_LOBBY;
     g->store_page = 0;
     g->owned = FREE_OWNED;
     g->anims_on = 0;
@@ -288,7 +290,8 @@ void app_game_set_paused(app_game_handle_t g, bool paused)
 
 static int last_screen(const struct app_game *g)
 {
-    return (g->owned & APP_OWN_GAME_BIT(APP_GAME_SLOTS)) ? APP_SCREEN_SLOTS : APP_SCREEN_CARDS;
+    (void)g;
+    return APP_SCREEN_ARCADE;   /* Games live inside the arcade, not on extra pages. */
 }
 
 static void go_screen(app_game_handle_t g, int delta)
@@ -407,6 +410,14 @@ static void set_overlay(app_game_handle_t g, app_overlay_t overlay)
     }
 }
 
+static void set_arcade(app_game_handle_t g, app_arcade_t arcade)
+{
+    if (g->arcade != arcade) {
+        g->arcade = arcade;
+        g->events |= APP_EVENT_ARCADE;
+    }
+}
+
 static void set_power(app_game_handle_t g, app_power_t power)
 {
     if (g->power != power) {
@@ -477,10 +488,11 @@ static uint32_t item_bit(const app_store_item_t *item)
 static void open_game(app_game_handle_t g)
 {
     set_overlay(g, APP_OVERLAY_NONE);
-    if (g->screen != APP_SCREEN_SLOTS) {
-        g->screen = APP_SCREEN_SLOTS;
+    if (g->screen != APP_SCREEN_ARCADE) {
+        g->screen = APP_SCREEN_ARCADE;
         g->events |= APP_EVENT_SCREEN;
     }
+    set_arcade(g, APP_ARCADE_SLOTS);
 }
 
 static void open_store_at(app_game_handle_t g, app_item_kind_t kind, uint8_t value)
@@ -646,6 +658,41 @@ static void tap_slots(app_game_handle_t g, int32_t x, int32_t y)
     changed(g);
 }
 
+/* Lobby: a tap on a cabinet opens its game (or the store for a locked one).
+ * In a game: EXIT returns to the cabinets, anything else goes to the game. */
+static void tap_arcade(app_game_handle_t g, int32_t x, int32_t y)
+{
+    switch (g->arcade) {
+    case APP_ARCADE_CARDS:
+    case APP_ARCADE_SLOTS:
+        if (app_rect_hit(app_arcade_exit_rect(), x, y)) {
+            set_arcade(g, APP_ARCADE_LOBBY);
+        } else if (g->arcade == APP_ARCADE_CARDS) {
+            tap_cards(g, x, y);
+        } else {
+            tap_slots(g, x, y);
+        }
+        return;
+    default:
+        break;
+    }
+    for (int i = 0; i < APP_ARCADE_CABINETS; ++i) {
+        if (!app_rect_hit(app_arcade_cabinet_rect(i), x, y)) {
+            continue;
+        }
+        const app_arcade_t game = (app_arcade_t)(i + 1);
+        if (game == APP_ARCADE_SOON) {
+            react(g, APP_MOOD_THINKING, REACT_SURPRISE_TICKS);
+            g->events |= APP_EVENT_BLOCKED;   /* Shake: not built yet. */
+        } else if (game == APP_ARCADE_SLOTS && !(g->owned & APP_OWN_GAME_BIT(APP_GAME_SLOTS))) {
+            open_store_at(g, APP_ITEM_GAME, APP_GAME_SLOTS);
+        } else {
+            set_arcade(g, game);
+        }
+        return;
+    }
+}
+
 static void handle_tap(app_game_handle_t g, int32_t x, int32_t y)
 {
     switch (g->overlay) {
@@ -658,8 +705,7 @@ static void handle_tap(app_game_handle_t g, int32_t x, int32_t y)
     switch (g->screen) {
     case APP_SCREEN_HOME: tap_home(g, x, y); break;
     case APP_SCREEN_FEED: tap_feed(g, x, y); break;
-    case APP_SCREEN_CARDS: tap_cards(g, x, y); break;
-    case APP_SCREEN_SLOTS: tap_slots(g, x, y); break;
+    case APP_SCREEN_ARCADE: tap_arcade(g, x, y); break;
     default: break;
     }
 }
@@ -852,12 +898,12 @@ static app_mood_t compute_mood(const struct app_game *g)
     if (g->idle_ticks > SLEEP_AFTER_TICKS) {
         return APP_MOOD_SLEEPY;
     }
-    if (g->overlay == APP_OVERLAY_NONE && g->screen == APP_SCREEN_CARDS
-            && g->cards.view.phase == APP_CARDS_GUESS) {
+    if (g->overlay == APP_OVERLAY_NONE && g->screen == APP_SCREEN_ARCADE
+            && g->arcade == APP_ARCADE_CARDS && g->cards.view.phase == APP_CARDS_GUESS) {
         return APP_MOOD_THINKING;
     }
-    if (g->overlay == APP_OVERLAY_NONE && g->screen == APP_SCREEN_SLOTS
-            && g->slots.view.phase == APP_SLOTS_SPINNING) {
+    if (g->overlay == APP_OVERLAY_NONE && g->screen == APP_SCREEN_ARCADE
+            && g->arcade == APP_ARCADE_SLOTS && g->slots.view.phase == APP_SLOTS_SPINNING) {
         return APP_MOOD_THINKING;
     }
     if (fullness(g) < LOW_STAT) {
@@ -943,6 +989,7 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .paused = g->paused,
         .screen = g->screen,
         .overlay = g->overlay,
+        .arcade = g->arcade,
         .store_page = g->store_page,
         .power = g->power,
         .battery_pct = g->battery_pct,

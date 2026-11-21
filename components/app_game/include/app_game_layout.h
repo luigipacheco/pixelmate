@@ -32,7 +32,7 @@ typedef struct {
     float scale;
 } app_eye_anchor_t;
 
-static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay)
+static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay, int arcade)
 {
     switch (overlay) {
     case 1: return (app_eye_anchor_t) {240, 412, 0.4f};    /* menu: peeking below */
@@ -44,10 +44,25 @@ static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay)
     switch (screen) {
     case 0: return (app_eye_anchor_t) {240, 236, 1.0f};    /* home */
     case 2: return (app_eye_anchor_t) {240, 150, 0.62f};   /* feed */
-    case 3: return (app_eye_anchor_t) {240, 104, 0.46f};   /* cards */
-    case 4: return (app_eye_anchor_t) {240, 98, 0.42f};    /* slots */
+    case 3:                                                 /* arcade */
+        switch (arcade) {
+        case 1: return (app_eye_anchor_t) {240, 104, 0.46f};   /* HI-LO */
+        case 2: return (app_eye_anchor_t) {240, 98, 0.42f};    /* slots */
+        default: return (app_eye_anchor_t) {240, 98, 0.42f};   /* lobby: watching */
+        }
     default: return (app_eye_anchor_t) {240, 206, 0.0f};   /* steps: no eyes */
     }
+}
+
+/* Arcade lobby: three cabinets side by side. */
+static inline app_rect_t app_arcade_cabinet_rect(int i)
+{
+    return (app_rect_t) {(int16_t)(16 + i * 152), 152, 144, 280};
+}
+/* Leaves a game, back to the cabinets (left of the eyes, under the top bar). */
+static inline app_rect_t app_arcade_exit_rect(void)
+{
+    return (app_rect_t) {12, 72, 104, 44};
 }
 
 static inline app_rect_t app_home_eyes_rect(void)

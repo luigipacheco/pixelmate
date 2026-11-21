@@ -12,8 +12,9 @@ react to how much you walk, what you feed it and how you play with it.
   faints and only walking that day's food brings it back.
 - **Snacks:** spend sparks on CELL (10), CHIP (25) or MEGA (60) for a temporary
   fullness boost (they don't count toward survival).
-- **Cards:** high-low. Deal for 5 sparks, each right guess doubles the pot,
-  cash out any time (auto cash-out after 5 wins).
+- **Arcade:** a row of pixel cabinets with attract-mode demos; tap one to
+  play (EXIT returns). HI-LO: deal for 5 sparks, each right guess doubles the
+  pot, cash out any time (auto cash-out after 5 wins).
 - **Moods:** idle, happy, sleepy, hungry, sad, walking, eating, thinking,
   surprised and grumpy, each with its own eye shape, springy motion, blinks
   and gaze that follows your finger.
@@ -21,8 +22,8 @@ react to how much you walk, what you feed it and how you play with it.
   pixel styles (80–150) and animations (100–300): a spark trail as you walk, a
   dance every 100 steps, star eyes when happy and rainbow eyes while walking.
   The menu shows how many steps until your next unlock; Home stays just the pet.
-- **Spark Slots (unlockable, 250 sparks):** a three-reel slot machine where
-  you stop each reel yourself; 3 sparks a spin, 7-7-7 pays 150.
+- **Spark Slots (unlockable cabinet, 250 sparks):** a three-reel slot machine
+  where you stop each reel yourself; 3 sparks a spin, 7-7-7 pays 150.
 - **Low-energy mode:** after 20 s without a touch the pet dozes off and the
   screen dims; at 30 s the screen turns off (12 s on low battery). SLEEP in
   the menu does it at once. Steps keep counting; tap the screen to wake.
@@ -35,7 +36,7 @@ react to how much you walk, what you feed it and how you play with it.
 - **Style:** pick among the pixel sizes and colors you own.
 - Progress is saved to NVS.
 
-Swipe left/right between Home, Steps, Feed, Cards (and Slots once bought). Pull down from the top
+Swipe left/right between Home, Steps, Feed and Arcade. Pull down from the top
 edge for the menu (Store, Style, Goal); swipe up to close. Tap the eyes to pet.
 
 ## Build and run

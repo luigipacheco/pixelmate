@@ -498,7 +498,7 @@ static int state_json(const void *value, char *output, size_t capacity)
     if (!output || !capacity) {
         return -1;
     }
-    static const char *const screens[APP_SCREEN_COUNT] = {"home", "steps", "feed", "cards", "slots"};
+    static const char *const screens[APP_SCREEN_COUNT] = {"home", "steps", "feed", "arcade"};
     static const char *const overlays[APP_OVERLAY_COUNT] = {"none", "menu", "style", "store", "goal"};
     static const char *const moods[APP_MOOD_COUNT] = {
         "idle", "happy", "sleepy", "hungry", "sad", "walk", "eating", "thinking", "surprised", "grumpy",

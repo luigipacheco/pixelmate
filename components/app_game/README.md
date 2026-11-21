@@ -44,7 +44,10 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
 - Happiness drops 1 point every 3 minutes (twice as fast while hungry);
   petting, food and card wins raise it.
 - A swipe is at least 70 px of horizontal travel; a tap moves at most 28 px.
-  Left/right swipes move between Home, Steps, Feed and Cards.
+  Left/right swipes move between Home, Steps, Feed and Arcade. The Arcade
+  shows cabinets (`app_arcade_cabinet_rect`); a tap opens HI-LO, opens Slots
+  if owned (else the store at that item), and the SOON cabinet only shakes.
+  Inside a game, EXIT (`app_arcade_exit_rect`) returns to the cabinets.
 - A downward drag (>= 70 px) starting in the top 90 px opens the menu overlay;
   an upward drag closes any overlay. The menu leads to Store, Style and Goal; their
   BACK button returns to the menu. In the store, left/right swipes change page.
@@ -63,8 +66,8 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
   Steps keep counting in every power state; steps do not keep the screen on.
 - Battery: `app_game_set_battery()` stores the runtime's reading for display;
   it only changes the doze timeout.
-- Spark Slots is a store item (250 sparks); owning it adds `APP_SCREEN_SLOTS`
-  as the last swipe page. A spin costs 3 sparks; each STOP tap halts the
+- Spark Slots is a store item (250 sparks); owning it unlocks its arcade
+  cabinet, and buying it opens that cabinet. A spin costs 3 sparks; each STOP tap halts the
   leftmost spinning reel after it finishes its symbol plus 0..2 random slip.
   Three of a kind pays 150 (7) / 60 / 30 / 20 / 10 / 8 (shoe); any pair refunds
   the bet. Blind play returns about 72%, so the machine is a spark sink.

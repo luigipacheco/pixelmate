@@ -352,8 +352,13 @@ void screens_draw(const draw_ctx_t *d, app_screen_t screen, int ox)
     case APP_SCREEN_HOME: draw_home(d, ox); break;
     case APP_SCREEN_STEPS: draw_steps(d, ox); break;
     case APP_SCREEN_FEED: draw_feed(d, ox); break;
-    case APP_SCREEN_CARDS: draw_cards(d, ox); break;
-    case APP_SCREEN_SLOTS: draw_slots(d, ox); break;
+    case APP_SCREEN_ARCADE:
+        switch (d->snap->arcade) {
+        case APP_ARCADE_CARDS: draw_cards(d, ox); screens_draw_exit(d, ox); break;
+        case APP_ARCADE_SLOTS: draw_slots(d, ox); screens_draw_exit(d, ox); break;
+        default: screens_draw_arcade(d, ox); break;
+        }
+        break;
     default: break;
     }
 }

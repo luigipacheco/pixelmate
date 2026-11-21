@@ -21,6 +21,8 @@ enum {
     Z_PERIOD_TICKS = 34,
     REVEAL_LOOK_TICKS = 30,
     OVERLAY_TICKS = 8,
+    CRT_TICKS = 12,
+    CRT_TOP = 60, CRT_BOTTOM = 446,
     DANCE_TICKS = 72,
 };
 #define ANCHOR_EASE 0.25f
@@ -85,7 +87,7 @@ static app_eye_anchor_t current_anchor(const pet_view_t *v)
 /* Eyes glide toward where the current screen/panel wants them. */
 static void ease_anchor(pet_view_t *v, const app_game_snapshot_t *s, bool snap)
 {
-    const app_eye_anchor_t to = app_eye_anchor(s->screen, s->overlay);
+    const app_eye_anchor_t to = app_eye_anchor(s->screen, s->overlay, s->arcade);
     const float k = snap ? 1.0f : ANCHOR_EASE;
     v->anchor_x += (to.cx - v->anchor_x) * k;
     v->anchor_y += (to.cy - v->anchor_y) * k;
@@ -147,7 +149,7 @@ void pet_view_init(pet_view_t *v)
     memset(v, 0, sizeof(*v));
     pet_eyes_init(&v->eyes);
     v->rng = 0x7a3c19e1U;
-    v->trans = v->food_t = v->flip_t = v->deal_t = v->slide_t = 1.0f;
+    v->trans = v->food_t = v->flip_t = v->deal_t = v->slide_t = v->crt_t = 1.0f;
     v->food_index = -1;
 }
 
@@ -265,6 +267,9 @@ static void on_events(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
     if (ev & APP_EVENT_WOKE) {
         pet_eyes_kick(&v->eyes, -10.0f);
     }
+    if (ev & APP_EVENT_ARCADE && s->arcade != APP_ARCADE_LOBBY) {
+        v->crt_t = 0;
+    }
     if (ev & APP_EVENT_BLOCKED) {
         pet_eyes_shake(&v->eyes);
     }
@@ -339,6 +344,7 @@ void pet_view_update(pet_view_t *v, const app_game_snapshot_t *s, uint32_t event
     advance(&v->flip_t, FLIP_TICKS);
     advance(&v->deal_t, DEAL_TICKS);
     advance(&v->slide_t, SLIDE_TICKS);
+    advance(&v->crt_t, CRT_TICKS);
     update_food(v, s);
     if (v->spark_pulse) {
         --v->spark_pulse;
@@ -428,6 +434,31 @@ static void draw_food_toss(const pet_view_t *v, const draw_ctx_t *d)
             scale, d->color, d->accent, d->gap);
 }
 
+/* Old-TV power-on: a bright line sweeps out, then the picture opens from it. */
+static void draw_crt(const pet_view_t *v, const draw_ctx_t *d)
+{
+    if (v->crt_t >= 1.0f || d->snap->screen != APP_SCREEN_ARCADE) {
+        return;
+    }
+    const int mid = (CRT_TOP + CRT_BOTTOM) / 2, half = (CRT_BOTTOM - CRT_TOP) / 2;
+    const float line_end = 0.35f;
+    if (v->crt_t < line_end) {
+        const int w = (int)(APP_VIEW_W * v->crt_t / line_end);
+        DrawRectangle(0, CRT_TOP, APP_VIEW_W, CRT_BOTTOM - CRT_TOP, BLACK);
+        DrawRectangle(APP_VIEW_W / 2 - w / 2, mid - 2, w, 4, CONFETTI_WHITE);
+        return;
+    }
+    const float open = screens_ease_out((v->crt_t - line_end) / (1.0f - line_end));
+    const int band = (int)(half * (1.0f - open));
+    DrawRectangle(0, CRT_TOP, APP_VIEW_W, band, BLACK);
+    DrawRectangle(0, CRT_BOTTOM - band, APP_VIEW_W, band, BLACK);
+    if (band > 2) {
+        /* Glowing edges where the picture is opening. */
+        DrawRectangle(0, CRT_TOP + band, APP_VIEW_W, 2, d->color);
+        DrawRectangle(0, CRT_BOTTOM - band - 2, APP_VIEW_W, 2, d->color);
+    }
+}
+
 static void draw_steps_counter(const pet_view_t *v, const draw_ctx_t *d)
 {
     char text[16];
@@ -463,7 +494,7 @@ static void draw_sparks_counter(const pet_view_t *v, const draw_ctx_t *d)
 static void draw_dots(const pet_view_t *v, const draw_ctx_t *d)
 {
     const int spacing = 24, size = 10;
-    const int pages = (d->snap->owned & APP_OWN_GAME_BIT(APP_GAME_SLOTS)) ? APP_SCREEN_COUNT : APP_SCREEN_SLOTS;
+    const int pages = APP_SCREEN_COUNT;
     const int x0 = APP_VIEW_W / 2 - (pages - 1) * spacing / 2 - size / 2;
     for (int i = 0; i < pages; ++i) {
         DrawRectangle(x0 + i * spacing, APP_DOTS_Y, size, size, d->dim);
@@ -512,5 +543,6 @@ void pet_view_draw(const pet_view_t *v, const app_game_snapshot_t *s)
                   fainted ? px_scale(c, 0.55f) : (rainbow_on ? rainbow(v->t) : c), stars, fainted);
     draw_food_toss(v, &d);
     draw_particles(v, &d);
+    draw_crt(v, &d);
     draw_sparks_counter(v, &d);
 }

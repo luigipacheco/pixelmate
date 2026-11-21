@@ -22,6 +22,10 @@ void screens_draw_overlay(const draw_ctx_t *ctx, app_overlay_t overlay, int oy);
 int screens_overlay_height(app_overlay_t overlay);
 /** Cheapest item not owned yet, or NULL when everything is owned. */
 const app_store_item_t *screens_next_unlock(const app_game_snapshot_t *snap);
+/** Arcade lobby: the cabinet row (pet_arcade.c). */
+void screens_draw_arcade(const draw_ctx_t *ctx, int ox);
+/** EXIT button shown while a cabinet's game is open. */
+void screens_draw_exit(const draw_ctx_t *ctx, int ox);
 /** Labeled button; filled buttons use dark text. */
 void screens_button(const draw_ctx_t *ctx, app_rect_t r, int ox, int oy, const char *label,
                     int scale, Color color, bool filled);

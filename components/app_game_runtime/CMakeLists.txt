@@ -1,4 +1,4 @@
-idf_component_register(SRCS "app_game_runtime.c" "pet_view.c" "pet_screens.c" "pet_panels.c" "pet_eyes.c" "pixel_draw.c"
+idf_component_register(SRCS "app_game_runtime.c" "pet_view.c" "pet_screens.c" "pet_panels.c" "pet_arcade.c" "pet_eyes.c" "pixel_draw.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "private"
     REQUIRES examples_common

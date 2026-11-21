@@ -21,10 +21,20 @@ typedef enum {
     APP_SCREEN_HOME = 0,
     APP_SCREEN_STEPS,
     APP_SCREEN_FEED,
-    APP_SCREEN_CARDS,
-    APP_SCREEN_SLOTS,      /**< Only reachable once Spark Slots is bought. */
+    APP_SCREEN_ARCADE,     /**< Row of game cabinets; a game opens inside it. */
     APP_SCREEN_COUNT,
 } app_screen_t;
+
+/** Cabinets in the arcade, left to right. LOBBY = no game open. */
+typedef enum {
+    APP_ARCADE_LOBBY = 0,
+    APP_ARCADE_CARDS,      /**< HI-LO, free. */
+    APP_ARCADE_SLOTS,      /**< Spark Slots, bought in the store. */
+    APP_ARCADE_SOON,       /**< Placeholder cabinet for the next game. */
+    APP_ARCADE_COUNT,
+} app_arcade_t;
+
+enum { APP_ARCADE_CABINETS = APP_ARCADE_COUNT - 1 };
 
 /** Panels that slide down over the swipeable screens. */
 typedef enum {
@@ -204,6 +214,7 @@ enum {
     APP_EVENT_REVIVED = 1U << 22,     /**< A fainted pet was walked back to life. */
     APP_EVENT_DAY = 1U << 23,         /**< A day ended; health changed. */
     APP_EVENT_BLOCKED = 1U << 24,     /**< Fainted: snacks and games refused. */
+    APP_EVENT_ARCADE = 1U << 25,      /**< A cabinet was opened or exited. */
 };
 
 /** Events that change spendable or configured data and deserve a prompt save. */
@@ -237,6 +248,7 @@ typedef struct {
     bool paused;
     app_screen_t screen;
     app_overlay_t overlay;
+    app_arcade_t arcade;        /**< Game open on the Arcade page, or LOBBY. */
     uint8_t store_page;         /**< 0..store pages-1. */
     app_power_t power;
     int8_t battery_pct;         /**< 0..100, or -1 when unknown. */
