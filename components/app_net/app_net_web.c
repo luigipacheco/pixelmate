@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-/* Stats web server: GET / (page), GET /api/stats (JSON), POST /api/tz.
- * Handlers run on the httpd task. The JSON is a snapshot published by the game
+/* Stats web server: GET / (page), GET /api/stats (JSON), POST /api/tz, plus
+ * the setup portal routes (app_net_portal.c). One server on port 80 answers on
+ * both the home network and the setup hotspot. Handlers run on the httpd task. The JSON is a snapshot published by the game
  * loop under a mutex; the timezone travels back through a spinlocked slot. */
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +19,7 @@ enum {
     TZ_MAX = 12 * 60,
     QUERY_MAX = 48,
     HTTPD_STACK = 6144,
+    HTTPD_SOCKETS = 5,    /* Leaves lwIP sockets for captive DNS and ESP-Iris TCP. */
 };
 
 static SemaphoreHandle_t s_json_lock;
@@ -112,6 +114,9 @@ bool app_net_take_timezone(int *minutes_west)
 
 static esp_err_t get_page(httpd_req_t *req)
 {
+    if (app_net_setup_active()) {
+        return app_net_portal_page(req);   /* The phone on the hotspot lands here. */
+    }
     httpd_resp_set_type(req, "text/html");
     return httpd_resp_send(req, PAGE, sizeof(PAGE) - 1);
 }
@@ -168,6 +173,7 @@ esp_err_t app_net_web_start(void)
     config.server_port = APP_NET_HTTP_PORT;
     config.stack_size = HTTPD_STACK;
     config.lru_purge_enable = true;
+    config.max_open_sockets = HTTPD_SOCKETS;
     esp_err_t err = httpd_start(&s_server, &config);
     if (err != ESP_OK) {
         return err;
@@ -182,6 +188,10 @@ esp_err_t app_net_web_start(void)
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "route %s: %s", routes[i].uri, esp_err_to_name(err));
         }
+    }
+    err = app_net_portal_register(s_server);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "setup portal: %s", esp_err_to_name(err));
     }
     return ESP_OK;
 }
