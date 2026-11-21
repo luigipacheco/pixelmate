@@ -7,6 +7,7 @@
 #include "include/app_game_layout.h"
 #include "private/cards.h"
 #include "private/pedometer.h"
+#include "private/grid.h"
 #include "private/slots.h"
 
 #define TICKS_PER_SECOND 30U
@@ -58,6 +59,7 @@ static const app_store_item_t s_store[] = {
     {APP_ITEM_ANIM, APP_ANIM_DANCE, 150, "STEP DANCE", "DANCES EVERY 100 STEPS"},
     {APP_ITEM_STYLE, APP_PIXEL_SMOOTH, 150, "SMOOTH", "NO PIXELS AT ALL"},
     {APP_ITEM_ANIM, APP_ANIM_STARS, 200, "STAR EYES", "STARS WHEN HAPPY"},
+    {APP_ITEM_GAME, APP_GAME_GRID, 200, "SPARK GRID", "FLIP TILES DODGE DUDS"},
     {APP_ITEM_GAME, APP_GAME_SLOTS, 250, "SPARK SLOTS", "STOP THE REELS TO WIN"},
     {APP_ITEM_ANIM, APP_ANIM_RAINBOW, 300, "RAINBOW", "COLORS WHILE WALKING"},
 };
@@ -114,6 +116,7 @@ struct app_game {
     uint32_t sensor_last;
     cards_t cards;
     slots_t slots;
+    grid_t grid;
 };
 
 static uint8_t add_stat(uint8_t value, int delta)
@@ -239,6 +242,7 @@ static void fresh_pet(app_game_handle_t g)
     g->cards.view.best_streak = 0;
     cards_init(&g->cards, g->cards.rng);
     slots_init(&g->slots, g->slots.rng);
+    grid_init(&g->grid, g->grid.rng);
     pedometer_reset(&g->pedometer);
 }
 
@@ -259,6 +263,7 @@ app_game_err_t app_game_create(const app_game_config_t *config, app_game_handle_
     g->battery_pct = -1;
     cards_init(&g->cards, config->seed);
     slots_init(&g->slots, config->seed ^ 0xa5a5a5a5U);
+    grid_init(&g->grid, config->seed ^ 0x5a5a5a5aU);
     fresh_pet(g);
     *ret_handle = g;
     return APP_GAME_OK;
@@ -485,14 +490,14 @@ static uint32_t item_bit(const app_store_item_t *item)
     }
 }
 
-static void open_game(app_game_handle_t g)
+static void open_game(app_game_handle_t g, app_minigame_t game)
 {
     set_overlay(g, APP_OVERLAY_NONE);
     if (g->screen != APP_SCREEN_ARCADE) {
         g->screen = APP_SCREEN_ARCADE;
         g->events |= APP_EVENT_SCREEN;
     }
-    set_arcade(g, APP_ARCADE_SLOTS);
+    set_arcade(g, game == APP_GAME_GRID ? APP_ARCADE_GRID : APP_ARCADE_SLOTS);
 }
 
 static void open_store_at(app_game_handle_t g, app_item_kind_t kind, uint8_t value)
@@ -510,7 +515,7 @@ static void equip(app_game_handle_t g, const app_store_item_t *item, bool just_b
     switch (item->kind) {
     case APP_ITEM_COLOR: g->color_index = item->value; break;
     case APP_ITEM_STYLE: g->pixel_style = (app_pixel_style_t)item->value; break;
-    case APP_ITEM_GAME: open_game(g); break;
+    case APP_ITEM_GAME: open_game(g, (app_minigame_t)item->value); break;
     default:
         if (just_bought) {
             g->anims_on |= (uint8_t)(1U << item->value);
@@ -660,32 +665,85 @@ static void tap_slots(app_game_handle_t g, int32_t x, int32_t y)
 
 /* Lobby: a tap on a cabinet opens its game (or the store for a locked one).
  * In a game: EXIT returns to the cabinets, anything else goes to the game. */
-static void tap_arcade(app_game_handle_t g, int32_t x, int32_t y)
+static void tap_grid(app_game_handle_t g, int32_t x, int32_t y)
 {
-    switch (g->arcade) {
-    case APP_ARCADE_CARDS:
-    case APP_ARCADE_SLOTS:
-        if (app_rect_hit(app_arcade_exit_rect(), x, y)) {
-            set_arcade(g, APP_ARCADE_LOBBY);
-        } else if (g->arcade == APP_ARCADE_CARDS) {
-            tap_cards(g, x, y);
-        } else {
-            tap_slots(g, x, y);
+    if (blocked_by_faint(g)) {
+        return;
+    }
+    const app_grid_snapshot_t *v = &g->grid.view;
+    if (app_rect_hit(app_grid_button_rect(), x, y)) {
+        if (v->phase == APP_GRID_PLAYING) {
+            const uint32_t won = grid_cash(&g->grid, &g->events);
+            if (won) {
+                g->sparks += won;
+                react(g, APP_MOOD_HAPPY, REACT_WIN_TICKS);
+                changed(g);
+            }
+            return;
+        }
+        const uint32_t cost = grid_deal(&g->grid, g->sparks);
+        if (!cost) {
+            react(g, APP_MOOD_GRUMPY, REACT_GRUMPY_TICKS);
+            g->events |= APP_EVENT_NO_SPARKS;
+            return;
+        }
+        g->sparks -= cost;
+        g->events |= APP_EVENT_CARD_DEAL;   /* Same "dealt" cue as the card game. */
+        changed(g);
+        return;
+    }
+    for (int i = 0; i < APP_GRID_TILES; ++i) {
+        if (!app_rect_hit(app_grid_tile_rect(i), x, y)) {
+            continue;
+        }
+        const uint32_t before = g->events;
+        const uint32_t won = grid_flip(&g->grid, i, &g->events);
+        if (won) {
+            g->sparks += won;
+            react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS);
+            changed(g);
+        } else if ((g->events & ~before) & APP_EVENT_GRID_DONE) {
+            react(g, APP_MOOD_SAD, REACT_LOSE_TICKS);   /* Hit a dud. */
+        } else if (g->grid.view.tiles[i] > 1) {
+            react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
         }
         return;
-    default:
-        break;
+    }
+}
+
+static bool cabinet_owned(const struct app_game *g, app_arcade_t game)
+{
+    switch (game) {
+    case APP_ARCADE_SLOTS: return g->owned & APP_OWN_GAME_BIT(APP_GAME_SLOTS);
+    case APP_ARCADE_GRID: return g->owned & APP_OWN_GAME_BIT(APP_GAME_GRID);
+    default: return true;
+    }
+}
+
+/* Lobby: a tap on a cabinet opens its game (or the store for a locked one).
+ * In a game: EXIT returns to the cabinets, anything else goes to the game. */
+static void tap_arcade(app_game_handle_t g, int32_t x, int32_t y)
+{
+    if (g->arcade != APP_ARCADE_LOBBY) {
+        if (app_rect_hit(app_arcade_exit_rect(), x, y)) {
+            set_arcade(g, APP_ARCADE_LOBBY);
+            return;
+        }
+        switch (g->arcade) {
+        case APP_ARCADE_CARDS: tap_cards(g, x, y); break;
+        case APP_ARCADE_SLOTS: tap_slots(g, x, y); break;
+        case APP_ARCADE_GRID: tap_grid(g, x, y); break;
+        default: break;
+        }
+        return;
     }
     for (int i = 0; i < APP_ARCADE_CABINETS; ++i) {
         if (!app_rect_hit(app_arcade_cabinet_rect(i), x, y)) {
             continue;
         }
         const app_arcade_t game = (app_arcade_t)(i + 1);
-        if (game == APP_ARCADE_SOON) {
-            react(g, APP_MOOD_THINKING, REACT_SURPRISE_TICKS);
-            g->events |= APP_EVENT_BLOCKED;   /* Shake: not built yet. */
-        } else if (game == APP_ARCADE_SLOTS && !(g->owned & APP_OWN_GAME_BIT(APP_GAME_SLOTS))) {
-            open_store_at(g, APP_ITEM_GAME, APP_GAME_SLOTS);
+        if (!cabinet_owned(g, game)) {
+            open_store_at(g, APP_ITEM_GAME, game == APP_ARCADE_GRID ? APP_GAME_GRID : APP_GAME_SLOTS);
         } else {
             set_arcade(g, game);
         }
@@ -906,6 +964,10 @@ static app_mood_t compute_mood(const struct app_game *g)
             && g->arcade == APP_ARCADE_SLOTS && g->slots.view.phase == APP_SLOTS_SPINNING) {
         return APP_MOOD_THINKING;
     }
+    if (g->overlay == APP_OVERLAY_NONE && g->screen == APP_SCREEN_ARCADE
+            && g->arcade == APP_ARCADE_GRID && g->grid.view.phase == APP_GRID_PLAYING) {
+        return APP_MOOD_THINKING;
+    }
     if (fullness(g) < LOW_STAT) {
         return APP_MOOD_HUNGRY;
     }
@@ -958,6 +1020,7 @@ void app_game_update(app_game_handle_t g)
         react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS);
         changed(g);
     }
+    grid_update(&g->grid);
     const uint32_t before = g->events;
     const uint32_t slot_win = slots_update(&g->slots, &g->events);
     if ((g->events & ~before) & APP_EVENT_SLOT_DONE) {
@@ -1017,6 +1080,7 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .last_food = g->last_food,
         .cards = g->cards.view,
         .slots = g->slots.view,
+        .grid = g->grid.view,
         .save_seq = g->save_seq,
     };
     memcpy(snap.history, g->history, sizeof(snap.history));

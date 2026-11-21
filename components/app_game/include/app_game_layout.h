@@ -48,6 +48,7 @@ static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay, int arcad
         switch (arcade) {
         case 1: return (app_eye_anchor_t) {240, 104, 0.46f};   /* HI-LO */
         case 2: return (app_eye_anchor_t) {240, 98, 0.42f};    /* slots */
+        case 3: return (app_eye_anchor_t) {426, 340, 0.26f};   /* grid: watching from the side */
         default: return (app_eye_anchor_t) {240, 98, 0.42f};   /* lobby: watching */
         }
     default: return (app_eye_anchor_t) {240, 206, 0.0f};   /* steps: no eyes */
@@ -109,6 +110,18 @@ static inline app_rect_t app_slots_reels_rect(void)
 static inline app_rect_t app_slots_button_rect(void)
 {
     return (app_rect_t) {130, 372, 220, 64};
+}
+
+/* Spark Grid: 5x5 tiles, a hint column/row, and a PLAY/CASH button. */
+enum { APP_GRID_CELL = 52, APP_GRID_X = 52, APP_GRID_Y = 126 };
+static inline app_rect_t app_grid_tile_rect(int tile)
+{
+    return (app_rect_t) {(int16_t)(APP_GRID_X + (tile % 5) * APP_GRID_CELL),
+                         (int16_t)(APP_GRID_Y + (tile / 5) * APP_GRID_CELL), APP_GRID_CELL, APP_GRID_CELL};
+}
+static inline app_rect_t app_grid_button_rect(void)
+{
+    return (app_rect_t) {382, 126, 88, 64};
 }
 
 /* Pull-down menu entries (inside the APP_MENU_H panel). The top row holds the

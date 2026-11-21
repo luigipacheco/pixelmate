@@ -171,6 +171,14 @@ static void draw_preview(const draw_ctx_t *d, const app_store_item_t *item, int 
         return;
     }
     case APP_ITEM_GAME:
+        if (item->value == APP_GAME_GRID) {
+            /* A tiny 3x3 board with one dud. */
+            for (int i = 0; i < 9; ++i) {
+                const Color tile = i == 4 ? (Color){255, 48, 48, 255} : (i % 2 ? c : d->accent);
+                px_box(x + (i % 3) * 20, y + (i / 3) * 20, 17, 17, 0, tile);
+            }
+            return;
+        }
         /* Three tiny reels showing sevens. */
         for (int i = 0; i < APP_SLOT_REELS; ++i) {
             px_box(x + i * 20, y + 12, 18, 36, 2, c);

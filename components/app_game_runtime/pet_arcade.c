@@ -25,6 +25,7 @@ static bool cabinet_unlocked(const app_game_snapshot_t *s, app_arcade_t game)
     switch (game) {
     case APP_ARCADE_CARDS: return true;
     case APP_ARCADE_SLOTS: return s->owned & APP_OWN_GAME_BIT(APP_GAME_SLOTS);
+    case APP_ARCADE_GRID: return s->owned & APP_OWN_GAME_BIT(APP_GAME_GRID);
     default: return false;
     }
 }
@@ -34,7 +35,7 @@ static const char *cabinet_name(app_arcade_t game)
     switch (game) {
     case APP_ARCADE_CARDS: return "HI-LO";
     case APP_ARCADE_SLOTS: return "SLOTS";
-    default: return "SOON";
+    default: return "GRID";
     }
 }
 
@@ -80,10 +81,29 @@ static void attract_slots(const draw_ctx_t *d, int x, int y, int w, uint32_t t)
     }
 }
 
-static void attract_soon(const draw_ctx_t *d, int x, int y, int w, uint32_t t)
+static void attract_grid(const draw_ctx_t *d, int x, int y, int w, uint32_t t)
 {
-    if ((t / 15U) % 2U) {
-        px_text_center("?", x + w / 2, y + SCREEN_H / 2 - 21, 6, d->dim, d->gap);
+    /* A 3x3 board turning tiles one by one; the last one is a dud. */
+    static const uint8_t faces[9] = {2, 1, 3, 1, 0, 2, 1, 1, 3};
+    static const uint8_t order[9] = {0, 4, 2, 6, 8, 1, 3, 7, 5};
+    const int cell = 26, gx = x + (w - 3 * cell) / 2, gy = y + (SCREEN_H - 3 * cell) / 2;
+    const uint32_t shown = (t % ATTRACT_PERIOD) / 9U;
+    for (int i = 0; i < 9; ++i) {
+        int k = 0;
+        while (order[k] != i) {
+            ++k;
+        }
+        const int tx = gx + (i % 3) * cell, ty = gy + (i / 3) * cell;
+        if ((uint32_t)k >= shown) {
+            px_box(tx + 2, ty + 2, cell - 4, cell - 4, 1, d->color);
+            continue;
+        }
+        const uint8_t v = faces[i];
+        px_box(tx + 2, ty + 2, cell - 4, cell - 4, 0, v ? CARD_FACE : (Color){255, 48, 48, 255});
+        if (v) {
+            char label[2] = {(char)('0' + v), 0};
+            px_text_center(label, tx + cell / 2, ty + 7, 2, v > 1 ? d->accent : INK, false);
+        }
     }
 }
 
@@ -126,11 +146,11 @@ static void draw_cabinet(const draw_ctx_t *d, int index, int ox)
     if (unlocked) {
         if (game == APP_ARCADE_CARDS) {
             attract_cards(d, sx, sy, sw, t);
-        } else {
+        } else if (game == APP_ARCADE_SLOTS) {
             attract_slots(d, sx, sy, sw, t);
+        } else {
+            attract_grid(d, sx, sy, sw, t);
         }
-    } else if (game == APP_ARCADE_SOON) {
-        attract_soon(d, sx, sy, sw, t);
     } else {
         px_icon(PX_ICON_LOCK, sx + sw / 2 - 14, sy + SCREEN_H / 2 - 16, 4, c, c, d->gap);
     }
@@ -146,14 +166,13 @@ static void draw_cabinet(const draw_ctx_t *d, int index, int ox)
         if (!blink) {
             px_text_center("COIN", x + r.w / 2, cy + 42, 2, c, false);
         }
-    } else if (game == APP_ARCADE_SLOTS) {
-        const app_store_item_t *item = app_game_store_item(app_game_store_find(APP_ITEM_GAME, APP_GAME_SLOTS));
+    } else {
+        const app_minigame_t id = game == APP_ARCADE_GRID ? APP_GAME_GRID : APP_GAME_SLOTS;
+        const app_store_item_t *item = app_game_store_item(app_game_store_find(APP_ITEM_GAME, id));
         snprintf(text, sizeof(text), "%u", item ? item->cost : 0);
         const int tw = px_text_width(text, 2);
         px_icon(PX_ICON_BOLT, x + (r.w - tw) / 2 - 14, cy + 26, 2, accent, accent, false);
         px_text(text, x + (r.w - tw) / 2 + 2, cy + 26, 2, s->sparks >= (item ? item->cost : 0) ? d->color : c, false);
-    } else {
-        px_text_center("SOON", x + r.w / 2, cy + 26, 2, c, false);
     }
 }
 

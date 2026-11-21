@@ -30,7 +30,7 @@ typedef enum {
     APP_ARCADE_LOBBY = 0,
     APP_ARCADE_CARDS,      /**< HI-LO, free. */
     APP_ARCADE_SLOTS,      /**< Spark Slots, bought in the store. */
-    APP_ARCADE_SOON,       /**< Placeholder cabinet for the next game. */
+    APP_ARCADE_GRID,       /**< Spark Grid, bought in the store. */
     APP_ARCADE_COUNT,
 } app_arcade_t;
 
@@ -117,8 +117,42 @@ typedef enum {
 /** Unlockable mini games. */
 typedef enum {
     APP_GAME_SLOTS = 0,
+    APP_GAME_GRID,
     APP_GAME_COUNT,
 } app_minigame_t;
+
+/* ---- Spark Grid: flip tiles, multiply the score, avoid duds ---- */
+enum {
+    APP_GRID_N = 5,              /**< Tiles per row and column. */
+    APP_GRID_TILES = 25,
+    APP_GRID_COST = 5,           /**< Sparks per round. */
+    APP_GRID_DUD = 0,            /**< Tile value of a dud; others are 1..3. */
+};
+
+typedef enum {
+    APP_GRID_READY = 0,          /**< Waiting for a paid round. */
+    APP_GRID_PLAYING,
+    APP_GRID_RESULT,             /**< Board shown; next round soon. */
+} app_grid_phase_t;
+
+typedef enum {
+    APP_GRID_RESULT_NONE = 0,
+    APP_GRID_RESULT_CLEARED,     /**< Every x2/x3 found: auto cash-out. */
+    APP_GRID_RESULT_CASHED,
+    APP_GRID_RESULT_DUD,         /**< Hit a dud: score lost. */
+} app_grid_result_t;
+
+typedef struct {
+    app_grid_phase_t phase;
+    uint8_t tiles[APP_GRID_TILES];     /**< 0 = dud, 1..3; row-major. Show only revealed ones. */
+    uint32_t revealed;                 /**< Bit per tile. */
+    uint8_t row_sum[APP_GRID_N], row_duds[APP_GRID_N];
+    uint8_t col_sum[APP_GRID_N], col_duds[APP_GRID_N];
+    uint16_t score;                    /**< Product of flipped values; payout on cash. */
+    uint16_t payout;                   /**< Sparks paid by the last round. */
+    int8_t last_flip;                  /**< Tile flipped most recently, -1 if none. */
+    app_grid_result_t result;
+} app_grid_snapshot_t;
 
 typedef enum {
     APP_ITEM_COLOR = 0,
@@ -215,13 +249,15 @@ enum {
     APP_EVENT_DAY = 1U << 23,         /**< A day ended; health changed. */
     APP_EVENT_BLOCKED = 1U << 24,     /**< Fainted: snacks and games refused. */
     APP_EVENT_ARCADE = 1U << 25,      /**< A cabinet was opened or exited. */
+    APP_EVENT_GRID_FLIP = 1U << 26,   /**< See snapshot grid.last_flip. */
+    APP_EVENT_GRID_DONE = 1U << 27,   /**< Round over; see grid.result and payout. */
 };
 
 /** Events that change spendable or configured data and deserve a prompt save. */
 #define APP_EVENTS_SAVE_NOW (APP_EVENT_ATE | APP_EVENT_CARD_DEAL | APP_EVENT_CARD_REVEAL | \
                              APP_EVENT_CASH_OUT | APP_EVENT_SETTINGS | APP_EVENT_GOAL | \
                              APP_EVENT_BOUGHT | APP_EVENT_SLOT_DONE | APP_EVENT_FED | \
-                             APP_EVENT_REVIVED | APP_EVENT_DAY)
+                             APP_EVENT_REVIVED | APP_EVENT_DAY | APP_EVENT_GRID_DONE)
 
 typedef struct {
     const char *name;   /**< Upper-case label drawable by the pixel font. */
@@ -277,6 +313,7 @@ typedef struct {
     int8_t last_food;           /**< Food index of the last meal, -1 if none. */
     app_cards_snapshot_t cards;
     app_slots_snapshot_t slots;
+    app_grid_snapshot_t grid;
     uint32_t save_seq;          /**< Increments whenever persistent data changes. */
 } app_game_snapshot_t;
 

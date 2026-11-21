@@ -149,7 +149,7 @@ void pet_view_init(pet_view_t *v)
     memset(v, 0, sizeof(*v));
     pet_eyes_init(&v->eyes);
     v->rng = 0x7a3c19e1U;
-    v->trans = v->food_t = v->flip_t = v->deal_t = v->slide_t = v->crt_t = 1.0f;
+    v->trans = v->food_t = v->flip_t = v->deal_t = v->slide_t = v->crt_t = v->grid_flip_t = 1.0f;
     v->food_index = -1;
 }
 
@@ -270,6 +270,29 @@ static void on_events(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
     if (ev & APP_EVENT_ARCADE && s->arcade != APP_ARCADE_LOBBY) {
         v->crt_t = 0;
     }
+    if (ev & APP_EVENT_CARD_DEAL && s->arcade == APP_ARCADE_GRID) {
+        v->grid_flipped = 0;   /* New grid round. */
+    }
+    if (ev & APP_EVENT_GRID_FLIP && s->grid.last_flip >= 0) {
+        v->grid_flip_t = 0;
+        v->grid_flipped |= 1UL << s->grid.last_flip;
+    }
+    if (ev & APP_EVENT_GRID_DONE) {
+        const app_rect_t t = app_grid_tile_rect(s->grid.last_flip >= 0 ? s->grid.last_flip : 12);
+        if (s->grid.result == APP_GRID_RESULT_DUD) {
+            pet_eyes_shake(&v->eyes);
+            burst(v, P_SQUARE, t.x + t.w / 2, t.y + t.h / 2, 14, 7.0f, 0.35f, WARN, CONFETTI_WHITE);
+        } else {
+            char text[VIEW_FLOATER_TEXT];
+            snprintf(text, sizeof(text), "+%u", s->grid.payout);
+            floater(v, text, 186, 250, acc);
+            burst(v, P_BOLT, 186, 250, 8, 7.0f, 0.3f, c, acc);
+            if (s->grid.result == APP_GRID_RESULT_CLEARED) {
+                burst(v, P_SQUARE, 186, 250, 26, 9.0f, 0.35f, acc, CONFETTI_WHITE);
+            }
+            v->spark_pulse = SPARK_PULSE_TICKS;
+        }
+    }
     if (ev & APP_EVENT_BLOCKED) {
         pet_eyes_shake(&v->eyes);
     }
@@ -345,6 +368,7 @@ void pet_view_update(pet_view_t *v, const app_game_snapshot_t *s, uint32_t event
     advance(&v->deal_t, DEAL_TICKS);
     advance(&v->slide_t, SLIDE_TICKS);
     advance(&v->crt_t, CRT_TICKS);
+    advance(&v->grid_flip_t, FLIP_TICKS);
     update_food(v, s);
     if (v->spark_pulse) {
         --v->spark_pulse;

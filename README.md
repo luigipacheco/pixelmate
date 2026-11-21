@@ -22,6 +22,9 @@ react to how much you walk, what you feed it and how you play with it.
   pixel styles (80–150) and animations (100–300): a spark trail as you walk, a
   dance every 100 steps, star eyes when happy and rainbow eyes while walking.
   The menu shows how many steps until your next unlock; Home stays just the pet.
+- **Spark Grid (unlockable cabinet, 200 sparks):** a 5x5 logic flip puzzle.
+  Tiles hide x1/x2/x3 or a dud; row/column hints show totals and dud counts.
+  5 sparks a round, each flip multiplies the score, CASH banks it.
 - **Spark Slots (unlockable cabinet, 250 sparks):** a three-reel slot machine
   where you stop each reel yourself; 3 sparks a spin, 7-7-7 pays 150.
 - **Low-energy mode:** after 20 s without a touch the pet dozes off and the

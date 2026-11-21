@@ -90,9 +90,6 @@ static void draw_steps(const draw_ctx_t *d, int ox)
     snprintf(text, sizeof(text), "/%lu", (unsigned long)s->step_goal);
     px_text_center(text, RING_CX + ox, 236, 3, d->dim, d->gap);
 
-    /* Food marker: half the goal (the bottom of the ring) feeds the pet. */
-    DrawRectangle(RING_CX + ox - 4, RING_CY + RING_OUT + 4, 8, 10, s->fed_today ? d->accent : d->dim);
-
     snprintf(text, sizeof(text), "TOTAL %lu", (unsigned long)s->steps_total);
     px_text_center(text, 240 + ox, 360, 3, d->color, d->gap);
     /* Health hearts: +1 for each day fed (half the goal), -1 for each missed. */
@@ -125,19 +122,26 @@ static void draw_home(const draw_ctx_t *d, int ox)
 
 /* ---- Feed ------------------------------------------------------------ */
 
+const char *screens_energy_word(uint8_t energy)
+{
+    if (energy < 15) {
+        return "STARVING";
+    }
+    if (energy < 40) {
+        return "HUNGRY";
+    }
+    return energy < 75 ? "PECKISH" : "FULL";
+}
+
 static void draw_feed(const draw_ctx_t *d, int ox)
 {
     const app_game_snapshot_t *s = d->snap;
-    px_text("FULL", 80 + ox, 218, 2, d->dim, false);
+    /* Energy is a feeling, not a quota: a bar and a word, no step numbers. */
+    px_text("ENERGY", 56 + ox, 218, 2, d->dim, false);
     draw_bar(d, 142 + ox, 214, s->hunger, s->hunger < 25 ? WARN : d->color);
     char text[32];
-    if (s->fed_today) {
-        px_text_center("FED BY WALKING TODAY", 240 + ox, 242, 2, d->accent, false);
-    } else {
-        snprintf(text, sizeof(text), "WALKED %lu/%lu", (unsigned long)s->steps_today,
-                 (unsigned long)s->food_need);
-        px_text_center(text, 240 + ox, 242, 2, d->dim, false);
-    }
+    px_text_center(screens_energy_word(s->hunger), 240 + ox, 242, 2,
+                   s->hunger < 25 ? WARN : (s->hunger >= 75 ? d->accent : d->dim), false);
     for (int i = 0; i < APP_FOOD_COUNT; ++i) {
         const app_food_t *food = app_game_food(i);
         const app_rect_t r = app_feed_item_rect(i);
@@ -356,6 +360,7 @@ void screens_draw(const draw_ctx_t *d, app_screen_t screen, int ox)
         switch (d->snap->arcade) {
         case APP_ARCADE_CARDS: draw_cards(d, ox); screens_draw_exit(d, ox); break;
         case APP_ARCADE_SLOTS: draw_slots(d, ox); screens_draw_exit(d, ox); break;
+        case APP_ARCADE_GRID: screens_draw_grid(d, ox); screens_draw_exit(d, ox); break;
         default: screens_draw_arcade(d, ox); break;
         }
         break;
