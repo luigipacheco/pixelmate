@@ -264,6 +264,21 @@ static void on_events(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
     if (ev & APP_EVENT_WOKE) {
         pet_eyes_kick(&v->eyes, -10.0f);
     }
+    if (ev & APP_EVENT_BLOCKED) {
+        pet_eyes_shake(&v->eyes);
+    }
+    if (ev & APP_EVENT_REVIVED) {
+        floater(v, "REVIVED!", 240, 300, acc);
+        burst(v, P_HEART, 240, 230, 8, 6.0f, 0.15f, acc, c);
+        burst(v, P_SQUARE, 240, 230, 24, 9.0f, 0.35f, c, CONFETTI_WHITE);
+    } else if (ev & APP_EVENT_FED) {
+        floater(v, "FED!", 240, 300, acc);
+        burst(v, P_HEART, 240, 230, 5, 5.0f, 0.15f, acc, c);
+    }
+    if (ev & APP_EVENT_DAY && s->hp != v->prev_hp) {
+        floater(v, s->hp > v->prev_hp ? "+1 HP" : "-1 HP", 240, 120, s->hp > v->prev_hp ? acc : WARN);
+    }
+    v->prev_hp = s->hp;
     if (ev & APP_EVENT_POWER && s->power == APP_POWER_AWAKE) {
         /* Snap the step/spark count-ups so the wake frame is current. */
         v->steps_shown = (float)s->steps_today;
@@ -302,6 +317,7 @@ void pet_view_update(pet_view_t *v, const app_game_snapshot_t *s, uint32_t event
         v->steps_shown = (float)s->steps_today;
         v->sparks_shown = (float)s->sparks;
         v->prev_sparks = s->sparks;
+        v->prev_hp = s->hp;
         ease_anchor(v, s, true);
     }
     ease_anchor(v, s, false);
@@ -487,7 +503,9 @@ void pet_view_draw(const pet_view_t *v, const app_game_snapshot_t *s)
     /* Unlocked animations change how the eyes are drawn. */
     const bool rainbow_on = anim_on(s, APP_ANIM_RAINBOW) && s->mood == APP_MOOD_WALK;
     const bool stars = anim_on(s, APP_ANIM_STARS) && s->mood == APP_MOOD_HAPPY;
-    pet_eyes_draw(&v->eyes, current_anchor(v), grid, rainbow_on ? rainbow(v->t) : c, stars);
+    const bool fainted = s->mood == APP_MOOD_FAINTED;
+    pet_eyes_draw(&v->eyes, current_anchor(v), grid,
+                  fainted ? px_scale(c, 0.55f) : (rainbow_on ? rainbow(v->t) : c), stars, fainted);
     draw_food_toss(v, &d);
     draw_particles(v, &d);
     draw_sparks_counter(v, &d);

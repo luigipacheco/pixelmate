@@ -33,8 +33,16 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
 - 20 steps earn 1 spark. The daily goal defaults to 8000 steps and is set in the
   Goal panel (1000..30000 in 1000-step taps); reaching it gives friendship and
   full happiness once per day. Changing the goal never re-awards the same day.
-- Hunger (fullness) drops 1 point every 2 minutes, happiness every 3 minutes
-  (twice as fast while hungry). Petting, food and card wins raise them.
+- Walking is the pet's food. `food_need` = step goal / 2; fullness is today's
+  steps toward it (0..100) plus snack fullness from the Feed screen, which
+  drains 1 point every 2 minutes. Snacks never count toward survival.
+- Health: `hp` 0..5 hearts, settled when the day changes (`app_game_set_day`):
+  +1 if the day was fed (steps_today reached food_need), -1 if not, and -1 per
+  day skipped entirely (device off). At 0 the pet faints: X eyes, snacks and
+  games refused (`APP_EVENT_BLOCKED`). Walking food_need steps in a day
+  revives it with 1 heart. Without a valid clock no day ends, so health holds.
+- Happiness drops 1 point every 3 minutes (twice as fast while hungry);
+  petting, food and card wins raise it.
 - A swipe is at least 70 px of horizontal travel; a tap moves at most 28 px.
   Left/right swipes move between Home, Steps, Feed and Cards.
 - A downward drag (>= 70 px) starting in the top 90 px opens the menu overlay;

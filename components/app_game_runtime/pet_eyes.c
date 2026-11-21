@@ -34,6 +34,7 @@ static const eye_target_t s_targets[APP_MOOD_COUNT] = {
     [APP_MOOD_THINKING] = {80, 106, 26, 0.16f, 0, 0},
     [APP_MOOD_SURPRISED] = {112, 158, 42, 0, 0, 0},
     [APP_MOOD_GRUMPY] = {94, 112, 26, 0.36f, -0.45f, 0},
+    [APP_MOOD_FAINTED] = {92, 92, 0, 0, 0, 0},   /* Drawn as an X. */
 };
 
 static uint32_t rand_next(pet_eyes_t *e)
@@ -255,7 +256,19 @@ static bool star_inside(const void *shape, float x, float y)
     return side_point * side_center >= 0;
 }
 
-void pet_eyes_draw(const pet_eyes_t *e, app_eye_anchor_t a, px_grid_t grid, Color color, bool stars)
+typedef struct {
+    float cx, cy, half, thick;
+} cross_raster_t;
+
+static bool cross_inside(const void *shape, float x, float y)
+{
+    const cross_raster_t *c = shape;
+    const float ax = fabsf(x - c->cx), ay = fabsf(y - c->cy);
+    return ax <= c->half && ay <= c->half && fabsf(ax - ay) <= c->thick;
+}
+
+void pet_eyes_draw(const pet_eyes_t *e, app_eye_anchor_t a, px_grid_t grid, Color color, bool stars,
+                   bool cross)
 {
     const float s = a.scale;
     if (s < 0.05f) {
@@ -276,6 +289,13 @@ void pet_eyes_draw(const pet_eyes_t *e, app_eye_anchor_t a, px_grid_t grid, Colo
             .cover = clampf(e->cur[EYE_COVER], 0.0f, 1.0f),
             .side = (float)side,
         };
+        if (cross) {
+            const float half = fmaxf(fminf(e->cur[EYE_W], e->cur[EYE_H]) * 0.42f * s, min_half);
+            const cross_raster_t cr = {r.cx, r.cy, half, fmaxf(grid.cell * 0.75f, 9.0f * s)};
+            px_fill_shape(grid, cr.cx - half - 1, cr.cy - half - 1, cr.cx + half + 1, cr.cy + half + 1,
+                          cross_inside, &cr, color);
+            continue;
+        }
         if (stars) {
             /* Stars spin-free but still squash on blinks and bounce with the eyes. */
             const float outer = fmaxf(fminf(e->cur[EYE_W], e->cur[EYE_H]) * 0.62f * s

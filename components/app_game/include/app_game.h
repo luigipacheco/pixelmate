@@ -47,6 +47,7 @@ typedef enum {
     APP_MOOD_THINKING,
     APP_MOOD_SURPRISED,
     APP_MOOD_GRUMPY,
+    APP_MOOD_FAINTED,      /**< Out of health: X eyes until walked back. */
     APP_MOOD_COUNT,
 } app_mood_t;
 
@@ -66,6 +67,8 @@ enum {
     APP_GOAL_MIN = 1000,
     APP_GOAL_MAX = 30000,
     APP_GOAL_STEP = 1000,        /**< Adjustment per +/- tap. */
+    APP_HP_MAX = 5,              /**< Health hearts. */
+    APP_FOOD_GOAL_DIV = 2,       /**< Daily food = step goal / this. */
 };
 
 /** Screen power state. Steps keep counting in every state. */
@@ -187,17 +190,22 @@ enum {
     APP_EVENT_SLOT_STOP = 1U << 18,
     APP_EVENT_SLOT_DONE = 1U << 19,   /**< See snapshot slots.payout. */
     APP_EVENT_POWER = 1U << 20,       /**< snapshot.power changed. */
+    APP_EVENT_FED = 1U << 21,         /**< Today's food (half the goal) was walked. */
+    APP_EVENT_REVIVED = 1U << 22,     /**< A fainted pet was walked back to life. */
+    APP_EVENT_DAY = 1U << 23,         /**< A day ended; health changed. */
+    APP_EVENT_BLOCKED = 1U << 24,     /**< Fainted: snacks and games refused. */
 };
 
 /** Events that change spendable or configured data and deserve a prompt save. */
 #define APP_EVENTS_SAVE_NOW (APP_EVENT_ATE | APP_EVENT_CARD_DEAL | APP_EVENT_CARD_REVEAL | \
                              APP_EVENT_CASH_OUT | APP_EVENT_SETTINGS | APP_EVENT_GOAL | \
-                             APP_EVENT_BOUGHT | APP_EVENT_SLOT_DONE)
+                             APP_EVENT_BOUGHT | APP_EVENT_SLOT_DONE | APP_EVENT_FED | \
+                             APP_EVENT_REVIVED | APP_EVENT_DAY)
 
 typedef struct {
     const char *name;   /**< Upper-case label drawable by the pixel font. */
     uint16_t cost;      /**< Sparks. */
-    uint8_t hunger;     /**< Fullness added, 0..100. */
+    uint8_t hunger;     /**< Temporary fullness added on top of walking, 0..100. */
     uint8_t happiness;  /**< Happiness added, 0..100. */
 } app_food_t;
 
@@ -230,8 +238,12 @@ typedef struct {
     uint32_t steps_today;
     uint32_t step_goal;
     uint32_t sparks;
-    uint8_t hunger;             /**< Fullness 0..100 (0 = starving). */
+    uint8_t hunger;             /**< Fullness 0..100: today's walking toward food_need plus snacks. */
     uint8_t happiness;          /**< 0..100. */
+    uint32_t food_need;         /**< Steps that feed the pet today (goal / 2). */
+    uint8_t hp;                 /**< Health hearts, 0..APP_HP_MAX. */
+    bool fainted;
+    bool fed_today;
     uint16_t friendship;        /**< 0..999; hearts = friendship / 100. */
     app_pixel_style_t pixel_style;
     uint8_t color_index;        /**< 0..APP_COLOR_COUNT-1. */
@@ -241,7 +253,8 @@ typedef struct {
     uint32_t save_seq;          /**< Increments whenever persistent data changes. */
 } app_game_snapshot_t;
 
-/** Persistent record: plain data, 32 bytes. Bump the save version on layout change. */
+/** Persistent record: plain data, 36 bytes. Bump the save version on layout change;
+ * fields are only ever appended so older records can be migrated by prefix. */
 typedef struct {
     uint32_t steps_total;
     uint32_t steps_today;
@@ -250,7 +263,7 @@ typedef struct {
     uint32_t owned;             /**< APP_OWN_*_BIT flags. */
     uint16_t spark_progress;    /**< Steps toward the next spark. */
     uint16_t friendship;
-    uint8_t hunger;
+    uint8_t hunger;             /**< Snack fullness (walking is derived from steps_today). */
     uint8_t happiness;
     uint8_t pixel_style;
     uint8_t color_index;
@@ -258,7 +271,15 @@ typedef struct {
     uint8_t goal_awarded;
     uint8_t anims_on;
     uint8_t goal_k;             /**< Daily goal in thousands of steps; 0 = default. */
+    /* v3 */
+    uint8_t hp;                 /**< 0..APP_HP_MAX. */
+    uint8_t fainted;
+    uint8_t fed_today;
+    uint8_t reserved;
 } app_game_record_t;
+
+/** Size of the v2 record (prefix of the current one), for save migration. */
+#define APP_GAME_RECORD_V2_SIZE 32U
 
 typedef struct {
     uint16_t width;    /**< Viewport width in pixels, 1..65535. */

@@ -23,8 +23,8 @@
 
 static const char *TAG = "pixel_pal";
 enum {
-    /* v1 builds could store an all-zero pet; v2 ignores those records. */
-    SAVE_VERSION = 2,
+    /* v1 builds could store an all-zero pet (ignored); v2 lacks health (migrated). */
+    SAVE_VERSION = 3,
     SAVE_SOON_MS = 2000,          /* After spending, settings or a goal. */
     SAVE_LATER_MS = 30000,        /* After step/stat drift; limits flash wear. */
     SENSOR_POLL_TICKS = GAME_TICK_HZ,          /* 1 s */
@@ -42,12 +42,19 @@ enum {
 
 /* Host builds: the space key ("jump" action) credits steps for quick testing,
  * and a fixed battery reading lets the battery UI show in the simulator. */
-enum { GAME_ACTION_DEBUG_STEPS = 2, DEBUG_STEPS = 50, HOST_BATTERY_PCT = 76 };
+enum {
+    GAME_ACTION_DEBUG_DAY = 0,    /* Host: left key ends the simulated day. */
+    GAME_ACTION_DEBUG_STEPS = 2,
+    DEBUG_STEPS = 50,
+    HOST_BATTERY_PCT = 76,
+    HOST_FIRST_DAY = 20000,
+};
 
 typedef struct {
     app_game_handle_t game;
     pet_view_t view;
-    bool debug_key_down;
+    bool debug_key_down, debug_day_down;
+    int32_t host_day;
 #if defined(RAYLIB_LITE_GAME_NATIVE)
     raylib_lite_save_t save;
     bool save_ready;
@@ -59,6 +66,7 @@ typedef struct {
     int applied_power;            /* Last app_power_t sent to the panel, -1 = none. */
     uint16_t power_retry;         /* Ticks until a failed panel switch is retried. */
     int logged_power;             /* Last model power state logged, for diagnostics. */
+    uint8_t clock_logged;         /* 0 = not yet, 1 = logged invalid, 2 = logged valid. */
 #endif
 } host_state_t;
 
@@ -66,6 +74,20 @@ typedef struct {
 static uint64_t now_ms(void)
 {
     return raylib_lite_time_us() / 1000U;
+}
+
+/* v2 -> v3: same prefix; the appended health fields start full. */
+static raylib_lite_result_t migrate_save(uint16_t old_version, const void *old_data, size_t old_size,
+                                        void *new_data, size_t new_size)
+{
+    if (old_version != 2 || old_size != APP_GAME_RECORD_V2_SIZE || new_size != sizeof(app_game_record_t)) {
+        return RAYLIB_LITE_INVALID_VERSION;
+    }
+    app_game_record_t *record = new_data;
+    memset(record, 0, sizeof(*record));
+    memcpy(record, old_data, old_size);
+    record->hp = APP_HP_MAX;
+    return RAYLIB_LITE_OK;
 }
 
 static void load_save(host_state_t *state)
@@ -82,6 +104,7 @@ static void load_save(host_state_t *state)
         .version = SAVE_VERSION,
         .payload_size = sizeof(app_game_record_t),
         .debounce_ms = 0,
+        .migrate = migrate_save,
     };
     state->save_ready = raylib_lite_save_init(&state->save, &config) == RAYLIB_LITE_OK;
     if (!state->save_ready) {
@@ -93,8 +116,8 @@ static void load_save(host_state_t *state)
     app_game_export(state->game, &fresh);
     if (raylib_lite_save_load(&state->save, &record, &fresh) == RAYLIB_LITE_OK) {
         app_game_import(state->game, &record);
-        ESP_LOGI(TAG, "restored pet: %lu steps, %lu sparks",
-                 (unsigned long)record.steps_total, (unsigned long)record.sparks);
+        ESP_LOGI(TAG, "restored pet: %lu steps, %lu sparks, hp %u",
+                 (unsigned long)record.steps_total, (unsigned long)record.sparks, record.hp);
     }
     state->saved_seq = app_game_read(state->game).save_seq;
 }
@@ -195,7 +218,15 @@ static void poll_day(host_state_t *state)
     const time_t now = time(NULL);
     struct tm local;
     if (now < VALID_EPOCH || !localtime_r(&now, &local)) {
+        if (!state->clock_logged) {
+            state->clock_logged = true;
+            ESP_LOGW(TAG, "clock not set (time=%lld); daily health is paused", (long long)now);
+        }
         return;
+    }
+    if (state->clock_logged != 2) {
+        state->clock_logged = 2;
+        ESP_LOGI(TAG, "clock valid: %04d-%02d-%02d", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
     }
     app_game_set_day(state->game, (local.tm_year - 100) * 400 + local.tm_yday + 1);
 }
@@ -219,6 +250,8 @@ static int initialize(void *value, const char *asset_root)
     load_save(state);
 #else
     app_game_set_battery(state->game, HOST_BATTERY_PCT, false);
+    state->host_day = HOST_FIRST_DAY;
+    app_game_set_day(state->game, state->host_day);
 #endif
     pet_view_init(&state->view);
     InitWindow(GAME_WIDTH, GAME_HEIGHT, GAME_NAME);
@@ -279,6 +312,12 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
                 app_game_add_steps(state->game, DEBUG_STEPS);
             }
             state->debug_key_down = event->pressed;
+        }
+        if (event->code == GAME_ACTION_DEBUG_DAY) {
+            if (event->pressed && !state->debug_day_down) {
+                app_game_set_day(state->game, ++state->host_day);
+            }
+            state->debug_day_down = event->pressed;
         }
 #endif
         break;
@@ -367,13 +406,15 @@ static int state_json(const void *value, char *output, size_t capacity)
     static const char *const screens[APP_SCREEN_COUNT] = {"home", "steps", "feed", "cards", "slots"};
     static const char *const overlays[APP_OVERLAY_COUNT] = {"none", "menu", "style", "store", "goal"};
     static const char *const moods[APP_MOOD_COUNT] = {
-        "idle", "happy", "sleepy", "hungry", "sad", "walk", "eating", "thinking", "surprised", "grumpy"
+        "idle", "happy", "sleepy", "hungry", "sad", "walk", "eating", "thinking", "surprised", "grumpy",
+        "fainted"
     };
     const app_game_snapshot_t s = app_game_read(((const host_state_t *)value)->game);
     int size = snprintf(output, capacity,
                         "{\"phase\":\"%s\",\"tick\":%lu,\"screen\":\"%s\",\"overlay\":\"%s\","
                         "\"store_page\":%u,\"owned\":%lu,\"anims_on\":%u,\"mood\":\"%s\","
                         "\"power\":%d,\"battery\":%d,\"charging\":%s,"
+                        "\"hp\":%u,\"fainted\":%s,\"fed_today\":%s,\"food_need\":%lu,"
                         "\"steps_total\":%lu,\"steps_today\":%lu,\"sparks\":%lu,\"hunger\":%u,"
                         "\"happiness\":%u,\"friendship\":%u,\"pixel_style\":%d,\"color\":%u,"
                         "\"cards\":{\"phase\":%d,\"current\":%u,\"pot\":%u,\"streak\":%u,\"result\":%d},"
@@ -385,6 +426,8 @@ static int state_json(const void *value, char *output, size_t capacity)
                         s.store_page, (unsigned long)s.owned, s.anims_on,
                         moods[s.mood < APP_MOOD_COUNT ? s.mood : 0],
                         (int)s.power, s.battery_pct, s.battery_charging ? "true" : "false",
+                        s.hp, s.fainted ? "true" : "false", s.fed_today ? "true" : "false",
+                        (unsigned long)s.food_need,
                         (unsigned long)s.steps_total, (unsigned long)s.steps_today,
                         (unsigned long)s.sparks, s.hunger, s.happiness, s.friendship,
                         (int)s.pixel_style, s.color_index, (int)s.cards.phase, s.cards.current,

@@ -13,7 +13,7 @@
 enum {
     STEPS_PER_SPARK = APP_STEPS_PER_SPARK,
     START_SPARKS = 30,
-    START_HUNGER = 70,
+    START_SNACK = 60,            /* A new pet is not hungry on its first morning. */
     START_HAPPINESS = 70,
     STAT_MAX = 100,
     FRIENDSHIP_MAX = 999,
@@ -24,7 +24,7 @@ enum {
     MAX_SENSOR_DELTA = 100000,   /* Larger jumps are treated as a sensor reset. */
 };
 enum {
-    HUNGER_DECAY_TICKS = 120 * TICKS_PER_SECOND,
+    SNACK_DECAY_TICKS = 120 * TICKS_PER_SECOND,
     HAPPY_DECAY_TICKS = 180 * TICKS_PER_SECOND,
     SLEEP_AFTER_TICKS = 90 * TICKS_PER_SECOND,
     WALK_MOOD_TICKS = 3 * TICKS_PER_SECOND,
@@ -91,13 +91,15 @@ struct app_game {
     uint32_t steps_total, steps_today, sparks;
     int32_t day;
     uint16_t spark_progress, friendship;
-    uint8_t hunger, happiness;
+    uint8_t snack, happiness;     /* snack = temporary fullness from food */
+    uint8_t hp;
+    bool fainted, fed_today;
     bool goal_awarded;
     app_pixel_style_t pixel_style;
     uint8_t color_index;
     int8_t last_food;
 
-    uint32_t idle_ticks, walk_ticks, hunger_timer, happy_timer;
+    uint32_t idle_ticks, walk_ticks, snack_timer, happy_timer;
     app_mood_t reaction;
     uint16_t reaction_ticks, pet_cooldown;
     app_mood_t mood;
@@ -132,6 +134,38 @@ static void changed(app_game_handle_t g)
     ++g->save_seq;
 }
 
+/* Walking is the pet's food: half the daily goal feeds it for the day. */
+static uint32_t food_need(const struct app_game *g)
+{
+    const uint32_t need = g->step_goal / APP_FOOD_GOAL_DIV;
+    return need ? need : 1;
+}
+
+/* Fullness = today's walking toward food_need, topped up by snacks. */
+static uint8_t fullness(const struct app_game *g)
+{
+    const uint32_t walked = g->steps_today >= food_need(g) ? STAT_MAX
+                            : g->steps_today * STAT_MAX / food_need(g);
+    const uint32_t total = walked + g->snack;
+    return (uint8_t)(total > STAT_MAX ? STAT_MAX : total);
+}
+
+/* Called whenever steps_today grows: celebrate the day's meal, revive. */
+static void check_fed(app_game_handle_t g)
+{
+    if (g->fed_today || g->steps_today < food_need(g)) {
+        return;
+    }
+    g->fed_today = true;
+    g->events |= APP_EVENT_FED;
+    if (g->fainted) {
+        g->fainted = false;
+        g->hp = 1;
+        g->events |= APP_EVENT_REVIVED;
+    }
+    react(g, APP_MOOD_HAPPY, REACT_WIN_TICKS);
+}
+
 static void credit_steps(app_game_handle_t g, uint32_t steps)
 {
     if (!steps) {
@@ -153,6 +187,7 @@ static void credit_steps(app_game_handle_t g, uint32_t steps)
     g->walk_ticks = 0;
     g->idle_ticks = 0;
     g->events |= APP_EVENT_STEP;
+    check_fed(g);
     if (!g->goal_awarded && g->steps_today >= g->step_goal) {
         g->goal_awarded = true;
         add_friendship(g, GOAL_FRIENDSHIP);
@@ -179,7 +214,10 @@ static void fresh_pet(app_game_handle_t g)
     g->sparks = START_SPARKS;
     g->spark_progress = 0;
     g->friendship = 0;
-    g->hunger = START_HUNGER;
+    g->snack = START_SNACK;
+    g->hp = APP_HP_MAX;
+    g->fainted = false;
+    g->fed_today = false;
     g->happiness = START_HAPPINESS;
     g->goal_awarded = false;
     g->pixel_style = APP_PIXEL_CHUNKY;
@@ -187,7 +225,7 @@ static void fresh_pet(app_game_handle_t g)
     g->last_food = -1;
     g->idle_ticks = 0;
     g->walk_ticks = WALK_MOOD_TICKS;
-    g->hunger_timer = g->happy_timer = 0;
+    g->snack_timer = g->happy_timer = 0;
     g->reaction_ticks = g->pet_cooldown = 0;
     g->mood = APP_MOOD_IDLE;
     g->cards.view.best_streak = 0;
@@ -270,8 +308,20 @@ static void tap_home(app_game_handle_t g, int32_t x, int32_t y)
     changed(g);
 }
 
+/* A fainted pet can't eat snacks or play: only walking revives it. */
+static bool blocked_by_faint(app_game_handle_t g)
+{
+    if (g->fainted) {
+        g->events |= APP_EVENT_BLOCKED;
+    }
+    return g->fainted;
+}
+
 static void tap_feed(app_game_handle_t g, int32_t x, int32_t y)
 {
+    if (blocked_by_faint(g)) {
+        return;
+    }
     for (int i = 0; i < APP_FOOD_COUNT; ++i) {
         if (!app_rect_hit(app_feed_item_rect(i), x, y)) {
             continue;
@@ -283,7 +333,7 @@ static void tap_feed(app_game_handle_t g, int32_t x, int32_t y)
             return;
         }
         g->sparks -= food->cost;
-        g->hunger = add_stat(g->hunger, food->hunger);
+        g->snack = add_stat(g->snack, food->hunger);
         g->happiness = add_stat(g->happiness, food->happiness);
         add_friendship(g, FEED_FRIENDSHIP);
         g->last_food = (int8_t)i;
@@ -296,6 +346,9 @@ static void tap_feed(app_game_handle_t g, int32_t x, int32_t y)
 
 static void tap_cards(app_game_handle_t g, int32_t x, int32_t y)
 {
+    if (blocked_by_faint(g)) {
+        return;
+    }
     const app_cards_phase_t phase = g->cards.view.phase;
     if (phase == APP_CARDS_READY && app_rect_hit(app_cards_deal_rect(), x, y)) {
         const uint32_t cost = cards_deal(&g->cards, g->sparks);
@@ -562,6 +615,9 @@ static void tap_menu(app_game_handle_t g, int32_t x, int32_t y)
 
 static void tap_slots(app_game_handle_t g, int32_t x, int32_t y)
 {
+    if (g->slots.view.phase != APP_SLOTS_SPINNING && blocked_by_faint(g)) {
+        return;
+    }
     const bool on_button = app_rect_hit(app_slots_button_rect(), x, y);
     if (g->slots.view.phase == APP_SLOTS_SPINNING) {
         /* While spinning, the reels and the button both stop the next reel. */
@@ -727,9 +783,22 @@ void app_game_set_day(app_game_handle_t g, int32_t day)
     if (!g || day <= 0 || day == g->day) {
         return;
     }
+    if (g->day > 0 && day > g->day) {
+        /* Settle the day that ended, then every day the pet went unwalked. */
+        const int32_t missed = day - g->day - 1;
+        int hp = g->hp + (g->fed_today ? 1 : -1) - (missed > APP_HP_MAX ? APP_HP_MAX : missed);
+        hp = hp < 0 ? 0 : (hp > APP_HP_MAX ? APP_HP_MAX : hp);
+        g->hp = (uint8_t)hp;
+        if (g->hp == 0 && !g->fainted) {
+            g->fainted = true;
+            set_overlay(g, APP_OVERLAY_NONE);
+        }
+        g->events |= APP_EVENT_DAY;
+    }
     if (g->day > 0) {
         g->steps_today = 0;
         g->goal_awarded = false;
+        g->fed_today = false;
     }
     g->day = day;
     changed(g);
@@ -739,6 +808,9 @@ static app_mood_t compute_mood(const struct app_game *g)
 {
     if (g->power != APP_POWER_AWAKE) {
         return APP_MOOD_SLEEPY;   /* Dozing off with the screen. */
+    }
+    if (g->fainted) {
+        return APP_MOOD_FAINTED;
     }
     if (g->reaction_ticks) {
         return g->reaction;
@@ -757,7 +829,7 @@ static app_mood_t compute_mood(const struct app_game *g)
             && g->slots.view.phase == APP_SLOTS_SPINNING) {
         return APP_MOOD_THINKING;
     }
-    if (g->hunger < LOW_STAT) {
+    if (fullness(g) < LOW_STAT) {
         return APP_MOOD_HUNGRY;
     }
     if (g->happiness < LOW_STAT) {
@@ -768,12 +840,14 @@ static app_mood_t compute_mood(const struct app_game *g)
 
 static void decay_stats(app_game_handle_t g)
 {
-    if (++g->hunger_timer >= HUNGER_DECAY_TICKS) {
-        g->hunger_timer = 0;
-        g->hunger = add_stat(g->hunger, -1);
-        changed(g);
+    if (++g->snack_timer >= SNACK_DECAY_TICKS) {
+        g->snack_timer = 0;
+        if (g->snack) {
+            g->snack = add_stat(g->snack, -1);
+            changed(g);
+        }
     }
-    const uint32_t happy_period = g->hunger < LOW_STAT ? HAPPY_DECAY_TICKS / 2 : HAPPY_DECAY_TICKS;
+    const uint32_t happy_period = fullness(g) < LOW_STAT ? HAPPY_DECAY_TICKS / 2 : HAPPY_DECAY_TICKS;
     if (++g->happy_timer >= happy_period) {
         g->happy_timer = 0;
         g->happiness = add_stat(g->happiness, -1);
@@ -849,7 +923,11 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .steps_today = g->steps_today,
         .step_goal = g->step_goal,
         .sparks = g->sparks,
-        .hunger = g->hunger,
+        .hunger = fullness(g),
+        .food_need = food_need(g),
+        .hp = g->hp,
+        .fainted = g->fainted,
+        .fed_today = g->fed_today,
         .happiness = g->happiness,
         .friendship = g->friendship,
         .pixel_style = g->pixel_style,
@@ -908,7 +986,10 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->sparks = g->sparks;
     r->spark_progress = g->spark_progress;
     r->friendship = g->friendship;
-    r->hunger = g->hunger;
+    r->hunger = g->snack;
+    r->hp = g->hp;
+    r->fainted = g->fainted;
+    r->fed_today = g->fed_today;
     r->happiness = g->happiness;
     r->pixel_style = (uint8_t)g->pixel_style;
     r->color_index = g->color_index;
@@ -930,7 +1011,10 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
     g->sparks = r->sparks;
     g->spark_progress = r->spark_progress < STEPS_PER_SPARK ? r->spark_progress : 0;
     g->friendship = r->friendship > FRIENDSHIP_MAX ? FRIENDSHIP_MAX : r->friendship;
-    g->hunger = r->hunger > STAT_MAX ? STAT_MAX : r->hunger;
+    g->snack = r->hunger > STAT_MAX ? STAT_MAX : r->hunger;
+    g->hp = r->hp > APP_HP_MAX ? APP_HP_MAX : r->hp;
+    g->fainted = r->fainted && g->hp == 0;
+    g->fed_today = r->fed_today != 0;
     g->happiness = r->happiness > STAT_MAX ? STAT_MAX : r->happiness;
     /* Only owned things can be selected or switched on. */
     g->owned = r->owned | FREE_OWNED;

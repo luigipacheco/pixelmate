@@ -90,12 +90,16 @@ static void draw_steps(const draw_ctx_t *d, int ox)
     snprintf(text, sizeof(text), "/%lu", (unsigned long)s->step_goal);
     px_text_center(text, RING_CX + ox, 236, 3, d->dim, d->gap);
 
+    /* Food marker: half the goal (the bottom of the ring) feeds the pet. */
+    DrawRectangle(RING_CX + ox - 4, RING_CY + RING_OUT + 4, 8, 10, s->fed_today ? d->accent : d->dim);
+
     snprintf(text, sizeof(text), "TOTAL %lu", (unsigned long)s->steps_total);
-    px_text_center(text, 240 + ox, 356, 3, d->color, d->gap);
-    const int hearts = s->friendship / 200;
-    for (int i = 0; i < 5; ++i) {
-        px_icon(i < hearts ? PX_ICON_HEART : PX_ICON_HEART_EMPTY, 240 + ox - 82 + i * 34, 396, 3,
-                i < hearts ? d->accent : d->dim, d->accent, d->gap);
+    px_text_center(text, 240 + ox, 360, 3, d->color, d->gap);
+    /* Health hearts: +1 for each day fed (half the goal), -1 for each missed. */
+    for (int i = 0; i < APP_HP_MAX; ++i) {
+        const bool full = i < s->hp;
+        px_icon(full ? PX_ICON_HEART : PX_ICON_HEART_EMPTY, 240 + ox - 82 + i * 34, 398, 3,
+                full ? d->accent : (s->hp == 0 ? WARN : d->dim), d->accent, d->gap);
     }
 }
 
@@ -105,8 +109,18 @@ static void draw_home(const draw_ctx_t *d, int ox)
 {
     const app_game_snapshot_t *s = d->snap;
     const char *hint = NULL;
+    char walk_hint[32];
+    const unsigned long to_food = s->steps_today < s->food_need ? s->food_need - s->steps_today : 0;
+    if (s->fainted && s->overlay == APP_OVERLAY_NONE) {
+        px_text_center("WALK TO REVIVE", 240 + ox, 392, 3, WARN, d->gap);
+        snprintf(walk_hint, sizeof(walk_hint), "%lu STEPS", to_food);
+        px_text_center(walk_hint, 240 + ox, 420, 2, d->dim, false);
+        return;
+    }
     if (s->mood == APP_MOOD_HUNGRY) {
-        hint = "FEED ME";
+        /* Walking is the food: say how far, not "feed me". */
+        snprintf(walk_hint, sizeof(walk_hint), "WALK %lu MORE", to_food);
+        hint = to_food ? walk_hint : "SNACK TIME";
         if ((d->view->t / 12U) % 2U == 0U) {
             px_icon(PX_ICON_BATTERY_LOW, 240 + ox - 14, 72, 4, d->color, WARN, d->gap);
         }
@@ -148,11 +162,18 @@ static void draw_feed(const draw_ctx_t *d, int ox)
     const app_game_snapshot_t *s = d->snap;
     px_text("FULL", 80 + ox, 218, 2, d->dim, false);
     draw_bar(d, 142 + ox, 214, s->hunger, s->hunger < 25 ? WARN : d->color);
-    char text[12];
+    char text[32];
+    if (s->fed_today) {
+        px_text_center("FED BY WALKING TODAY", 240 + ox, 242, 2, d->accent, false);
+    } else {
+        snprintf(text, sizeof(text), "WALKED %lu/%lu", (unsigned long)s->steps_today,
+                 (unsigned long)s->food_need);
+        px_text_center(text, 240 + ox, 242, 2, d->dim, false);
+    }
     for (int i = 0; i < APP_FOOD_COUNT; ++i) {
         const app_food_t *food = app_game_food(i);
         const app_rect_t r = app_feed_item_rect(i);
-        const bool affordable = s->sparks >= food->cost;
+        const bool affordable = s->sparks >= food->cost && !s->fainted;
         const Color c = affordable ? d->color : d->dim;
         px_box(r.x + ox, r.y, r.w, r.h, 3, c);
         const char *const *icon = PX_ICON_FOOD[i];

@@ -36,8 +36,9 @@ advance the model, take its event bits, advance the view, then save if due.
 - Steps: the BMI270 on-chip counter via `app_pedometer_hw`, so walking counts
   even while the pet is idle. Start is retried 6 times (every 5 s); if it
   never succeeds the model's software detector uses the board's IMU events.
-- Save: NVS namespace `pixel_pal`, key `pet`, version 2 (v1 records are
-  ignored; early builds could store an all-zero pet), the 32-byte
+- Save: NVS namespace `pixel_pal`, key `pet`, version 3 (v2 records migrate by
+  prefix with full health; v1 records are ignored since early builds could
+  store an all-zero pet), the 36-byte
   `app_game_record_t`. Spending, settings and goals save after 2 s; step and stat
   drift after 30 s, to bound flash wear.
 - Day: from `time()` once the clock is set (after network time sync); until
@@ -54,6 +55,6 @@ advance the model, take its event bits, advance the view, then save if due.
 
 The Host build compiles the files listed in `../../game.sim.json` without the
 device-only code; it reports a fixed 76 % battery and draws black while the
-screen is off. The space key (`jump` action) credits 50 steps; replay `imu`
+screen is off. The left key ends the simulated day (health check). The space key (`jump` action) credits 50 steps; replay `imu`
 events drive the software pedometer. Source files include application public
 headers by relative path because the Host runner cannot declare include paths.

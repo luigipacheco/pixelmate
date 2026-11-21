@@ -7,7 +7,11 @@ react to how much you walk, what you feed it and how you play with it.
 - **Steps → sparks:** the BMI270's on-chip step counter keeps counting while
   the pet is idle; every 20 steps earns 1 spark. Daily goal: 8000 steps by
   default, adjustable from 1000 to 30000 in the Goal panel.
-- **Feed:** spend sparks on CELL (10), CHIP (25) or MEGA (60) snacks.
+- **Walking is food:** the pet needs half your daily goal in steps each day.
+  Fed days add a health heart (max 5), missed days take one; at 0 the pet
+  faints and only walking that day's food brings it back.
+- **Snacks:** spend sparks on CELL (10), CHIP (25) or MEGA (60) for a temporary
+  fullness boost (they don't count toward survival).
 - **Cards:** high-low. Deal for 5 sparks, each right guess doubles the pot,
   cash out any time (auto cash-out after 5 wins).
 - **Moods:** idle, happy, sleepy, hungry, sad, walking, eating, thinking,
