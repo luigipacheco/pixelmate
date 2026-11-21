@@ -40,6 +40,10 @@ int px_icon_height(const char *const *rows);
 /** Pixel-art box with clipped corners; thickness <= 0 fills it. */
 void px_box(int x, int y, int w, int h, int thickness, Color color);
 
+/** Battery glyph, 32x16 at (x, y): fill follows percent (0..100), red when low,
+ * a bolt when charging. */
+void px_battery(int x, int y, int percent, bool charging, Color color, Color bolt);
+
 /* NULL-terminated icon bitmaps. */
 extern const char *const PX_ICON_BOLT[];
 extern const char *const PX_ICON_SHOE[];

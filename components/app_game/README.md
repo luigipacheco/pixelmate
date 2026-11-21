@@ -47,6 +47,14 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
 - `owned` uses the `APP_OWN_*_BIT` layout; `app_game_import()` always restores
   the free items and drops selections or animations that are not owned.
 - With STEP DANCE on, crossing each 100 total steps raises `APP_EVENT_DANCE`.
+- Power: with no touch for 20 s the screen dims (`APP_POWER_DIM`, pet looks
+  sleepy); at 30 s it turns off (`APP_POWER_DOZE`), closing panels and going
+  home. At or below 15 % battery (not charging) it turns off after 12 s. The
+  menu's SLEEP turns it off at once. The touch that wakes the screen is
+  swallowed (no tap or swipe), so a pocket touch cannot buy or play.
+  Steps keep counting in every power state; steps do not keep the screen on.
+- Battery: `app_game_set_battery()` stores the runtime's reading for display;
+  it only changes the doze timeout.
 - Spark Slots is a store item (250 sparks); owning it adds `APP_SCREEN_SLOTS`
   as the last swipe page. A spin costs 3 sparks; each STOP tap halts the
   leftmost spinning reel after it finishes its symbol plus 0..2 random slip.

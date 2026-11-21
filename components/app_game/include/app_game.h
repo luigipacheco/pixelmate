@@ -68,6 +68,20 @@ enum {
     APP_GOAL_STEP = 1000,        /**< Adjustment per +/- tap. */
 };
 
+/** Screen power state. Steps keep counting in every state. */
+typedef enum {
+    APP_POWER_AWAKE = 0,
+    APP_POWER_DIM,         /**< Idle a while: pet dozes off, screen dims. */
+    APP_POWER_DOZE,        /**< Screen off, nothing drawn; a tap wakes. */
+} app_power_t;
+
+enum {
+    APP_DIM_AFTER_S = 20,        /**< Seconds without a touch before dimming. */
+    APP_DOZE_AFTER_S = 30,       /**< Seconds without a touch before the screen turns off. */
+    APP_LOW_BATTERY_PCT = 15,    /**< At or below: warning icon and quicker dozing. */
+    APP_LOW_BATTERY_DOZE_S = 12,
+};
+
 /** Unlockable animations, bought in the store and toggled on/off. */
 typedef enum {
     APP_ANIM_TRAIL = 0,    /**< Sparks fall from the eyes on every step. */
@@ -172,6 +186,7 @@ enum {
     APP_EVENT_SLOT_SPIN = 1U << 17,
     APP_EVENT_SLOT_STOP = 1U << 18,
     APP_EVENT_SLOT_DONE = 1U << 19,   /**< See snapshot slots.payout. */
+    APP_EVENT_POWER = 1U << 20,       /**< snapshot.power changed. */
 };
 
 /** Events that change spendable or configured data and deserve a prompt save. */
@@ -205,6 +220,9 @@ typedef struct {
     app_screen_t screen;
     app_overlay_t overlay;
     uint8_t store_page;         /**< 0..store pages-1. */
+    app_power_t power;
+    int8_t battery_pct;         /**< 0..100, or -1 when unknown. */
+    bool battery_charging;
     app_mood_t mood;
     uint32_t owned;             /**< APP_OWN_*_BIT flags. */
     uint8_t anims_on;           /**< Bit per app_anim_t; only owned ones can be on. */
@@ -270,6 +288,10 @@ void app_game_add_steps(app_game_handle_t handle, uint32_t steps);
 /** Set the local calendar day (days since epoch); a new day resets steps_today.
  * Values <= 0 mean "clock unknown" and are ignored. */
 void app_game_set_day(app_game_handle_t handle, int32_t day);
+/** Report the battery: percent 0..100 (negative = unknown) and charging state. */
+void app_game_set_battery(app_game_handle_t handle, int percent, bool charging);
+/** Wake the screen (button press, external event). No-op when awake. */
+void app_game_wake(app_game_handle_t handle);
 /** Advance one 30 Hz tick unless paused. No rendering or hardware access. */
 void app_game_update(app_game_handle_t handle);
 

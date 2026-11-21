@@ -264,6 +264,11 @@ static void on_events(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
     if (ev & APP_EVENT_WOKE) {
         pet_eyes_kick(&v->eyes, -10.0f);
     }
+    if (ev & APP_EVENT_POWER && s->power == APP_POWER_AWAKE) {
+        /* Snap the step/spark count-ups so the wake frame is current. */
+        v->steps_shown = (float)s->steps_today;
+        v->sparks_shown = (float)s->sparks;
+    }
     if (ev & APP_EVENT_SETTINGS) {
         pet_eyes_kick(&v->eyes, -6.0f);
     }
@@ -415,6 +420,14 @@ static void draw_steps_counter(const pet_view_t *v, const draw_ctx_t *d)
     /* Grabber: pull down from here for the menu. */
     DrawRectangle(216, 6, 48, 4, d->dim);
     DrawRectangle(228, 14, 24, 4, d->dim);
+    /* Battery only when it matters: low (blinking) or charging. */
+    const app_game_snapshot_t *s = d->snap;
+    if (s->battery_pct >= 0) {
+        const bool low = s->battery_pct <= APP_LOW_BATTERY_PCT && !s->battery_charging;
+        if (s->battery_charging || (low && (v->t / 15U) % 2U)) {
+            px_battery(296, 22, s->battery_pct, s->battery_charging, d->color, d->accent);
+        }
+    }
 }
 
 /* Drawn above panels too, so the store always shows the balance. */

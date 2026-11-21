@@ -49,6 +49,17 @@ static void draw_menu(const draw_ctx_t *d, int oy)
     DrawRectangle(0, oy, APP_VIEW_W, APP_MENU_H, PANEL_BG);
     DrawRectangle(0, oy + APP_MENU_H - 4, APP_VIEW_W, 4, d->color);
 
+    /* Status row: battery (left), SLEEP (center); sparks are drawn on top (right). */
+    if (s->battery_pct >= 0) {
+        char pct[8];
+        px_battery(18, oy + 22, s->battery_pct, s->battery_charging, d->color, d->accent);
+        snprintf(pct, sizeof(pct), "%d%%", s->battery_pct);
+        px_text(pct, 60, oy + 23, 2, d->color, false);
+    } else {
+        px_text("NO BATT", 18, oy + 23, 2, d->dim, false);
+    }
+    screens_button(d, app_menu_sleep_rect(), 0, oy, "SLEEP", 3, d->color, false);
+
     const app_rect_t store = app_menu_store_rect(), style = app_menu_style_rect();
     const app_rect_t goal = app_menu_goal_rect();
     screens_button(d, store, 0, oy, "STORE", 4, d->color, true);

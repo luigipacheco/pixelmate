@@ -96,7 +96,12 @@ static inline app_rect_t app_slots_button_rect(void)
     return (app_rect_t) {130, 372, 220, 64};
 }
 
-/* Pull-down menu entries (inside the APP_MENU_H panel). */
+/* Pull-down menu entries (inside the APP_MENU_H panel). The top row holds the
+ * battery readout (left), SLEEP (center) and the spark counter (right). */
+static inline app_rect_t app_menu_sleep_rect(void)
+{
+    return (app_rect_t) {176, 8, 128, 44};
+}
 static inline app_rect_t app_menu_store_rect(void)
 {
     return (app_rect_t) {40, 64, 400, 66};

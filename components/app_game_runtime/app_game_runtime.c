@@ -14,6 +14,7 @@
 #if defined(RAYLIB_LITE_GAME_NATIVE)
 #include <time.h>
 #include "app_pedometer_hw.h"
+#include "app_power_hw.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "nvs_flash.h"
@@ -30,12 +31,17 @@ enum {
     SENSOR_RETRY_TICKS = 5 * GAME_TICK_HZ,
     SENSOR_MAX_ATTEMPTS = 6,
     DAY_POLL_TICKS = 10 * GAME_TICK_HZ,
+    BATTERY_POLL_TICKS = 10 * GAME_TICK_HZ,
+    BRIGHTNESS_AWAKE_PCT = 80,
+    BRIGHTNESS_DIM_PCT = 12,
+    CHARGING_MIN_MA = 5,          /* Gauge current above this counts as charging. */
     VALID_EPOCH = 1700000000,     /* Earlier clocks are unsynchronized. */
 };
 #endif
 
-/* Host builds: the space key ("jump" action) credits steps for quick testing. */
-enum { GAME_ACTION_DEBUG_STEPS = 2, DEBUG_STEPS = 50 };
+/* Host builds: the space key ("jump" action) credits steps for quick testing,
+ * and a fixed battery reading lets the battery UI show in the simulator. */
+enum { GAME_ACTION_DEBUG_STEPS = 2, DEBUG_STEPS = 50, HOST_BATTERY_PCT = 76 };
 
 typedef struct {
     app_game_handle_t game;
@@ -48,7 +54,8 @@ typedef struct {
     uint64_t save_due_ms;
     bool sensor_ready;
     uint8_t sensor_attempts;
-    uint32_t sensor_timer, day_timer;
+    uint32_t sensor_timer, day_timer, battery_timer;
+    int applied_power;            /* Last app_power_t sent to the panel, -1 = none. */
 #endif
 } host_state_t;
 
@@ -137,6 +144,37 @@ static void poll_sensor(host_state_t *state)
     }
 }
 
+static void poll_battery(host_state_t *state)
+{
+    if (state->battery_timer++ % BATTERY_POLL_TICKS) {
+        return;
+    }
+    app_battery_reading_t battery;
+    if (app_power_hw_battery(&battery) == ESP_OK) {
+        app_game_set_battery(state->game, battery.percent, battery.current_ma > CHARGING_MIN_MA);
+    } else {
+        app_game_set_battery(state->game, -1, false);
+    }
+}
+
+/* Mirror the model's power state onto the panel, only when it changes. */
+static void apply_power(host_state_t *state, app_power_t power)
+{
+    if ((int)power == state->applied_power) {
+        return;
+    }
+    esp_err_t err;
+    switch (power) {
+    case APP_POWER_DOZE: err = app_power_hw_display(false, 0); break;
+    case APP_POWER_DIM: err = app_power_hw_display(true, BRIGHTNESS_DIM_PCT); break;
+    default: err = app_power_hw_display(true, BRIGHTNESS_AWAKE_PCT); break;
+    }
+    if (err == ESP_OK) {
+        state->applied_power = (int)power;
+        ESP_LOGI(TAG, "screen %s", power == APP_POWER_DOZE ? "off" : (power == APP_POWER_DIM ? "dim" : "on"));
+    }
+}
+
 static void poll_day(host_state_t *state)
 {
     if (state->day_timer++ % DAY_POLL_TICKS) {
@@ -164,7 +202,10 @@ static int initialize(void *value, const char *asset_root)
         return -1;
     }
 #if defined(RAYLIB_LITE_GAME_NATIVE)
+    state->applied_power = -1;
     load_save(state);
+#else
+    app_game_set_battery(state->game, HOST_BATTERY_PCT, false);
 #endif
     pet_view_init(&state->view);
     InitWindow(GAME_WIDTH, GAME_HEIGHT, GAME_NAME);
@@ -232,12 +273,14 @@ static void update(void *value)
 #if defined(RAYLIB_LITE_GAME_NATIVE)
     poll_sensor(state);
     poll_day(state);
+    poll_battery(state);
 #endif
     app_game_update(state->game);
     const uint32_t events = app_game_take_events(state->game);
     const app_game_snapshot_t snapshot = app_game_read(state->game);
     pet_view_update(&state->view, &snapshot, events);
 #if defined(RAYLIB_LITE_GAME_NATIVE)
+    apply_power(state, snapshot.power);
     maybe_save(state, events);
 #endif
 }
@@ -248,13 +291,25 @@ static int render(void *value)
     if (!state->game) {
         return -1;
     }
+    const bool screen_off = app_game_read(state->game).power == APP_POWER_DOZE;
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    /* Panel is off: submit nothing, saving the render and the QSPI transfer. */
+    if (screen_off && state->applied_power == APP_POWER_DOZE) {
+        return 0;
+    }
+#endif
     BeginDrawing();
     if (!raylib_lite_raylib_frame_available()) {
         EndDrawing();
         return -1;
     }
     const app_game_snapshot_t snapshot = app_game_read(state->game);
-    pet_view_draw(&state->view, &snapshot);
+    if (screen_off) {
+        /* Host stand-in for a dark panel (on the device the panel is off). */
+        ClearBackground(BLACK);
+    } else {
+        pet_view_draw(&state->view, &snapshot);
+    }
     EndDrawing();
     return 0;
 }
@@ -293,6 +348,7 @@ static int state_json(const void *value, char *output, size_t capacity)
     int size = snprintf(output, capacity,
                         "{\"phase\":\"%s\",\"tick\":%lu,\"screen\":\"%s\",\"overlay\":\"%s\","
                         "\"store_page\":%u,\"owned\":%lu,\"anims_on\":%u,\"mood\":\"%s\","
+                        "\"power\":%d,\"battery\":%d,\"charging\":%s,"
                         "\"steps_total\":%lu,\"steps_today\":%lu,\"sparks\":%lu,\"hunger\":%u,"
                         "\"happiness\":%u,\"friendship\":%u,\"pixel_style\":%d,\"color\":%u,"
                         "\"cards\":{\"phase\":%d,\"current\":%u,\"pot\":%u,\"streak\":%u,\"result\":%d},"
@@ -303,6 +359,7 @@ static int state_json(const void *value, char *output, size_t capacity)
                         overlays[s.overlay < APP_OVERLAY_COUNT ? s.overlay : 0],
                         s.store_page, (unsigned long)s.owned, s.anims_on,
                         moods[s.mood < APP_MOOD_COUNT ? s.mood : 0],
+                        (int)s.power, s.battery_pct, s.battery_charging ? "true" : "false",
                         (unsigned long)s.steps_total, (unsigned long)s.steps_today,
                         (unsigned long)s.sparks, s.hunger, s.happiness, s.friendship,
                         (int)s.pixel_style, s.color_index, (int)s.cards.phase, s.cards.current,

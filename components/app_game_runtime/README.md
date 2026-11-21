@@ -42,11 +42,18 @@ advance the model, take its event bits, advance the view, then save if due.
   drift after 30 s, to bound flash wear.
 - Day: from `time()` once the clock is set (after network time sync); until
   then `steps_today` simply keeps accumulating.
+- Screen power: `app_power_hw` mirrors the model's power state onto the panel
+  (awake 80 % brightness, dim 12 %, doze = panel off). While the panel is off,
+  `render` submits nothing, skipping drawing and the QSPI transfer; updates
+  (steps, stats) keep running at 30 Hz. Touch stays active to wake it.
+- Battery: the BQ27220 gauge is read every 10 s; current above 5 mA counts as
+  charging. A failed read reports "unknown" (menu shows NO BATT).
 - Board buttons never reset the pet. Only the Engine's explicit reset control does.
 
 ## Host simulator
 
 The Host build compiles the files listed in `../../game.sim.json` without the
-device-only code. The space key (`jump` action) credits 50 steps; replay `imu`
+device-only code; it reports a fixed 76 % battery and draws black while the
+screen is off. The space key (`jump` action) credits 50 steps; replay `imu`
 events drive the software pedometer. Source files include application public
 headers by relative path because the Host runner cannot declare include paths.

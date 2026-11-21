@@ -206,6 +206,26 @@ void px_box(int x, int y, int w, int h, int t, Color color)
     DrawRectangle(x + w - t, y + k, t, h - 2 * k, color);
 }
 
+void px_battery(int x, int y, int percent, bool charging, Color color, Color bolt)
+{
+    static const Color low = {255, 48, 48, 255};
+    enum { W = 28, H = 16, T = 2, NUB_W = 4, NUB_H = 8 };
+    const Color c = percent <= APP_LOW_BATTERY_PCT && !charging ? low : color;
+    DrawRectangle(x, y, W, T, c);
+    DrawRectangle(x, y + H - T, W, T, c);
+    DrawRectangle(x, y, T, H, c);
+    DrawRectangle(x + W - T, y, T, H, c);
+    DrawRectangle(x + W, y + (H - NUB_H) / 2, NUB_W, NUB_H, c);
+    const int inner = W - 4 * T;
+    const int fill = percent <= 0 ? 0 : (percent >= 100 ? inner : (inner * percent + 99) / 100);
+    if (fill > 0) {
+        DrawRectangle(x + 2 * T, y + 2 * T, fill, H - 4 * T, c);
+    }
+    if (charging) {
+        px_icon(PX_ICON_BOLT, x + W / 2 - 6, y + 1, 2, bolt, bolt, false);
+    }
+}
+
 const char *const PX_ICON_BOLT[] = {
     "....##",
     "...##.",

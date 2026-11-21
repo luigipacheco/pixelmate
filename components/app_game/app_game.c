@@ -78,6 +78,11 @@ struct app_game {
     uint32_t owned;
     uint8_t anims_on;
     uint32_t step_goal;
+    app_power_t power;
+    uint32_t screen_idle_ticks;   /* Touch-free ticks; steps do not reset it. */
+    bool swallow_touch;           /* The touch that woke the screen does nothing else. */
+    int8_t battery_pct;
+    bool battery_charging;
     uint32_t events;
     uint32_t save_seq;
 
@@ -164,6 +169,9 @@ static void fresh_pet(app_game_handle_t g)
     g->owned = FREE_OWNED;
     g->anims_on = 0;
     g->step_goal = APP_GOAL_DEFAULT;
+    g->power = APP_POWER_AWAKE;
+    g->screen_idle_ticks = 0;
+    g->swallow_touch = false;
     g->steps_total = g->steps_today = 0;
     g->day = 0;
     g->sparks = START_SPARKS;
@@ -200,6 +208,7 @@ app_game_err_t app_game_create(const app_game_config_t *config, app_game_handle_
         return APP_GAME_NO_MEMORY;
     }
     g->config = *config;
+    g->battery_pct = -1;
     cards_init(&g->cards, config->seed);
     slots_init(&g->slots, config->seed ^ 0xa5a5a5a5U);
     fresh_pet(g);
@@ -334,6 +343,58 @@ static void set_overlay(app_game_handle_t g, app_overlay_t overlay)
     if (g->overlay != overlay) {
         g->overlay = overlay;
         g->events |= APP_EVENT_OVERLAY;
+    }
+}
+
+static void set_power(app_game_handle_t g, app_power_t power)
+{
+    if (g->power != power) {
+        g->power = power;
+        g->events |= APP_EVENT_POWER;
+    }
+}
+
+/* Screen off: close panels and go home, so waking shows the pet. */
+static void doze(app_game_handle_t g)
+{
+    set_overlay(g, APP_OVERLAY_NONE);
+    if (g->screen != APP_SCREEN_HOME) {
+        g->screen = APP_SCREEN_HOME;
+        g->events |= APP_EVENT_SCREEN;
+    }
+    set_power(g, APP_POWER_DOZE);
+}
+
+static void wake(app_game_handle_t g)
+{
+    g->screen_idle_ticks = 0;
+    if (g->power == APP_POWER_AWAKE) {
+        return;
+    }
+    set_power(g, APP_POWER_AWAKE);
+    react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
+    g->events |= APP_EVENT_WOKE;
+}
+
+static uint32_t doze_after_ticks(const struct app_game *g)
+{
+    const bool low = g->battery_pct >= 0 && g->battery_pct <= APP_LOW_BATTERY_PCT && !g->battery_charging;
+    return (low ? APP_LOW_BATTERY_DOZE_S : APP_DOZE_AFTER_S) * TICKS_PER_SECOND;
+}
+
+static void update_power(app_game_handle_t g)
+{
+    if (g->power == APP_POWER_DOZE || g->pointer_down) {
+        return;
+    }
+    ++g->screen_idle_ticks;
+    const uint32_t doze_at = doze_after_ticks(g);
+    const uint32_t dim_at = APP_DIM_AFTER_S * TICKS_PER_SECOND < doze_at
+                            ? APP_DIM_AFTER_S * TICKS_PER_SECOND : doze_at * 2U / 3U;
+    if (g->screen_idle_ticks >= doze_at) {
+        doze(g);
+    } else if (g->screen_idle_ticks >= dim_at) {
+        set_power(g, APP_POWER_DIM);
     }
 }
 
@@ -479,7 +540,9 @@ static void tap_goal(app_game_handle_t g, int32_t x, int32_t y)
 
 static void tap_menu(app_game_handle_t g, int32_t x, int32_t y)
 {
-    if (app_rect_hit(app_menu_store_rect(), x, y)) {
+    if (app_rect_hit(app_menu_sleep_rect(), x, y)) {
+        doze(g);
+    } else if (app_rect_hit(app_menu_store_rect(), x, y)) {
         set_overlay(g, APP_OVERLAY_STORE);
     } else if (app_rect_hit(app_menu_style_rect(), x, y)) {
         set_overlay(g, APP_OVERLAY_STYLE);
@@ -574,14 +637,24 @@ void app_game_set_pointer(app_game_handle_t g, int32_t x, int32_t y, bool presse
     if (pressed && !was_down) {
         g->press_x = x;
         g->press_y = y;
+        g->idle_ticks = 0;
+        if (g->power != APP_POWER_AWAKE) {
+            wake(g);
+            g->swallow_touch = true;
+            return;
+        }
+        g->screen_idle_ticks = 0;
         if (g->mood == APP_MOOD_SLEEPY) {
             react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
             g->events |= APP_EVENT_WOKE;
         }
-        g->idle_ticks = 0;
         return;
     }
     if (pressed || !was_down) {
+        return;
+    }
+    if (g->swallow_touch) {
+        g->swallow_touch = false;
         return;
     }
     const int32_t dx = x - g->press_x;
@@ -625,6 +698,22 @@ void app_game_add_steps(app_game_handle_t g, uint32_t steps)
     }
 }
 
+void app_game_set_battery(app_game_handle_t g, int percent, bool charging)
+{
+    if (!g) {
+        return;
+    }
+    g->battery_pct = (int8_t)(percent < 0 ? -1 : (percent > 100 ? 100 : percent));
+    g->battery_charging = charging && percent >= 0;
+}
+
+void app_game_wake(app_game_handle_t g)
+{
+    if (g) {
+        wake(g);
+    }
+}
+
 void app_game_set_day(app_game_handle_t g, int32_t day)
 {
     if (!g || day <= 0 || day == g->day) {
@@ -640,6 +729,9 @@ void app_game_set_day(app_game_handle_t g, int32_t day)
 
 static app_mood_t compute_mood(const struct app_game *g)
 {
+    if (g->power != APP_POWER_AWAKE) {
+        return APP_MOOD_SLEEPY;   /* Dozing off with the screen. */
+    }
     if (g->reaction_ticks) {
         return g->reaction;
     }
@@ -700,6 +792,7 @@ void app_game_update(app_game_handle_t g)
         --g->pet_cooldown;
     }
     decay_stats(g);
+    update_power(g);
     const uint32_t won = cards_update(&g->cards, &g->events);
     if (won) {
         g->sparks += won;
@@ -738,6 +831,9 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .screen = g->screen,
         .overlay = g->overlay,
         .store_page = g->store_page,
+        .power = g->power,
+        .battery_pct = g->battery_pct,
+        .battery_charging = g->battery_charging,
         .mood = g->mood,
         .owned = g->owned,
         .anims_on = g->anims_on,

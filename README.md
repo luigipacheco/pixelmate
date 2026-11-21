@@ -19,6 +19,11 @@ react to how much you walk, what you feed it and how you play with it.
   Home always shows how many steps until your next unlock.
 - **Spark Slots (unlockable, 250 sparks):** a three-reel slot machine where
   you stop each reel yourself; 3 sparks a spin, 7-7-7 pays 150.
+- **Low-energy mode:** after 20 s without a touch the pet dozes off and the
+  screen dims; at 30 s the screen turns off (12 s on low battery). SLEEP in
+  the menu does it at once. Steps keep counting; tap the screen to wake.
+- **Battery:** percentage in the pull-down menu; a top-bar icon appears while
+  charging or when the battery is low.
 - **Style:** pick among the pixel sizes and colors you own.
 - Progress is saved to NVS.
 
