@@ -35,10 +35,7 @@ enum {
     SENSOR_MAX_ATTEMPTS = 6,
     DAY_POLL_TICKS = 10 * GAME_TICK_HZ,
     BATTERY_POLL_TICKS = 10 * GAME_TICK_HZ,
-    BRIGHTNESS_AWAKE_PCT = 80,
-    BRIGHTNESS_DIM_PCT = 12,
     CHARGING_MIN_MA = 5,          /* Gauge current above this counts as charging. */
-    POWER_RETRY_TICKS = GAME_TICK_HZ,
     VALID_EPOCH = 1700000000,     /* Earlier clocks are unsynchronized. */
     NET_START_TICK = GAME_TICK_HZ,             /* Start Wi-Fi 1 s after boot. */
     NET_POLL_TICKS = GAME_TICK_HZ,
@@ -74,8 +71,6 @@ typedef struct {
     bool sensor_ready;
     uint8_t sensor_attempts;
     uint32_t sensor_timer, day_timer, battery_timer;
-    int applied_power;            /* Last app_power_t sent to the panel, -1 = none. */
-    uint16_t power_retry;         /* Ticks until a failed panel switch is retried. */
     int logged_power;             /* Last model power state logged, for diagnostics. */
     uint8_t clock_logged;         /* 0 = not yet, 1 = logged invalid, 2 = logged valid. */
     uint32_t net_timer;
@@ -203,33 +198,6 @@ static void poll_battery(host_state_t *state)
     }
 }
 
-/* Mirror the model's power state onto the panel, only when it changes.
- * A failed switch is logged and retried once per second. */
-static void apply_power(host_state_t *state, app_power_t power)
-{
-    if ((int)power == state->applied_power) {
-        state->power_retry = 0;
-        return;
-    }
-    if (state->power_retry && --state->power_retry) {
-        return;
-    }
-    esp_err_t err;
-    switch (power) {
-    case APP_POWER_DOZE: err = app_power_hw_display(false, 0); break;
-    case APP_POWER_DIM: err = app_power_hw_display(true, BRIGHTNESS_DIM_PCT); break;
-    default: err = app_power_hw_display(true, BRIGHTNESS_AWAKE_PCT); break;
-    }
-    const char *name = power == APP_POWER_DOZE ? "off" : (power == APP_POWER_DIM ? "dim" : "on");
-    if (err == ESP_OK) {
-        state->applied_power = (int)power;
-        ESP_LOGI(TAG, "screen %s", name);
-    } else {
-        state->power_retry = POWER_RETRY_TICKS;
-        ESP_LOGW(TAG, "screen %s failed: %s", name, esp_err_to_name(err));
-    }
-}
-
 /* Days since 1970-01-01 for a civil date (proleptic Gregorian). Unlike
  * year*400+yday it stays consecutive across New Year. */
 static int32_t days_from_civil(int y, int m, int d)
@@ -310,13 +278,14 @@ static int build_stats_json(const app_game_snapshot_t *s, char *out, size_t cap)
                      "{\"steps_today\":%lu,\"goal\":%lu,\"food_need\":%lu,\"fed_today\":%s,"
                      "\"fullness\":%u,\"hp\":%u,\"hp_max\":%d,\"fainted\":%s,\"streak\":%u,"
                      "\"steps_total\":%lu,\"sparks\":%lu,\"friendship\":%u,\"mood\":\"%s\","
-                     "\"battery\":%d,\"charging\":%s,\"clock\":%s,\"history\":[",
+                     "\"battery\":%d,\"charging\":%s,\"clock\":%s,\"tick\":%lu,\"power\":%d,\"history\":[",
                      (unsigned long)s->steps_today, (unsigned long)s->step_goal,
                      (unsigned long)s->food_need, s->fed_today ? "true" : "false", s->hunger, s->hp,
                      APP_HP_MAX, s->fainted ? "true" : "false", s->fed_streak,
                      (unsigned long)s->steps_total, (unsigned long)s->sparks, s->friendship,
                      moods[s->mood < APP_MOOD_COUNT ? s->mood : 0], s->battery_pct,
-                     s->battery_charging ? "true" : "false", s->day > 0 ? "true" : "false");
+                     s->battery_charging ? "true" : "false", s->day > 0 ? "true" : "false",
+                     (unsigned long)s->tick, (int)s->power);
     for (int i = 0; i < APP_HISTORY_DAYS && n > 0 && (size_t)n < cap; ++i) {
         n += snprintf(out + n, cap - (size_t)n, "%s%lu", i ? "," : "", (unsigned long)s->history[i]);
     }
@@ -369,7 +338,6 @@ static int initialize(void *value, const char *asset_root)
         return -1;
     }
 #if defined(RAYLIB_LITE_GAME_NATIVE)
-    state->applied_power = -1;
     state->logged_power = -1;
     load_save(state);
     load_timezone();
@@ -471,7 +439,6 @@ static void update(void *value)
         ESP_LOGI(TAG, "power state %d (pointer %s)", (int)snapshot.power,
                  snapshot.pointer_down ? "down" : "up");
     }
-    apply_power(state, snapshot.power);
     maybe_save(state, events);
 #endif
 }

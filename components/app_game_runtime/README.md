@@ -43,10 +43,12 @@ advance the model, take its event bits, advance the view, then save if due.
   drift after 30 s, to bound flash wear.
 - Day: from `time()` once the clock is set (after network time sync); until
   then `steps_today` simply keeps accumulating.
-- Screen power: `app_power_hw` mirrors the model's power state onto the panel
-  (awake 80 % brightness, dim 12 %, doze = panel off). While the panel is off,
-  `render` submits nothing, skipping drawing and the QSPI transfer; updates
-  (steps, stats) keep running at 30 Hz. Touch stays active to wake it.
+- Screen power: dimming draws the scene at 30 % brightness; dozing draws one
+  black frame and then submits nothing (no render, no transfer) until a tap.
+  The panel itself is never commanded from the game loop: the board's frame
+  task shares that bus and has no hook for out-of-band commands, and switching
+  the panel off from here could hang the device. Black AMOLED pixels are off,
+  so a black frame saves nearly as much.
 - Battery: the BQ27220 gauge is read every 10 s; current above 5 mA counts as
   charging. A failed read reports "unknown" (menu shows NO BATT).
 - Network: `app_net` starts 1 s after boot (first frame first). Every second

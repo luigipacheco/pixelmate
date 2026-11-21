@@ -3,10 +3,7 @@
 #include "app_power_hw.h"
 #include "driver/i2c_master.h"
 #include "esp_board_manager_includes.h"
-#include "esp_lcd_co5300.h"
-#include "esp_lcd_panel_ops.h"
 
-#define DISPLAY_DEVICE "display_lcd"
 #define I2C_BUS "i2c_master"
 #define GAUGE_ADDR 0x55
 #define GAUGE_SPEED_HZ 400000
@@ -16,47 +13,10 @@
 #define GAUGE_CMD_CURRENT 0x0C
 #define GAUGE_CMD_SOC 0x2C
 
-/* Both handles are borrowed from the board for the app's lifetime and owned
- * by the game loop task; the bus reference is never released (the board
+/* The gauge device lives on the board's bus for the app's lifetime and is
+ * owned by the game loop task; the bus reference is never released (the board
  * outlives the game module). */
-static esp_lcd_panel_handle_t s_panel;
 static i2c_master_dev_handle_t s_gauge;
-static bool s_display_on = true;
-
-static esp_lcd_panel_handle_t panel(void)
-{
-    if (!s_panel) {
-        void *handle = NULL;
-        if (esp_board_manager_get_device_handle(DISPLAY_DEVICE, &handle) == ESP_OK && handle) {
-            s_panel = ((dev_display_lcd_handles_t *)handle)->panel_handle;
-        }
-    }
-    return s_panel;
-}
-
-esp_err_t app_power_hw_display(bool on, uint8_t brightness_pct)
-{
-    esp_lcd_panel_handle_t p = panel();
-    if (!p) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    if (!on) {
-        /* Brightness 0 first: on this AMOLED "display off" alone can leave the
-         * last picture visible, which looks like a frozen screen. */
-        const esp_err_t dim = esp_lcd_panel_co5300_set_brightness(p, 0);
-        s_display_on = false;
-        const esp_err_t off = esp_lcd_panel_disp_on_off(p, false);
-        return off != ESP_OK ? off : dim;
-    }
-    if (!s_display_on) {
-        const esp_err_t err = esp_lcd_panel_disp_on_off(p, true);
-        if (err != ESP_OK) {
-            return err;
-        }
-        s_display_on = true;
-    }
-    return esp_lcd_panel_co5300_set_brightness(p, brightness_pct ? brightness_pct : 1);
-}
 
 static esp_err_t gauge(void)
 {

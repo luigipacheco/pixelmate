@@ -24,6 +24,7 @@ enum {
     DANCE_TICKS = 72,
 };
 #define ANCHOR_EASE 0.25f
+#define DIM_LEVEL 0.3f
 static const Color WARN = {255, 48, 48, 255};
 static const Color CONFETTI_WHITE = {240, 240, 232, 255};
 
@@ -361,7 +362,7 @@ void pet_view_update(pet_view_t *v, const app_game_snapshot_t *s, uint32_t event
     const app_eye_anchor_t a = current_anchor(v);
     if (s->mood == APP_MOOD_SLEEPY && v->t % Z_PERIOD_TICKS == 0U && a.scale > 0.05f) {
         spawn(v, P_Z, a.cx + 110 * a.scale, a.cy - 50 * a.scale, 0.8f, -1.4f, 0.0f, 50,
-              px_color(s->color_index));
+              px_scale(px_color(s->color_index), s->power == APP_POWER_DIM ? DIM_LEVEL : 1.0f));
     }
     for (int i = 0; i < VIEW_PARTICLES; ++i) {
         view_particle_t *p = &v->particles[i];
@@ -475,10 +476,13 @@ static void draw_dots(const pet_view_t *v, const draw_ctx_t *d)
 void pet_view_draw(const pet_view_t *v, const app_game_snapshot_t *s)
 {
     const px_grid_t grid = px_grid(s->pixel_style);
-    const Color c = px_color(s->color_index);
+    /* Dimming is drawn, not commanded: the panel is never touched from the game
+     * loop (see app_power_hw/README.md), and dark pixels cost little on AMOLED. */
+    const float level = s->power == APP_POWER_DIM ? DIM_LEVEL : 1.0f;
+    const Color c = px_scale(px_color(s->color_index), level);
     const draw_ctx_t d = {
         .view = v, .snap = s, .grid = grid, .gap = grid.gap > 0,
-        .color = c, .accent = px_accent(s->color_index), .dim = px_scale(c, 0.24f),
+        .color = c, .accent = px_scale(px_accent(s->color_index), level), .dim = px_scale(c, 0.24f),
     };
     ClearBackground(BLACK);
     const bool panel = v->overlay_drawn != APP_OVERLAY_NONE;

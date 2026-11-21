@@ -15,7 +15,8 @@ if (app_net_take_timezone(&minutes_west)) { /* apply + persist */ }
 - **Credentials:** `wifi_ssid` / `wifi_password` from Vibe Mode shared values
   (`mosaico_shared_get`), the same source FabMosaico uses. No setup portal.
   Missing SSID → `APP_NET_STATUS_NO_CONFIG` and `ESP_ERR_NOT_FOUND`.
-- **Wi-Fi:** station mode with modem power save; reconnects 5 s after a drop.
+- **Wi-Fi:** station mode with modem power save. After a drop it retries after
+  5 s, doubling up to every 5 minutes; a successful connection resets it.
 - **Time:** SNTP (`pool.ntp.org`) starts once the station has an address and
   sets the system clock. The timezone is the caller's job (see below).
 - **mDNS:** `<hostname>.local` plus an `_http._tcp` service. If Iris already

@@ -19,7 +19,9 @@
 static const char *TAG = "app_net";
 
 #define NTP_SERVER "pool.ntp.org"
-#define RETRY_DELAY_US (5 * 1000 * 1000)
+/* Reconnect backoff: 5 s doubling to 5 min, so an absent network costs little. */
+#define RETRY_FIRST_US (5LL * 1000 * 1000)
+#define RETRY_MAX_US (300LL * 1000 * 1000)
 enum { SSID_MAX = 33, PASS_MAX = 65 };
 
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -27,6 +29,7 @@ static app_net_status_t s_status;
 static uint32_t s_ipv4;
 static esp_netif_t *s_netif;
 static esp_timer_handle_t s_retry;
+static int64_t s_retry_us = RETRY_FIRST_US;   /* Event loop task only. */
 static bool s_started;
 
 static void set_status(app_net_status_t status, uint32_t ipv4)
@@ -65,9 +68,11 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         set_status(APP_NET_STATUS_CONNECTING, 0);
         /* Back off instead of hammering the access point. */
         esp_timer_stop(s_retry);
-        esp_timer_start_once(s_retry, RETRY_DELAY_US);
+        esp_timer_start_once(s_retry, (uint64_t)s_retry_us);
+        s_retry_us = s_retry_us * 2 > RETRY_MAX_US ? RETRY_MAX_US : s_retry_us * 2;
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         const ip_event_got_ip_t *got = data;
+        s_retry_us = RETRY_FIRST_US;
         set_status(APP_NET_STATUS_ONLINE, got->ip_info.ip.addr);
         ESP_LOGI(TAG, "online at " IPSTR, IP2STR(&got->ip_info.ip));
     }
