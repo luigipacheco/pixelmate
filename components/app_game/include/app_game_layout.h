@@ -180,6 +180,11 @@ static inline app_rect_t app_style_color_rect(int i)
 {
     return (app_rect_t) {(int16_t)(24 + i * 74), 372, 64, 56};
 }
+/* SOUND ON / LOUD / OFF, left of the eye preview. */
+static inline app_rect_t app_style_sound_rect(void)
+{
+    return (app_rect_t) {12, 96, 100, 116};
+}
 
 static inline app_rect_t app_store_row_rect(int row)
 {

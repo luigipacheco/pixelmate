@@ -69,6 +69,15 @@ typedef enum {
     APP_PIXEL_COUNT,
 } app_pixel_style_t;
 
+/** Sound effects setting, cycled by the Style panel's SOUND button. Only the
+ * runtime plays sound; the model just stores and saves the choice. */
+typedef enum {
+    APP_SOUND_ON = 0,      /**< Default: moderate volume. */
+    APP_SOUND_LOUD,
+    APP_SOUND_OFF,
+    APP_SOUND_COUNT,
+} app_sound_t;
+
 enum {
     APP_COLOR_COUNT = 6,
     APP_FOOD_COUNT = 3,
@@ -300,6 +309,7 @@ typedef struct {
     app_mood_t mood;
     uint32_t owned;             /**< APP_OWN_*_BIT flags. */
     uint8_t anims_on;           /**< Bit per app_anim_t; only owned ones can be on. */
+    app_sound_t sound;
     uint32_t steps_total;
     uint32_t steps_today;
     uint32_t step_goal;
@@ -348,7 +358,7 @@ typedef struct {
     uint8_t hp;                 /**< 0..APP_HP_MAX. */
     uint8_t fainted;
     uint8_t fed_today;
-    uint8_t reserved;
+    uint8_t sound;              /**< app_sound_t; was reserved (0 = ON), so no migration. */
     /* v4 */
     uint32_t history[APP_HISTORY_DAYS];
     uint16_t fed_streak;

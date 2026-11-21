@@ -131,11 +131,37 @@ static void draw_lock(int x, int y, Color color)
     px_icon(PX_ICON_LOCK, x, y, 3, color, color, false);
 }
 
+/* SOUND button: a note with one or two waves for the level, crossed out when off. */
+static void draw_sound_button(const draw_ctx_t *d, int oy)
+{
+    static const char *const names[APP_SOUND_COUNT] = {"ON", "LOUD", "OFF"};
+    const app_sound_t sound = d->snap->sound < APP_SOUND_COUNT ? d->snap->sound : APP_SOUND_ON;
+    const app_rect_t r = app_style_sound_rect();
+    const bool muted = sound == APP_SOUND_OFF;
+    const Color c = muted ? d->dim : d->color;
+    const int x = r.x, y = r.y + oy;
+    px_text_center("SOUND", x + r.w / 2, y - 20, 2, d->dim, false);
+    px_box(x, y, r.w, r.h, 3, c);
+    px_icon(PX_ICON_NOTE, x + 18, y + 22, 4, c, c, d->gap);
+    if (muted) {
+        for (int i = 0; i < 6; ++i) {
+            DrawRectangle(x + 60 + i * 4, y + 24 + i * 4, 4, 4, d->accent);
+            DrawRectangle(x + 80 - i * 4, y + 24 + i * 4, 4, 4, d->accent);
+        }
+    } else {
+        for (int i = 0; i <= (int)sound; ++i) {
+            DrawRectangle(x + 60 + i * 12, y + 30 - i * 6, 4, 20 + i * 12, d->accent);
+        }
+    }
+    px_text_center(names[sound], x + r.w / 2, y + 76, 3, c, d->gap);
+}
+
 static void draw_style(const draw_ctx_t *d, int oy)
 {
     static const char *const names[APP_PIXEL_COUNT] = {"CHUNKY", "FINE", "SMOOTH"};
     const app_game_snapshot_t *s = d->snap;
     draw_header(d, oy, "STYLE");
+    draw_sound_button(d, oy);
     px_text_center("PIXELS", 240, oy + 262, 2, d->dim, false);
     for (int i = 0; i < APP_PIXEL_COUNT; ++i) {
         const app_rect_t r = app_style_pixel_rect(i);

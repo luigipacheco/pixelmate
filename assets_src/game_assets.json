@@ -1,0 +1,6 @@
+{
+  "schema": "mosaico-game-assets/v1",
+  "sounds": [
+    {"source": "sfx_*.wav"}
+  ]
+}

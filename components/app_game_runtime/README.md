@@ -51,6 +51,8 @@ advance the model, take its event bits, advance the view, then save if due.
   task shares that bus and has no hook for out-of-band commands, and switching
   the panel off from here could hang the device. Black AMOLED pixels are off,
   so a black frame saves nearly as much.
+- Sound: after each tick the runtime hands the events and snapshot to
+  `app_sfx` (device only; see `components/app_sfx/README.md`).
 - Battery: the BQ27220 gauge is read every 10 s; current above 5 mA counts as
   charging. A failed read reports "unknown" (menu shows NO BATT).
 - Network: `app_net` starts 1 s after boot (first frame first). Every second
