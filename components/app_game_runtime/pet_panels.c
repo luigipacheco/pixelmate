@@ -340,7 +340,7 @@ static void draw_wifi(const draw_ctx_t *d, int oy)
         px_text_center("STATS ON YOUR PHONE", 240, oy + 160, 2, soft, false);
         format_ip(text, sizeof(text), "", s->ipv4);
         px_text_center(text, 240, oy + 190, 4, d->color, d->gap);
-        px_text_center("PIXELPAL.LOCAL", 240, oy + 246, 3, d->color, d->gap);
+        px_text_center("PIXELMATE.LOCAL", 240, oy + 246, 3, d->color, d->gap);
         screens_button(d, action, 0, oy, "CHANGE WIFI", 3, soft, false);
         return;
     case APP_NET_CONNECTING:

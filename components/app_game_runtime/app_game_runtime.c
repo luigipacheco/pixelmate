@@ -42,7 +42,7 @@ enum {
     NET_POLL_TICKS = GAME_TICK_HZ,
     STATS_JSON_MAX = APP_NET_JSON_MAX,
 };
-#define NET_HOSTNAME "pixelpal"
+#define NET_HOSTNAME "pixelmate"
 #define TZ_NVS_NAMESPACE "pixel_pal"
 #define TZ_NVS_KEY "tz_min"
 #endif
@@ -56,7 +56,7 @@ enum {
     HOST_BATTERY_PCT = 76,
     HOST_FIRST_DAY = 20000,
 };
-#define HOST_SETUP_AP "PIXELPAL-SIM"   /* Host: stand-in setup hotspot name. */
+#define HOST_SETUP_AP "PIXELMATE-SIM"   /* Host: stand-in setup hotspot name. */
 
 typedef struct {
     app_game_handle_t game;

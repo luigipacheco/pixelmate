@@ -4,7 +4,7 @@ Wi-Fi (with its own first-time setup hotspot), network time and the stats web
 app. Device-only; the Host simulator never compiles it.
 
 ```c
-app_net_start("pixelpal");               /* once, from the game loop */
+app_net_start("pixelmate");               /* once, from the game loop */
 uint32_t ip;
 switch (app_net_status(&ip)) {
 case APP_NET_STATUS_ONLINE: /* ip in network order */ break;
@@ -41,7 +41,7 @@ is when the app offers setup again.
 
 `app_net_setup_start()` (from the menu's SET UP / CHANGE WIFI):
 
-- Pauses the station and opens an **open** hotspot named `PIXELPAL-XXXX`
+- Pauses the station and opens an **open** hotspot named `PIXELMATE-XXXX`
   (last two bytes of the soft-AP MAC, `app_net_setup_name()`) at
   `192.168.4.1`, channel 1, up to 3 phones.
 - Captive DNS (`app_net_dns.c`) answers every A query with `192.168.4.1`, DHCP

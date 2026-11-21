@@ -26,7 +26,7 @@ enum {
 
 static const char PAGE[] =
     "<!doctype html><html><head><meta charset=utf-8>"
-    "<meta name=viewport content='width=device-width,initial-scale=1'><title>Pixel Pal Wi-Fi</title><style>"
+    "<meta name=viewport content='width=device-width,initial-scale=1'><title>PixelMate Wi-Fi</title><style>"
     ":root{--c:#d9ff00;--a:#ff4c01;--d:#2c3300}"
     "body{margin:0;background:#000;color:var(--c);font:16px/1.4 ui-monospace,Menlo,Consolas,monospace;"
     "display:flex;justify-content:center}"
@@ -44,7 +44,7 @@ static const char PAGE[] =
     "letter-spacing:.2em}.go:disabled{opacity:.4}"
     ".link{background:none;border:0;color:var(--c);font:inherit;text-decoration:underline;padding:0}"
     "#msg{margin-top:16px;min-height:3em}#msg.err{color:var(--a)}#msg a{color:var(--c)}"
-    "</style></head><body><main><h1>PIXEL PAL WI-FI</h1>"
+    "</style></head><body><main><h1>PIXELMATE WI-FI</h1>"
     "<div class=sub><span>PICK YOUR NETWORK</span><button class=link id=rescan type=button>RESCAN</button></div>"
     "<div id=list><p>SCANNING...</p></div>"
     "<form id=f><div class=sub>NETWORK</div>"
@@ -78,7 +78,7 @@ static const char PAGE[] =
     "msg('NO ANSWER - LOOK AT THE PET',1)}"
     "function done(ip){const m=$('msg');m.className='';m.textContent='CONNECTED! THIS HOTSPOT CLOSES IN A FEW "
     "SECONDS. REJOIN YOUR HOME WI-FI, THEN OPEN ';"
-    "[['http://pixelpal.local','pixelpal.local'],['http://'+ip+'/',ip]].forEach((x,i)=>{const a="
+    "[['http://pixelmate.local','pixelmate.local'],['http://'+ip+'/',ip]].forEach((x,i)=>{const a="
     "document.createElement('a');a.href=x[0];a.textContent=x[1];m.append(i?' OR ':'',a)});"
     "$('f').hidden=true}"
     "scan();"
@@ -288,7 +288,7 @@ static esp_err_t not_found(httpd_req_t *req, httpd_err_code_t code)
     httpd_resp_set_status(req, "302 Found");
     httpd_resp_set_hdr(req, "Location", REDIRECT_URL);
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-    return httpd_resp_sendstr(req, "Pixel Pal setup: " REDIRECT_URL);
+    return httpd_resp_sendstr(req, "PixelMate setup: " REDIRECT_URL);
 }
 
 esp_err_t app_net_portal_register(httpd_handle_t server)

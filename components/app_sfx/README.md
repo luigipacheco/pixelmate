@@ -1,6 +1,6 @@
 # app_sfx
 
-8-bit sound effects for Pixel Pal. Native builds only: the Host simulator does
+8-bit sound effects for PixelMate. Native builds only: the Host simulator does
 not link audio, so this component is not in `game.sim.json` and the runtime
 calls it inside `#if defined(RAYLIB_LITE_GAME_NATIVE)`.
 

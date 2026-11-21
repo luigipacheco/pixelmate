@@ -60,7 +60,7 @@ advance the model, take its event bits, advance the view, then save if due.
   the runtime reports Wi-Fi status/IP and the setup hotspot name to the model
   (shown in the menu and the Wi-Fi panel); `APP_EVENT_WIFI_SETUP/STOP` from the
   model start/stop the setup hotspot and are reported back on the same frame. It also
-  publishes stats JSON for `http://pixelpal.local` / the menu's IP. A timezone
+  publishes stats JSON for `http://pixelmate.local` / the menu's IP. A timezone
   from the web page is applied as a POSIX `TZ` and saved in NVS
   (`pixel_pal/tz_min`), then reloaded on boot.
 - Day: the local calendar date as days since 1970 (consecutive across New
@@ -73,6 +73,6 @@ advance the model, take its event bits, advance the view, then save if due.
 The Host build compiles the files listed in `../../game.sim.json` without the
 device-only code; it reports a fixed 76 % battery and draws black while the
 screen is off. Wi-Fi starts as "nothing saved"; SET UP shows a stand-in
-hotspot `PIXELPAL-SIM` and STOP returns to "nothing saved". The left key ends the simulated day (health check). The space key (`jump` action) credits 50 steps; replay `imu`
+hotspot `PIXELMATE-SIM` and STOP returns to "nothing saved". The left key ends the simulated day (health check). The space key (`jump` action) credits 50 steps; replay `imu`
 events drive the software pedometer. Source files include application public
 headers by relative path because the Host runner cannot declare include paths.

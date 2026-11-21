@@ -36,7 +36,7 @@ esp_err_t app_net_setup_start(void);
 /** Stop the setup hotspot and resume the saved network (asynchronous). */
 esp_err_t app_net_setup_stop(void);
 
-/** Setup hotspot name ("PIXELPAL-XXXX"); "" before app_net_start. */
+/** Setup hotspot name ("PIXELMATE-XXXX"); "" before app_net_start. */
 const char *app_net_setup_name(void);
 
 /** Replace the JSON served at /api/stats (copied; at most APP_NET_JSON_MAX-1 bytes). */

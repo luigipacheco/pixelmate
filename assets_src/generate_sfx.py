@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Pixel Pal's 8-bit sound effects as deterministic 24 kHz mono WAVs.
+"""Generate PixelMate's 8-bit sound effects as deterministic 24 kHz mono WAVs.
 
 Run by the native build (raylib_lite_native_embed_assets runs every
 assets_src/generate_*.py, then packs the WAVs listed in game_assets.json into

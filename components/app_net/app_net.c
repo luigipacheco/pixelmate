@@ -35,7 +35,7 @@ static const char *TAG = "app_net";
 /* After a successful join the hotspot lingers so the phone can read the new address. */
 #define SETUP_LINGER_US (20LL * 1000 * 1000)
 #define CREDS_NAMESPACE "app_net"   /* Owned by this component; see README. */
-#define SETUP_NAME_PREFIX "PIXELPAL-"
+#define SETUP_NAME_PREFIX "PIXELMATE-"
 
 enum {
     FAIL_AFTER = 4,          /* Failed attempts (~75 s of backoff) before FAILED. */

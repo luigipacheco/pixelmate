@@ -1,8 +1,11 @@
-# Pixel Pal
+# PixelMate
 
 A pedometer virtual pet for the **ESP-Mosaico** (ESP32-S31, 480×480 touch screen),
 built on Raylib Lite Engine. The pet is a pair of pixel-art robot eyes that
 react to how much you walk, what you feed it and how you play with it.
+
+(Formerly "Pixel Pal". The project folder, CMake target and save storage keep
+the `pixel_pal` name so existing pets carry over.)
 
 - **Steps → sparks:** the BMI270's on-chip step counter keeps counting while
   the pet is idle; every 20 steps earns 1 spark. Daily goal: 8000 steps by
@@ -36,11 +39,11 @@ react to how much you walk, what you feed it and how you play with it.
 - **Battery:** percentage in the pull-down menu; a top-bar icon appears while
   charging or when the battery is low.
 - **Wi-Fi setup:** first time, pull down the menu and tap **SET UP WIFI**. The
-  board shows a hotspot name (`PIXELPAL-XXXX`); join it from a phone, pick your
+  board shows a hotspot name (`PIXELMATE-XXXX`); join it from a phone, pick your
   Wi-Fi on the page that opens (or go to `192.168.4.1`) and save. The Wi-Fi set
   in Vibe Mode is used when nothing was saved here.
 - **Wi-Fi stats:** joins the saved Wi-Fi, syncs the clock, and
-  serves a stats page at `http://pixelpal.local` (or the IP in the menu):
+  serves a stats page at `http://pixelmate.local` (or the IP in the menu):
   today, food, health, 7-day chart, streak, sparks and battery. Opening it once
   sets the pet's timezone.
 - **Style:** pick among the pixel sizes and colors you own.
