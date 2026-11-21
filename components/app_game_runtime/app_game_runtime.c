@@ -265,6 +265,9 @@ static uint32_t state_hash(const void *value)
     /* Hash named fields, avoiding platform-dependent struct padding. */
     uint32_t hash = s.tick;
     hash = hash * 31U + (uint32_t)s.screen;
+    hash = hash * 31U + (uint32_t)s.overlay;
+    hash = hash * 31U + s.owned;
+    hash = hash * 31U + s.anims_on;
     hash = hash * 31U + (uint32_t)s.mood;
     hash = hash * 31U + s.steps_total;
     hash = hash * 31U + s.sparks;
@@ -281,19 +284,23 @@ static int state_json(const void *value, char *output, size_t capacity)
     if (!output || !capacity) {
         return -1;
     }
-    static const char *const screens[APP_SCREEN_COUNT] = {"home", "steps", "feed", "cards", "settings"};
+    static const char *const screens[APP_SCREEN_COUNT] = {"home", "steps", "feed", "cards"};
+    static const char *const overlays[APP_OVERLAY_COUNT] = {"none", "menu", "style", "store"};
     static const char *const moods[APP_MOOD_COUNT] = {
         "idle", "happy", "sleepy", "hungry", "sad", "walk", "eating", "thinking", "surprised", "grumpy"
     };
     const app_game_snapshot_t s = app_game_read(((const host_state_t *)value)->game);
     int size = snprintf(output, capacity,
-                        "{\"phase\":\"%s\",\"tick\":%lu,\"screen\":\"%s\",\"mood\":\"%s\","
+                        "{\"phase\":\"%s\",\"tick\":%lu,\"screen\":\"%s\",\"overlay\":\"%s\","
+                        "\"store_page\":%u,\"owned\":%lu,\"anims_on\":%u,\"mood\":\"%s\","
                         "\"steps_total\":%lu,\"steps_today\":%lu,\"sparks\":%lu,\"hunger\":%u,"
                         "\"happiness\":%u,\"friendship\":%u,\"pixel_style\":%d,\"color\":%u,"
                         "\"cards\":{\"phase\":%d,\"current\":%u,\"pot\":%u,\"streak\":%u,\"result\":%d},"
                         "\"pointer_x\":%ld,\"pointer_y\":%ld,\"pointer_down\":%s,\"state_hash\":\"%08lx\"}",
                         s.paused ? "paused" : "running", (unsigned long)s.tick,
                         screens[s.screen < APP_SCREEN_COUNT ? s.screen : 0],
+                        overlays[s.overlay < APP_OVERLAY_COUNT ? s.overlay : 0],
+                        s.store_page, (unsigned long)s.owned, s.anims_on,
                         moods[s.mood < APP_MOOD_COUNT ? s.mood : 0],
                         (unsigned long)s.steps_total, (unsigned long)s.steps_today,
                         (unsigned long)s.sparks, s.hunger, s.happiness, s.friendship,

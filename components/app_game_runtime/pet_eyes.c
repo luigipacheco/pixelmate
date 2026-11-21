@@ -81,6 +81,13 @@ void pet_eyes_look_at(pet_eyes_t *e, float x, float y, app_eye_anchor_t a, uint1
     e->forced_ticks = ticks;
 }
 
+void pet_eyes_force_gaze(pet_eyes_t *e, float gx, float gy, uint16_t ticks)
+{
+    e->forced_x = clampf(gx, -GAZE_MAX_X * 1.5f, GAZE_MAX_X * 1.5f);
+    e->forced_y = clampf(gy, -GAZE_MAX_Y * 1.5f, GAZE_MAX_Y * 1.5f);
+    e->forced_ticks = ticks;
+}
+
 static void wander(pet_eyes_t *e)
 {
     if (e->look_timer) {
@@ -219,7 +226,36 @@ static bool eye_inside(const void *shape, float x, float y)
     return true;
 }
 
-void pet_eyes_draw(const pet_eyes_t *e, app_eye_anchor_t a, px_grid_t grid, Color color)
+typedef struct {
+    float cx, cy, outer, inner;
+} star_raster_t;
+
+/* Five-point star: find the edge between the two vertices around the point's
+ * angle and keep points on the center's side of it. */
+static bool star_inside(const void *shape, float x, float y)
+{
+    const star_raster_t *s = shape;
+    const float px = x - s->cx, py = y - s->cy;
+    if (px * px + py * py > s->outer * s->outer) {
+        return false;
+    }
+    const float step = 3.14159265f / 5.0f;
+    float angle = atan2f(px, -py);
+    if (angle < 0) {
+        angle += 2.0f * 3.14159265f;
+    }
+    const int seg = (int)(angle / step);
+    const float a0 = seg * step, a1 = (seg + 1) * step;
+    const float r0 = (seg % 2) ? s->inner : s->outer, r1 = (seg % 2) ? s->outer : s->inner;
+    const float x0 = r0 * sinf(a0), y0 = -r0 * cosf(a0);
+    const float x1 = r1 * sinf(a1), y1 = -r1 * cosf(a1);
+    const float edge_x = x1 - x0, edge_y = y1 - y0;
+    const float side_point = edge_x * (py - y0) - edge_y * (px - x0);
+    const float side_center = edge_x * (-y0) - edge_y * (-x0);
+    return side_point * side_center >= 0;
+}
+
+void pet_eyes_draw(const pet_eyes_t *e, app_eye_anchor_t a, px_grid_t grid, Color color, bool stars)
 {
     const float s = a.scale;
     if (s < 0.05f) {
@@ -240,6 +276,15 @@ void pet_eyes_draw(const pet_eyes_t *e, app_eye_anchor_t a, px_grid_t grid, Colo
             .cover = clampf(e->cur[EYE_COVER], 0.0f, 1.0f),
             .side = (float)side,
         };
+        if (stars) {
+            /* Stars spin-free but still squash on blinks and bounce with the eyes. */
+            const float outer = fmaxf(fminf(e->cur[EYE_W], e->cur[EYE_H]) * 0.62f * s
+                                      * (1.0f - 0.85f * blink), min_half);
+            const star_raster_t st = {r.cx, r.cy, outer, outer * 0.45f};
+            px_fill_shape(grid, st.cx - outer - 1, st.cy - outer - 1, st.cx + outer + 1,
+                          st.cy + outer + 1, star_inside, &st, color);
+            continue;
+        }
         r.r = clampf(e->cur[EYE_R] * s, 0.0f, fminf(r.hw, r.hh));
         px_fill_shape(grid, r.cx - r.hw - 1, r.cy - r.hh - 1, r.cx + r.hw + 1, r.cy + r.hh + 1,
                       eye_inside, &r, color);

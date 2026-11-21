@@ -8,7 +8,8 @@ persists the pet, polls the hardware pedometer and tracks the calendar day.
 | --- | --- |
 | `app_game_runtime.c` | Module ABI, input mapping, save, sensor and day polling |
 | `pet_view.c` | Transitions, particles, floaters, card/food animations, chrome |
-| `pet_screens.c` | Home, steps ring, feed, cards and settings content |
+| `pet_screens.c` | Home (with next-unlock hint), steps ring, feed and cards content |
+| `pet_panels.c` | Pull-down menu, style picker and store panels |
 | `pet_eyes.c` | Eye shapes per mood with spring physics, blinks and gaze |
 | `pixel_draw.c` | Grid rasterizer, 5x7 font, icons, palette |
 
@@ -36,7 +37,7 @@ advance the model, take its event bits, advance the view, then save if due.
   even while the pet is idle. Start is retried 6 times (every 5 s); if it
   never succeeds the model's software detector uses the board's IMU events.
 - Save: NVS namespace `pixel_pal`, key `pet`, version 2 (v1 records are
-  ignored; early builds could store an all-zero pet), the 36-byte
+  ignored; early builds could store an all-zero pet), the 32-byte
   `app_game_record_t`. Spending, settings and goals save after 2 s; step and stat
   drift after 30 s, to bound flash wear.
 - Day: from `time()` once the clock is set (after network time sync); until

@@ -8,6 +8,7 @@
     "components/app_game_runtime/app_game_runtime.c",
     "components/app_game_runtime/pet_view.c",
     "components/app_game_runtime/pet_screens.c",
+    "components/app_game_runtime/pet_panels.c",
     "components/app_game_runtime/pet_eyes.c",
     "components/app_game_runtime/pixel_draw.c"
   ]

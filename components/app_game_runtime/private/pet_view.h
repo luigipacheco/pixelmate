@@ -32,6 +32,10 @@ typedef struct {
     app_screen_t screen, prev_screen;
     float trans;              /* 0..1 screen transition progress (1 = settled). */
     int trans_dir;
+    app_overlay_t overlay_drawn;  /* Panel currently on screen (may be retracting). */
+    float overlay_pos;        /* 0 = hidden above, 1 = fully down. */
+    float anchor_x, anchor_y, anchor_s;  /* Eased eye placement. */
+    uint16_t dance_ticks;
     float steps_shown, sparks_shown, ring_shown;
     uint32_t prev_sparks;
     uint16_t spark_pulse, spark_flash;

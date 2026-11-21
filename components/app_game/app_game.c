@@ -11,7 +11,7 @@
 #define TICKS_PER_SECOND 30U
 enum {
     STEP_GOAL = 8000,
-    STEPS_PER_SPARK = 20,
+    STEPS_PER_SPARK = APP_STEPS_PER_SPARK,
     START_SPARKS = 30,
     START_HUNGER = 70,
     START_HAPPINESS = 70,
@@ -44,6 +44,25 @@ static const app_food_t s_foods[APP_FOOD_COUNT] = {
     {"MEGA", 60, 80, 20},
 };
 
+/* Prices in sparks (20 steps each): the priciest item is ~6000 steps. */
+static const app_store_item_t s_store[] = {
+    {APP_ITEM_COLOR, 1, 40, "ORANGE", "MOSAICO ORANGE EYES"},
+    {APP_ITEM_COLOR, 2, 60, "CYAN", "COOL CYAN EYES"},
+    {APP_ITEM_COLOR, 3, 80, "PINK", "HOT PINK EYES"},
+    {APP_ITEM_ANIM, APP_ANIM_TRAIL, 100, "SPARK TRAIL", "SPARKS FALL AS YOU WALK"},
+    {APP_ITEM_COLOR, 4, 100, "WHITE", "CLEAN WHITE EYES"},
+    {APP_ITEM_COLOR, 5, 120, "AMBER", "WARM AMBER EYES"},
+    {APP_ITEM_STYLE, APP_PIXEL_FINE, 80, "FINE PIXELS", "SMALLER SHARPER PIXELS"},
+    {APP_ITEM_ANIM, APP_ANIM_DANCE, 150, "STEP DANCE", "DANCES EVERY 100 STEPS"},
+    {APP_ITEM_STYLE, APP_PIXEL_SMOOTH, 150, "SMOOTH", "NO PIXELS AT ALL"},
+    {APP_ITEM_ANIM, APP_ANIM_STARS, 200, "STAR EYES", "STARS WHEN HAPPY"},
+    {APP_ITEM_ANIM, APP_ANIM_RAINBOW, 300, "RAINBOW", "COLORS WHILE WALKING"},
+};
+#define STORE_COUNT ((int)(sizeof(s_store) / sizeof(s_store[0])))
+#define STORE_PAGES ((STORE_COUNT + APP_STORE_PER_PAGE - 1) / APP_STORE_PER_PAGE)
+#define FREE_OWNED (APP_OWN_COLOR_BIT(0) | APP_OWN_STYLE_BIT(APP_PIXEL_CHUNKY))
+#define DANCE_EVERY_STEPS 100U
+
 struct app_game {
     app_game_config_t config;
     uint32_t tick;
@@ -52,6 +71,10 @@ struct app_game {
     bool pointer_down;
     int32_t press_x, press_y;
     app_screen_t screen;
+    app_overlay_t overlay;
+    uint8_t store_page;
+    uint32_t owned;
+    uint8_t anims_on;
     uint32_t events;
     uint32_t save_seq;
 
@@ -103,6 +126,10 @@ static void credit_steps(app_game_handle_t g, uint32_t steps)
     if (!steps) {
         return;
     }
+    if ((g->anims_on & (1U << APP_ANIM_DANCE))
+            && (g->steps_total + steps) / DANCE_EVERY_STEPS > g->steps_total / DANCE_EVERY_STEPS) {
+        g->events |= APP_EVENT_DANCE;
+    }
     g->steps_total += steps;
     g->steps_today += steps;
     uint32_t progress = g->spark_progress + steps;
@@ -128,6 +155,10 @@ static void credit_steps(app_game_handle_t g, uint32_t steps)
 static void fresh_pet(app_game_handle_t g)
 {
     g->screen = APP_SCREEN_HOME;
+    g->overlay = APP_OVERLAY_NONE;
+    g->store_page = 0;
+    g->owned = FREE_OWNED;
+    g->anims_on = 0;
     g->steps_total = g->steps_today = 0;
     g->day = 0;
     g->sparks = START_SPARKS;
@@ -286,36 +317,169 @@ static void tap_cards(app_game_handle_t g, int32_t x, int32_t y)
     changed(g);
 }
 
-static void tap_settings(app_game_handle_t g, int32_t x, int32_t y)
+static void set_overlay(app_game_handle_t g, app_overlay_t overlay)
 {
+    if (g->overlay != overlay) {
+        g->overlay = overlay;
+        g->events |= APP_EVENT_OVERLAY;
+    }
+}
+
+static uint32_t item_bit(const app_store_item_t *item)
+{
+    switch (item->kind) {
+    case APP_ITEM_COLOR: return APP_OWN_COLOR_BIT(item->value);
+    case APP_ITEM_STYLE: return APP_OWN_STYLE_BIT(item->value);
+    default: return APP_OWN_ANIM_BIT(item->value);
+    }
+}
+
+static void open_store_at(app_game_handle_t g, app_item_kind_t kind, uint8_t value)
+{
+    const int index = app_game_store_find(kind, value);
+    if (index >= 0) {
+        g->store_page = (uint8_t)(index / APP_STORE_PER_PAGE);
+    }
+    set_overlay(g, APP_OVERLAY_STORE);
+}
+
+/** Select an owned color/style, or toggle an owned animation. */
+static void equip(app_game_handle_t g, const app_store_item_t *item, bool just_bought)
+{
+    switch (item->kind) {
+    case APP_ITEM_COLOR: g->color_index = item->value; break;
+    case APP_ITEM_STYLE: g->pixel_style = (app_pixel_style_t)item->value; break;
+    default:
+        if (just_bought) {
+            g->anims_on |= (uint8_t)(1U << item->value);
+        } else {
+            g->anims_on ^= (uint8_t)(1U << item->value);
+        }
+        break;
+    }
+    g->events |= APP_EVENT_SETTINGS;
+    changed(g);
+}
+
+static void tap_style(app_game_handle_t g, int32_t x, int32_t y)
+{
+    if (app_rect_hit(app_panel_back_rect(), x, y)) {
+        set_overlay(g, APP_OVERLAY_MENU);
+        return;
+    }
     for (int i = 0; i < APP_PIXEL_COUNT; ++i) {
-        if (app_rect_hit(app_settings_pixel_rect(i), x, y)) {
-            g->pixel_style = (app_pixel_style_t)i;
-            g->events |= APP_EVENT_SETTINGS;
-            react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
-            changed(g);
+        if (!app_rect_hit(app_style_pixel_rect(i), x, y)) {
+            continue;
+        }
+        if (!(g->owned & APP_OWN_STYLE_BIT(i))) {
+            open_store_at(g, APP_ITEM_STYLE, (uint8_t)i);
             return;
         }
+        g->pixel_style = (app_pixel_style_t)i;
+        g->events |= APP_EVENT_SETTINGS;
+        react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
+        changed(g);
+        return;
     }
     for (int i = 0; i < APP_COLOR_COUNT; ++i) {
-        if (app_rect_hit(app_settings_color_rect(i), x, y)) {
-            g->color_index = (uint8_t)i;
-            g->events |= APP_EVENT_SETTINGS;
-            react(g, APP_MOOD_HAPPY, REACT_SURPRISE_TICKS);
-            changed(g);
+        if (!app_rect_hit(app_style_color_rect(i), x, y)) {
+            continue;
+        }
+        if (!(g->owned & APP_OWN_COLOR_BIT(i))) {
+            open_store_at(g, APP_ITEM_COLOR, (uint8_t)i);
             return;
         }
+        g->color_index = (uint8_t)i;
+        g->events |= APP_EVENT_SETTINGS;
+        react(g, APP_MOOD_HAPPY, REACT_SURPRISE_TICKS);
+        changed(g);
+        return;
+    }
+}
+
+static void tap_store(app_game_handle_t g, int32_t x, int32_t y)
+{
+    if (app_rect_hit(app_panel_back_rect(), x, y)) {
+        set_overlay(g, APP_OVERLAY_MENU);
+        return;
+    }
+    for (int row = 0; row < APP_STORE_PER_PAGE; ++row) {
+        const int index = g->store_page * APP_STORE_PER_PAGE + row;
+        if (index >= STORE_COUNT) {
+            return;
+        }
+        if (!app_rect_hit(app_store_row_rect(row), x, y)) {
+            continue;
+        }
+        const app_store_item_t *item = &s_store[index];
+        const uint32_t bit = item_bit(item);
+        if (g->owned & bit) {
+            equip(g, item, false);
+            return;
+        }
+        if (g->sparks < item->cost) {
+            react(g, APP_MOOD_GRUMPY, REACT_GRUMPY_TICKS);
+            g->events |= APP_EVENT_NO_SPARKS;
+            return;
+        }
+        g->sparks -= item->cost;
+        g->owned |= bit;
+        equip(g, item, true);
+        react(g, APP_MOOD_HAPPY, REACT_WIN_TICKS);
+        g->events |= APP_EVENT_BOUGHT;
+        return;
+    }
+}
+
+static void tap_menu(app_game_handle_t g, int32_t x, int32_t y)
+{
+    if (app_rect_hit(app_menu_store_rect(), x, y)) {
+        set_overlay(g, APP_OVERLAY_STORE);
+    } else if (app_rect_hit(app_menu_style_rect(), x, y)) {
+        set_overlay(g, APP_OVERLAY_STYLE);
+    } else if (y >= APP_MENU_H) {
+        set_overlay(g, APP_OVERLAY_NONE);
     }
 }
 
 static void handle_tap(app_game_handle_t g, int32_t x, int32_t y)
 {
+    switch (g->overlay) {
+    case APP_OVERLAY_MENU: tap_menu(g, x, y); return;
+    case APP_OVERLAY_STYLE: tap_style(g, x, y); return;
+    case APP_OVERLAY_STORE: tap_store(g, x, y); return;
+    default: break;
+    }
     switch (g->screen) {
     case APP_SCREEN_HOME: tap_home(g, x, y); break;
     case APP_SCREEN_FEED: tap_feed(g, x, y); break;
     case APP_SCREEN_CARDS: tap_cards(g, x, y); break;
-    case APP_SCREEN_SETTINGS: tap_settings(g, x, y); break;
     default: break;
+    }
+}
+
+static void handle_swipe(app_game_handle_t g, int32_t dx, int32_t dy)
+{
+    const int32_t adx = abs(dx), ady = abs(dy);
+    if (ady >= APP_PULL_MIN_PX && ady > adx) {
+        if (g->overlay == APP_OVERLAY_NONE && dy > 0 && g->press_y < APP_PULL_ZONE_H) {
+            set_overlay(g, APP_OVERLAY_MENU);
+        } else if (g->overlay != APP_OVERLAY_NONE && dy < 0) {
+            set_overlay(g, APP_OVERLAY_NONE);
+        }
+        return;
+    }
+    if (adx < APP_SWIPE_MIN_PX || adx <= ady) {
+        return;
+    }
+    if (g->overlay == APP_OVERLAY_STORE) {
+        const int page = (int)g->store_page + (dx < 0 ? 1 : -1);
+        if (page >= 0 && page < STORE_PAGES) {
+            g->store_page = (uint8_t)page;
+            g->events |= APP_EVENT_STORE_PAGE;
+        }
+    } else if (g->overlay == APP_OVERLAY_NONE) {
+        go_screen(g, dx < 0 ? 1 : -1);
     }
 }
 
@@ -348,11 +512,10 @@ void app_game_set_pointer(app_game_handle_t g, int32_t x, int32_t y, bool presse
     }
     const int32_t dx = x - g->press_x;
     const int32_t dy = y - g->press_y;
-    const int32_t adx = abs(dx), ady = abs(dy);
-    if (adx >= APP_SWIPE_MIN_PX && adx > ady) {
-        go_screen(g, dx < 0 ? 1 : -1);
-    } else if (adx <= APP_TAP_SLOP_PX && ady <= APP_TAP_SLOP_PX) {
+    if (abs(dx) <= APP_TAP_SLOP_PX && abs(dy) <= APP_TAP_SLOP_PX) {
         handle_tap(g, g->press_x, g->press_y);
+    } else {
+        handle_swipe(g, dx, dy);
     }
 }
 
@@ -412,7 +575,8 @@ static app_mood_t compute_mood(const struct app_game *g)
     if (g->idle_ticks > SLEEP_AFTER_TICKS) {
         return APP_MOOD_SLEEPY;
     }
-    if (g->screen == APP_SCREEN_CARDS && g->cards.view.phase == APP_CARDS_GUESS) {
+    if (g->overlay == APP_OVERLAY_NONE && g->screen == APP_SCREEN_CARDS
+            && g->cards.view.phase == APP_CARDS_GUESS) {
         return APP_MOOD_THINKING;
     }
     if (g->hunger < LOW_STAT) {
@@ -481,7 +645,11 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .pointer_down = g->pointer_down,
         .paused = g->paused,
         .screen = g->screen,
+        .overlay = g->overlay,
+        .store_page = g->store_page,
         .mood = g->mood,
+        .owned = g->owned,
+        .anims_on = g->anims_on,
         .steps_total = g->steps_total,
         .steps_today = g->steps_today,
         .step_goal = STEP_GOAL,
@@ -512,6 +680,26 @@ const app_food_t *app_game_food(int index)
     return index >= 0 && index < APP_FOOD_COUNT ? &s_foods[index] : NULL;
 }
 
+const app_store_item_t *app_game_store_item(int index)
+{
+    return index >= 0 && index < STORE_COUNT ? &s_store[index] : NULL;
+}
+
+int app_game_store_count(void)
+{
+    return STORE_COUNT;
+}
+
+int app_game_store_find(app_item_kind_t kind, uint8_t value)
+{
+    for (int i = 0; i < STORE_COUNT; ++i) {
+        if (s_store[i].kind == kind && s_store[i].value == value) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 void app_game_export(app_game_handle_t g, app_game_record_t *r)
 {
     if (!g || !r) {
@@ -530,6 +718,8 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->color_index = g->color_index;
     r->best_streak = g->cards.view.best_streak;
     r->goal_awarded = g->goal_awarded;
+    r->owned = g->owned;
+    r->anims_on = g->anims_on;
 }
 
 void app_game_import(app_game_handle_t g, const app_game_record_t *r)
@@ -545,8 +735,19 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
     g->friendship = r->friendship > FRIENDSHIP_MAX ? FRIENDSHIP_MAX : r->friendship;
     g->hunger = r->hunger > STAT_MAX ? STAT_MAX : r->hunger;
     g->happiness = r->happiness > STAT_MAX ? STAT_MAX : r->happiness;
-    g->pixel_style = r->pixel_style < APP_PIXEL_COUNT ? (app_pixel_style_t)r->pixel_style : APP_PIXEL_CHUNKY;
-    g->color_index = r->color_index < APP_COLOR_COUNT ? r->color_index : 0;
+    /* Only owned things can be selected or switched on. */
+    g->owned = r->owned | FREE_OWNED;
+    uint8_t anims = 0;
+    for (int i = 0; i < APP_ANIM_COUNT; ++i) {
+        if ((r->anims_on & (1U << i)) && (g->owned & APP_OWN_ANIM_BIT(i))) {
+            anims |= (uint8_t)(1U << i);
+        }
+    }
+    g->anims_on = anims;
+    g->pixel_style = r->pixel_style < APP_PIXEL_COUNT && (g->owned & APP_OWN_STYLE_BIT(r->pixel_style))
+                     ? (app_pixel_style_t)r->pixel_style : APP_PIXEL_CHUNKY;
+    g->color_index = r->color_index < APP_COLOR_COUNT && (g->owned & APP_OWN_COLOR_BIT(r->color_index))
+                     ? r->color_index : 0;
     g->cards.view.best_streak = r->best_streak;
     g->goal_awarded = r->goal_awarded != 0;
     g->events |= APP_EVENT_SETTINGS;

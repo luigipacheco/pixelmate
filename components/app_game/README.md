@@ -33,6 +33,17 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
 - Hunger (fullness) drops 1 point every 2 minutes, happiness every 3 minutes
   (twice as fast while hungry). Petting, food and card wins raise them.
 - A swipe is at least 70 px of horizontal travel; a tap moves at most 28 px.
+  Left/right swipes move between Home, Steps, Feed and Cards.
+- A downward drag (>= 70 px) starting in the top 90 px opens the menu overlay;
+  an upward drag closes any overlay. The menu leads to Style and Store; their
+  BACK button returns to the menu. In the store, left/right swipes change page.
+- Store: colors, pixel styles and animations cost sparks (see `s_store` in
+  `app_game.c`). Lime and chunky are free. Buying deducts sparks and equips the
+  item; tapping an owned color/style selects it, an owned animation toggles.
+  Style only selects owned items; a locked one opens the store at that item.
+- `owned` uses the `APP_OWN_*_BIT` layout; `app_game_import()` always restores
+  the free items and drops selections or animations that are not owned.
+- With STEP DANCE on, crossing each 100 total steps raises `APP_EVENT_DANCE`.
 - Step sources: `app_game_set_sensor_steps()` (a cumulative hardware count; the
   first reading is a baseline) disables the software detector fed by
   `app_game_add_accel()`. `app_game_add_steps()` credits directly.

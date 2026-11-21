@@ -22,9 +22,17 @@ typedef enum {
     APP_SCREEN_STEPS,
     APP_SCREEN_FEED,
     APP_SCREEN_CARDS,
-    APP_SCREEN_SETTINGS,
     APP_SCREEN_COUNT,
 } app_screen_t;
+
+/** Panels that slide down over the swipeable screens. */
+typedef enum {
+    APP_OVERLAY_NONE = 0,
+    APP_OVERLAY_MENU,      /**< Pulled down from the top edge. */
+    APP_OVERLAY_STYLE,     /**< Pick owned pixel style and color. */
+    APP_OVERLAY_STORE,     /**< Buy colors, styles and animations with sparks. */
+    APP_OVERLAY_COUNT,
+} app_overlay_t;
 
 typedef enum {
     APP_MOOD_IDLE = 0,
@@ -47,7 +55,42 @@ typedef enum {
     APP_PIXEL_COUNT,
 } app_pixel_style_t;
 
-enum { APP_COLOR_COUNT = 6, APP_FOOD_COUNT = 3, APP_CARDS_DEAL_COST = 5 /* sparks */ };
+enum {
+    APP_COLOR_COUNT = 6,
+    APP_FOOD_COUNT = 3,
+    APP_CARDS_DEAL_COST = 5,     /**< Sparks. */
+    APP_STEPS_PER_SPARK = 20,
+};
+
+/** Unlockable animations, bought in the store and toggled on/off. */
+typedef enum {
+    APP_ANIM_TRAIL = 0,    /**< Sparks fall from the eyes on every step. */
+    APP_ANIM_DANCE,        /**< A little dance every 100 steps. */
+    APP_ANIM_STARS,        /**< Star-shaped eyes when happy. */
+    APP_ANIM_RAINBOW,      /**< Color-cycling eyes while walking. */
+    APP_ANIM_COUNT,
+} app_anim_t;
+
+typedef enum {
+    APP_ITEM_COLOR = 0,
+    APP_ITEM_STYLE,
+    APP_ITEM_ANIM,
+} app_item_kind_t;
+
+typedef struct {
+    app_item_kind_t kind;
+    uint8_t value;         /**< Color index, app_pixel_style_t or app_anim_t. */
+    uint16_t cost;         /**< Sparks. */
+    const char *name;      /**< Upper-case, pixel-font drawable. */
+    const char *blurb;     /**< One short upper-case line. */
+} app_store_item_t;
+
+enum { APP_STORE_PER_PAGE = 4 };
+
+/* Ownership bit layout in app_game_snapshot_t.owned. */
+#define APP_OWN_COLOR_BIT(i) (1UL << (i))
+#define APP_OWN_STYLE_BIT(i) (1UL << (8 + (i)))
+#define APP_OWN_ANIM_BIT(i)  (1UL << (16 + (i)))
 
 typedef enum {
     APP_CARDS_READY = 0,   /**< Waiting for a paid deal. */
@@ -77,11 +120,16 @@ enum {
     APP_EVENT_SCREEN = 1U << 10,
     APP_EVENT_SETTINGS = 1U << 11,
     APP_EVENT_WOKE = 1U << 12,
+    APP_EVENT_OVERLAY = 1U << 13,
+    APP_EVENT_BOUGHT = 1U << 14,
+    APP_EVENT_DANCE = 1U << 15,
+    APP_EVENT_STORE_PAGE = 1U << 16,
 };
 
 /** Events that change spendable or configured data and deserve a prompt save. */
 #define APP_EVENTS_SAVE_NOW (APP_EVENT_ATE | APP_EVENT_CARD_DEAL | APP_EVENT_CARD_REVEAL | \
-                             APP_EVENT_CASH_OUT | APP_EVENT_SETTINGS | APP_EVENT_GOAL)
+                             APP_EVENT_CASH_OUT | APP_EVENT_SETTINGS | APP_EVENT_GOAL | \
+                             APP_EVENT_BOUGHT)
 
 typedef struct {
     const char *name;   /**< Upper-case label drawable by the pixel font. */
@@ -107,7 +155,11 @@ typedef struct {
     bool pointer_down;
     bool paused;
     app_screen_t screen;
+    app_overlay_t overlay;
+    uint8_t store_page;         /**< 0..store pages-1. */
     app_mood_t mood;
+    uint32_t owned;             /**< APP_OWN_*_BIT flags. */
+    uint8_t anims_on;           /**< Bit per app_anim_t; only owned ones can be on. */
     uint32_t steps_total;
     uint32_t steps_today;
     uint32_t step_goal;
@@ -122,12 +174,13 @@ typedef struct {
     uint32_t save_seq;          /**< Increments whenever persistent data changes. */
 } app_game_snapshot_t;
 
-/** Persistent record: plain data, 36 bytes. Bump the save version on layout change. */
+/** Persistent record: plain data, 32 bytes. Bump the save version on layout change. */
 typedef struct {
     uint32_t steps_total;
     uint32_t steps_today;
     int32_t day;                /**< Days since epoch of steps_today, 0 if unknown. */
     uint32_t sparks;
+    uint32_t owned;             /**< APP_OWN_*_BIT flags. */
     uint16_t spark_progress;    /**< Steps toward the next spark. */
     uint16_t friendship;
     uint8_t hunger;
@@ -136,7 +189,8 @@ typedef struct {
     uint8_t color_index;
     uint8_t best_streak;
     uint8_t goal_awarded;
-    uint16_t reserved;
+    uint8_t anims_on;
+    uint8_t reserved;
 } app_game_record_t;
 
 typedef struct {
@@ -175,6 +229,12 @@ app_game_snapshot_t app_game_read(app_game_handle_t handle);
 uint32_t app_game_take_events(app_game_handle_t handle);
 /** Food table entry, or NULL when index is out of range. */
 const app_food_t *app_game_food(int index);
+/** Store catalog entry, or NULL when index is out of range. */
+const app_store_item_t *app_game_store_item(int index);
+/** Number of store catalog entries. */
+int app_game_store_count(void);
+/** Catalog index selling this item, or -1 if it is free/not sold. */
+int app_game_store_find(app_item_kind_t kind, uint8_t value);
 
 void app_game_export(app_game_handle_t handle, app_game_record_t *record);
 /** Load a record; out-of-range fields are clamped. NULL arguments are no-ops. */

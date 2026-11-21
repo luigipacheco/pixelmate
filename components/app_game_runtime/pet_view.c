@@ -20,7 +20,10 @@ enum {
     SPARK_FLASH_TICKS = 24,
     Z_PERIOD_TICKS = 34,
     REVEAL_LOOK_TICKS = 30,
+    OVERLAY_TICKS = 8,
+    DANCE_TICKS = 72,
 };
+#define ANCHOR_EASE 0.25f
 static const Color WARN = {255, 48, 48, 255};
 static const Color CONFETTI_WHITE = {240, 240, 232, 255};
 
@@ -73,17 +76,62 @@ static void floater(pet_view_t *v, const char *text, float x, float y, Color col
 
 static app_eye_anchor_t current_anchor(const pet_view_t *v)
 {
-    const app_eye_anchor_t to = app_eye_anchor(v->screen);
-    if (v->trans >= 1.0f) {
-        return to;
-    }
-    const app_eye_anchor_t from = app_eye_anchor(v->prev_screen);
-    const float e = screens_ease_out(v->trans);
     return (app_eye_anchor_t) {
-        (int16_t)(from.cx + (to.cx - from.cx) * e),
-        (int16_t)(from.cy + (to.cy - from.cy) * e),
-        from.scale + (to.scale - from.scale) * e,
+        (int16_t)v->anchor_x, (int16_t)v->anchor_y, v->anchor_s
     };
+}
+
+/* Eyes glide toward where the current screen/panel wants them. */
+static void ease_anchor(pet_view_t *v, const app_game_snapshot_t *s, bool snap)
+{
+    const app_eye_anchor_t to = app_eye_anchor(s->screen, s->overlay);
+    const float k = snap ? 1.0f : ANCHOR_EASE;
+    v->anchor_x += (to.cx - v->anchor_x) * k;
+    v->anchor_y += (to.cy - v->anchor_y) * k;
+    v->anchor_s += (to.scale - v->anchor_s) * k;
+}
+
+/* Retract the drawn panel before dropping a different one. */
+static void update_overlay(pet_view_t *v, app_overlay_t target)
+{
+    if (v->overlay_drawn != target) {
+        if (v->overlay_drawn != APP_OVERLAY_NONE && v->overlay_pos > 0) {
+            v->overlay_pos -= 1.0f / OVERLAY_TICKS;
+            if (v->overlay_pos > 0) {
+                return;
+            }
+        }
+        v->overlay_drawn = target;
+        v->overlay_pos = 0;
+    }
+    if (v->overlay_drawn != APP_OVERLAY_NONE && v->overlay_pos < 1.0f) {
+        v->overlay_pos += 1.0f / OVERLAY_TICKS;
+        if (v->overlay_pos > 1.0f) {
+            v->overlay_pos = 1.0f;
+        }
+    }
+}
+
+static Color rainbow(uint32_t t)
+{
+    /* Hue wheel in six linear segments. */
+    const float h = (float)(t % 90U) / 15.0f;
+    const int seg = (int)h;
+    const float f = h - seg;
+    const unsigned char up = (unsigned char)(255 * f), down = (unsigned char)(255 * (1 - f));
+    switch (seg) {
+    case 0: return (Color) {255, up, 0, 255};
+    case 1: return (Color) {down, 255, 0, 255};
+    case 2: return (Color) {0, 255, up, 255};
+    case 3: return (Color) {0, down, 255, 255};
+    case 4: return (Color) {up, 0, 255, 255};
+    default: return (Color) {255, 0, down, 255};
+    }
+}
+
+static bool anim_on(const app_game_snapshot_t *s, app_anim_t anim)
+{
+    return (s->anims_on & (1U << anim)) != 0;
 }
 
 static void advance(float *t, int ticks)
@@ -122,6 +170,24 @@ static void on_events(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
     }
     if (ev & APP_EVENT_STEP) {
         pet_eyes_kick(&v->eyes, -3.5f);
+        if (anim_on(s, APP_ANIM_TRAIL) && a.scale > 0.05f) {
+            for (int side = -1; side <= 1; side += 2) {
+                spawn(v, P_BOLT, a.cx + side * 78 * a.scale + rand_range(v, -20, 20) * a.scale,
+                      a.cy + 60 * a.scale, rand_range(v, -0.8f, 0.8f), rand_range(v, 0.5f, 2.0f),
+                      0.25f, 26, side < 0 ? c : acc);
+            }
+        }
+    }
+    if (ev & APP_EVENT_DANCE) {
+        char text[VIEW_FLOATER_TEXT];
+        snprintf(text, sizeof(text), "%lu", (unsigned long)(s->steps_total / 100U * 100U));
+        floater(v, text, 240, 90, acc);
+        v->dance_ticks = DANCE_TICKS;
+    }
+    if (ev & APP_EVENT_BOUGHT) {
+        floater(v, "NEW!", 240, 300, acc);
+        burst(v, P_SQUARE, 240, 200, 26, 9.0f, 0.35f, c, CONFETTI_WHITE);
+        burst(v, P_BOLT, 240, 200, 8, 7.0f, 0.3f, acc, c);
     }
     if (ev & APP_EVENT_GOAL) {
         floater(v, "GOAL!", 240, 300, acc);
@@ -205,9 +271,21 @@ void pet_view_update(pet_view_t *v, const app_game_snapshot_t *s, uint32_t event
         v->steps_shown = (float)s->steps_today;
         v->sparks_shown = (float)s->sparks;
         v->prev_sparks = s->sparks;
+        ease_anchor(v, s, true);
     }
+    ease_anchor(v, s, false);
+    update_overlay(v, s->overlay);
     on_events(v, s, events);
     v->prev_sparks = s->sparks;
+    if (v->dance_ticks) {
+        /* Side-to-side shimmy with a hop on every beat. */
+        --v->dance_ticks;
+        const float beat = (v->dance_ticks / 9U) % 2U ? 1.0f : -1.0f;
+        pet_eyes_force_gaze(&v->eyes, beat * 30.0f, -6.0f, 2);
+        if (v->dance_ticks % 9U == 0U) {
+            pet_eyes_kick(&v->eyes, -7.0f);
+        }
+    }
 
     advance(&v->trans, TRANSITION_TICKS);
     advance(&v->flip_t, FLIP_TICKS);
@@ -302,13 +380,21 @@ static void draw_food_toss(const pet_view_t *v, const draw_ctx_t *d)
             scale, d->color, d->accent, d->gap);
 }
 
-static void draw_top_bar(const pet_view_t *v, const draw_ctx_t *d)
+static void draw_steps_counter(const pet_view_t *v, const draw_ctx_t *d)
 {
     char text[16];
     px_icon(PX_ICON_SHOE, 18, 18, 3, d->color, d->accent, d->gap);
     snprintf(text, sizeof(text), "%lu", (unsigned long)(v->steps_shown + 0.5f));
     px_text(text, 50, 18, 3, d->color, d->gap);
+    /* Grabber: pull down from here for the menu. */
+    DrawRectangle(216, 6, 48, 4, d->dim);
+    DrawRectangle(228, 14, 24, 4, d->dim);
+}
 
+/* Drawn above panels too, so the store always shows the balance. */
+static void draw_sparks_counter(const pet_view_t *v, const draw_ctx_t *d)
+{
+    char text[16];
     const int scale = v->spark_pulse ? 4 : 3;
     const bool flash = v->spark_flash && ((v->t / 3U) & 1U);
     const Color c = flash ? WARN : d->color;
@@ -339,16 +425,30 @@ void pet_view_draw(const pet_view_t *v, const app_game_snapshot_t *s)
         .color = c, .accent = px_accent(s->color_index), .dim = px_scale(c, 0.24f),
     };
     ClearBackground(BLACK);
-    if (v->trans < 1.0f) {
-        const float e = screens_ease_out(v->trans);
-        screens_draw(&d, v->prev_screen, (int)(-v->trans_dir * APP_VIEW_W * e));
-        screens_draw(&d, v->screen, (int)(v->trans_dir * APP_VIEW_W * (1.0f - e)));
-    } else {
-        screens_draw(&d, v->screen, 0);
+    const bool panel = v->overlay_drawn != APP_OVERLAY_NONE;
+    const bool covered = panel && v->overlay_pos >= 1.0f
+                         && screens_overlay_height(v->overlay_drawn) >= APP_VIEW_H;
+    if (!covered) {
+        if (v->trans < 1.0f) {
+            const float e = screens_ease_out(v->trans);
+            screens_draw(&d, v->prev_screen, (int)(-v->trans_dir * APP_VIEW_W * e));
+            screens_draw(&d, v->screen, (int)(v->trans_dir * APP_VIEW_W * (1.0f - e)));
+        } else {
+            screens_draw(&d, v->screen, 0);
+        }
+        draw_steps_counter(v, &d);
+        draw_dots(v, &d);
     }
-    pet_eyes_draw(&v->eyes, current_anchor(v), grid, c);
+    if (panel) {
+        const int height = screens_overlay_height(v->overlay_drawn);
+        const int oy = -(int)(height * (1.0f - screens_ease_out(v->overlay_pos)));
+        screens_draw_overlay(&d, v->overlay_drawn, oy);
+    }
+    /* Unlocked animations change how the eyes are drawn. */
+    const bool rainbow_on = anim_on(s, APP_ANIM_RAINBOW) && s->mood == APP_MOOD_WALK;
+    const bool stars = anim_on(s, APP_ANIM_STARS) && s->mood == APP_MOOD_HAPPY;
+    pet_eyes_draw(&v->eyes, current_anchor(v), grid, rainbow_on ? rainbow(v->t) : c, stars);
     draw_food_toss(v, &d);
     draw_particles(v, &d);
-    draw_top_bar(v, &d);
-    draw_dots(v, &d);
+    draw_sparks_counter(v, &d);
 }

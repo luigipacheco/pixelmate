@@ -12,10 +12,15 @@ react to how much you walk, what you feed it and how you play with it.
 - **Moods:** idle, happy, sleepy, hungry, sad, walking, eating, thinking,
   surprised and grumpy, each with its own eye shape, springy motion, blinks
   and gaze that follows your finger.
-- **Style:** pixel size (chunky / fine / smooth) and six eye colors.
+- **Store:** walking pays for unlocks. Buy eye colors (40–120 sparks), finer
+  pixel styles (80–150) and animations (100–300): a spark trail as you walk, a
+  dance every 100 steps, star eyes when happy and rainbow eyes while walking.
+  Home always shows how many steps until your next unlock.
+- **Style:** pick among the pixel sizes and colors you own.
 - Progress is saved to NVS.
 
-Swipe left/right between Home, Steps, Feed, Cards and Settings. Tap the eyes to pet.
+Swipe left/right between Home, Steps, Feed and Cards. Pull down from the top
+edge for the menu (Store, Style); swipe up to close. Tap the eyes to pet.
 
 ## Build and run
 

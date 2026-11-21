@@ -36,4 +36,8 @@ void pet_eyes_kick(pet_eyes_t *eyes, float impulse);
 void pet_eyes_shake(pet_eyes_t *eyes);
 /** Look toward a screen point for `ticks` ticks. */
 void pet_eyes_look_at(pet_eyes_t *eyes, float x, float y, app_eye_anchor_t anchor, uint16_t ticks);
-void pet_eyes_draw(const pet_eyes_t *eyes, app_eye_anchor_t anchor, px_grid_t grid, Color color);
+/** Override gaze directly in home-scale pixels (dances, scripted looks). */
+void pet_eyes_force_gaze(pet_eyes_t *eyes, float gx, float gy, uint16_t ticks);
+/** Draw both eyes; `stars` swaps the rounded shape for five-point stars. */
+void pet_eyes_draw(const pet_eyes_t *eyes, app_eye_anchor_t anchor, px_grid_t grid, Color color,
+                   bool stars);

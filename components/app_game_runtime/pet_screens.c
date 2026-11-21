@@ -115,8 +115,29 @@ static void draw_home(const draw_ctx_t *d, int ox)
     } else if (s->mood == APP_MOOD_WALK) {
         hint = "WALKING";
     }
+    if (s->overlay != APP_OVERLAY_NONE) {
+        return;   /* The menu's eyes peek where the hint would be. */
+    }
     if (hint) {
         px_text_center(hint, 240 + ox, 402, 3, d->dim, d->gap);
+        return;
+    }
+    /* Otherwise nudge toward the next unlock: that's what walking buys. */
+    const app_store_item_t *next = screens_next_unlock(s);
+    if (!next) {
+        return;
+    }
+    char text[32];
+    if (s->sparks >= next->cost) {
+        snprintf(text, sizeof(text), "%s READY", next->name);
+        px_text_center(text, 240 + ox, 396, 3, d->accent, d->gap);
+        px_text_center("PULL DOWN FOR STORE", 240 + ox, 424, 2, d->dim, false);
+    } else {
+        snprintf(text, sizeof(text), "NEXT: %s", next->name);
+        px_text_center(text, 240 + ox, 392, 2, d->dim, false);
+        snprintf(text, sizeof(text), "%lu STEPS TO GO",
+                 (unsigned long)(next->cost - s->sparks) * APP_STEPS_PER_SPARK);
+        px_text_center(text, 240 + ox, 412, 3, d->color, d->gap);
     }
 }
 
@@ -173,16 +194,22 @@ static void draw_card(const draw_ctx_t *d, int cx, int y, float width, bool face
     }
 }
 
+void screens_button(const draw_ctx_t *d, app_rect_t r, int ox, int oy, const char *label,
+                    int scale, Color color, bool filled)
+{
+    if (filled) {
+        px_box(r.x + ox, r.y + oy, r.w, r.h, 0, color);
+    } else {
+        px_box(r.x + ox, r.y + oy, r.w, r.h, 3, color);
+    }
+    px_text_center(label, r.x + ox + r.w / 2, r.y + oy + (r.h - 7 * scale) / 2, scale,
+                   filled ? INK : color, d->gap);
+}
+
 static void draw_button(const draw_ctx_t *d, app_rect_t r, int ox, const char *label,
                         int scale, Color color, bool filled)
 {
-    if (filled) {
-        px_box(r.x + ox, r.y, r.w, r.h, 0, color);
-    } else {
-        px_box(r.x + ox, r.y, r.w, r.h, 3, color);
-    }
-    px_text_center(label, r.x + ox + r.w / 2, r.y + (r.h - 7 * scale) / 2, scale,
-                   filled ? INK : color, d->gap);
+    screens_button(d, r, ox, 0, label, scale, color, filled);
 }
 
 static void draw_cards(const draw_ctx_t *d, int ox)
@@ -233,28 +260,6 @@ static void draw_cards(const draw_ctx_t *d, int ox)
     draw_button(d, app_cards_cash_rect(), ox, "CASH", 3, can_cash ? d->color : d->dim, can_cash);
 }
 
-/* ---- Settings -------------------------------------------------------- */
-
-static void draw_settings(const draw_ctx_t *d, int ox)
-{
-    static const char *const names[APP_PIXEL_COUNT] = {"CHUNKY", "FINE", "SMOOTH"};
-    const app_game_snapshot_t *s = d->snap;
-    px_text_center("PIXELS", 240 + ox, 262, 2, d->dim, false);
-    for (int i = 0; i < APP_PIXEL_COUNT; ++i) {
-        const bool on = s->pixel_style == (app_pixel_style_t)i;
-        draw_button(d, app_settings_pixel_rect(i), ox, names[i], 2, on ? d->color : d->dim, on);
-    }
-    px_text_center("COLOR", 240 + ox, 350, 2, d->dim, false);
-    for (int i = 0; i < APP_COLOR_COUNT; ++i) {
-        const app_rect_t r = app_settings_color_rect(i);
-        const bool on = s->color_index == i;
-        if (on) {
-            px_box(r.x + ox - 4, r.y - 4, r.w + 8, r.h + 8, 3, CARD_FACE);
-        }
-        px_box(r.x + ox + 4, r.y + 4, r.w - 8, r.h - 8, 0, px_color(i));
-    }
-}
-
 void screens_draw(const draw_ctx_t *d, app_screen_t screen, int ox)
 {
     if (ox <= -APP_VIEW_W || ox >= APP_VIEW_W) {
@@ -265,7 +270,6 @@ void screens_draw(const draw_ctx_t *d, app_screen_t screen, int ox)
     case APP_SCREEN_STEPS: draw_steps(d, ox); break;
     case APP_SCREEN_FEED: draw_feed(d, ox); break;
     case APP_SCREEN_CARDS: draw_cards(d, ox); break;
-    case APP_SCREEN_SETTINGS: draw_settings(d, ox); break;
     default: break;
     }
 }

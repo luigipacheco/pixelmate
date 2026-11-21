@@ -46,4 +46,8 @@ extern const char *const PX_ICON_SHOE[];
 extern const char *const PX_ICON_HEART[];
 extern const char *const PX_ICON_HEART_EMPTY[];
 extern const char *const PX_ICON_BATTERY_LOW[];
+extern const char *const PX_ICON_LOCK[];
+extern const char *const PX_ICON_EYE[];
+extern const char *const PX_ICON_NOTE[];
+extern const char *const PX_ICON_STAR[];
 extern const char *const PX_ICON_FOOD[APP_FOOD_COUNT][13];
