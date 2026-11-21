@@ -1,7 +1,7 @@
 idf_component_register(SRCS "app_camera_hw.c"
     INCLUDE_DIRS "include"
     REQUIRES app_photo
-    PRIV_REQUIRES esp_driver_cam esp_driver_gpio esp_driver_i2c esp_hal_usb efuse esp_board_manager freertos log)
+    PRIV_REQUIRES esp_driver_cam esp_driver_jpeg esp_driver_gpio esp_driver_i2c esp_hal_usb efuse esp_board_manager freertos log)
 
 # SC101IOT camera boards need the BSP's PCLK-delay fix in the managed
 # esp_cam_sensor (managed components are only changed through patches). Same

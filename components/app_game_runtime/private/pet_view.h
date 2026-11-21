@@ -54,6 +54,7 @@ typedef struct {
     int8_t food_index;
     float flip_t, deal_t, slide_t;  /* Card animations, >= 1 idle. */
     uint8_t prev_booth_phase, prev_booth_count, prev_booth_result, prev_booth_seq;
+    bool prev_booth_air;
     const booth_media_t *media;   /* Booth pixels, owned by the runtime; set after init. */
     uint32_t t, rng;
     bool primed;

@@ -56,6 +56,7 @@ void booth_cancel(booth_t *b)
         set_phase(b, APP_BOOTH_LIVE);
     }
     b->view.confirm_delete = false;
+    b->view.on_air = false;   /* Leaving the page (or unplugging) ends a stream. */
     if (b->request.kind == APP_BOOTH_REQ_GIF_FRAME) {
         b->request.kind = APP_BOOTH_REQ_NONE;   /* A partial GIF is never saved. */
     }
@@ -109,8 +110,18 @@ static uint32_t start_capture(booth_t *b, bool gif, bool fainted)
 }
 
 static uint32_t tap_live(booth_t *b, int32_t x, int32_t y, uint8_t looks, uint8_t lenses,
-                         bool film_owned, bool fainted)
+                         bool film_owned, bool fainted, uint16_t code)
 {
+    if (app_rect_hit(app_booth_air_rect(), x, y)) {
+        if (!(lenses & APP_OWN_WEBCAM_BIT)) {
+            return bump(b);   /* No WEBCAM yet: the view hints at the store. */
+        }
+        b->view.on_air = !b->view.on_air;
+        if (b->view.on_air) {
+            b->view.cam_code = code;
+        }
+        return bump(b);
+    }
     if (app_rect_hit(app_booth_film_rect(), x, y)) {
         if (!film_owned) {
             return bump(b);   /* No COLOR FILM yet: the view hints at the store. */
@@ -177,10 +188,10 @@ static uint32_t tap_gallery(booth_t *b, int32_t x, int32_t y)
 }
 
 uint32_t booth_tap(booth_t *b, int32_t x, int32_t y, uint8_t filters_owned, uint8_t lenses_owned,
-                   bool film_owned, bool fainted)
+                   bool film_owned, bool fainted, uint16_t code)
 {
     switch (b->view.phase) {
-    case APP_BOOTH_LIVE: return tap_live(b, x, y, filters_owned, lenses_owned, film_owned, fainted);
+    case APP_BOOTH_LIVE: return tap_live(b, x, y, filters_owned, lenses_owned, film_owned, fainted, code);
     case APP_BOOTH_GALLERY: return tap_gallery(b, x, y);
     case APP_BOOTH_REVIEW:
         set_phase(b, APP_BOOTH_LIVE);

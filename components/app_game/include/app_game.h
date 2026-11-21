@@ -228,6 +228,7 @@ typedef enum {
     APP_ITEM_FILTER,       /**< Photo look (app_photo_filter_t); needs the booth. */
     APP_ITEM_LENS,         /**< Photo resolution (app_photo_res_t); needs the booth. */
     APP_ITEM_FILM,         /**< COLOR FILM (value 0); needs the booth. */
+    APP_ITEM_WEBCAM,       /**< Wi-Fi webcam (value 0); needs the booth. */
 } app_item_kind_t;
 
 /* ---- Photo booth ---- */
@@ -287,6 +288,8 @@ typedef struct {
     bool confirm_delete;         /**< DEL was tapped once; tap again to delete. */
     app_booth_result_t result;   /**< Last capture/delete outcome. */
     bool unplugged;              /**< On the booth page with the camera gone. */
+    bool on_air;                 /**< Webcam streaming; the runtime serves the camera. */
+    uint16_t cam_code;           /**< 1000..9999 viewers must send while on air; new each time. */
     uint8_t seq;                 /**< Bumped on every phase, picker or result change (wraps). */
 } app_booth_snapshot_t;
 
@@ -341,6 +344,8 @@ enum { APP_STORE_PER_PAGE = 4 };
 #define APP_OWN_LENS_BIT(i) (1U << (i))
 /* COLOR FILM shares the lens byte (lenses use bits 0..2). */
 #define APP_OWN_FILM_BIT (1U << 7)
+/* WEBCAM too (bit 6). */
+#define APP_OWN_WEBCAM_BIT (1U << 6)
 
 typedef enum {
     APP_CARDS_READY = 0,   /**< Waiting for a paid deal. */

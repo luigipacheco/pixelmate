@@ -17,6 +17,7 @@
 #include "app_camera_hw.h"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
+#include "driver/jpeg_encode.h"
 #include "esp_board_manager_includes.h"
 #include "esp_cam_sensor_types.h"
 #include "esp_attr.h"
@@ -89,6 +90,24 @@ static TaskHandle_t s_task;
 static SemaphoreHandle_t s_frame_lock;
 static EXT_RAM_BSS_ATTR uint8_t s_frame[APP_CAMERA_FRAME_BYTES];   /* Y, U, V planes, 48 KB: PSRAM. */
 static uint32_t s_frame_seq;
+
+/* Webcam: upright WEBCAM_W x WEBCAM_H RGB frames, hardware-JPEG-encoded by the
+ * worker every other camera frame while enabled. */
+enum {
+    WEBCAM_W = APP_CAMERA_WEBCAM_W,
+    WEBCAM_H = APP_CAMERA_WEBCAM_H,
+    WEBCAM_EVERY = 2,                   /* 25 fps sensor -> ~12 fps stream. */
+    WEBCAM_QUALITY = 70,
+    WEBCAM_JPEG_MAX = APP_CAMERA_JPEG_MAX,
+    WEBCAM_ENCODE_TIMEOUT_MS = 100,
+};
+static _Atomic bool s_webcam;
+static jpeg_encoder_handle_t s_jpeg_enc;
+static uint8_t *s_rgb, *s_jpeg_out;     /* Encoder DMA buffers, worker only. */
+static size_t s_rgb_cap, s_jpeg_out_cap;
+static EXT_RAM_BSS_ATTR uint8_t s_jpeg[WEBCAM_JPEG_MAX];   /* Last encoded frame, under s_frame_lock. */
+static size_t s_jpeg_len;
+static uint32_t s_jpeg_seq;
 
 /* Owned by the worker task only. */
 static struct {
@@ -388,6 +407,72 @@ static void downsample(const uint8_t *uyvy)
 
 /* Every dequeued buffer is requeued before this returns, so a later STREAMOFF
  * or close never finds a frame still borrowed. */
+static esp_err_t webcam_buffers(void)
+{
+    if (s_jpeg_enc) {
+        return ESP_OK;
+    }
+    const jpeg_encode_engine_cfg_t engine = {.timeout_ms = WEBCAM_ENCODE_TIMEOUT_MS};
+    ESP_RETURN_ON_ERROR(jpeg_new_encoder_engine(&engine, &s_jpeg_enc), TAG, "jpeg engine");
+    const jpeg_encode_memory_alloc_cfg_t in_cfg = {.buffer_direction = JPEG_ENC_ALLOC_INPUT_BUFFER};
+    const jpeg_encode_memory_alloc_cfg_t out_cfg = {.buffer_direction = JPEG_ENC_ALLOC_OUTPUT_BUFFER};
+    s_rgb = jpeg_alloc_encoder_mem(WEBCAM_W * WEBCAM_H * 3, &in_cfg, &s_rgb_cap);
+    s_jpeg_out = jpeg_alloc_encoder_mem(WEBCAM_JPEG_MAX, &out_cfg, &s_jpeg_out_cap);
+    ESP_RETURN_ON_FALSE(s_rgb && s_jpeg_out, ESP_ERR_NO_MEM, TAG, "jpeg buffers");
+    return ESP_OK;
+}
+
+static uint8_t clamp8(int v)
+{
+    return (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v));
+}
+
+/* Upright, centered WEBCAM_W x WEBCAM_H crop of the sensor frame (the same
+ * sideways mounting as downsample(): output x runs down the sensor's rows,
+ * output y across its columns), one sample per pixel, BT.601 to BGR bytes. */
+static void webcam_frame(const uint8_t *uyvy)
+{
+    const uint32_t kx = (s_cam.width << 16) / WEBCAM_H, ky = (s_cam.height << 16) / WEBCAM_W;
+    const uint32_t k = kx < ky ? kx : ky;   /* 16.16 source pixels per output pixel. */
+    const uint32_t x0 = (s_cam.width - ((WEBCAM_H * k) >> 16)) / 2, y0 = (s_cam.height - ((WEBCAM_W * k) >> 16)) / 2;
+    uint8_t *out = s_rgb;
+    for (uint32_t oy = 0; oy < WEBCAM_H; ++oy) {
+        const uint32_t sx = x0 + (((WEBCAM_H - 1U - oy) * k) >> 16);
+        const size_t mc = (size_t)(sx & ~1U) * 2U;
+        for (uint32_t ox = 0; ox < WEBCAM_W; ++ox) {
+            const uint32_t sy = y0 + (((WEBCAM_W - 1U - ox) * k) >> 16);
+            const uint8_t *row = uyvy + (size_t)sy * s_cam.bytes_per_line;
+            const int y = row[(size_t)sx * 2U + 1U], u = row[mc] - 128, v = row[mc + 2] - 128;
+            *out++ = clamp8(y + (1815 * u) / 1024);              /* B */
+            *out++ = clamp8(y - (352 * u + 731 * v) / 1024);     /* G */
+            *out++ = clamp8(y + (1436 * v) / 1024);              /* R */
+        }
+    }
+}
+
+static void webcam_encode(const uint8_t *uyvy)
+{
+    static uint32_t tick;
+    if (!atomic_load(&s_webcam) || tick++ % WEBCAM_EVERY || webcam_buffers() != ESP_OK) {
+        return;
+    }
+    webcam_frame(uyvy);
+    const jpeg_encode_cfg_t cfg = {
+        .width = WEBCAM_W, .height = WEBCAM_H, .src_type = JPEG_ENCODE_IN_FORMAT_RGB888,
+        .sub_sample = JPEG_DOWN_SAMPLING_YUV420, .image_quality = WEBCAM_QUALITY,
+    };
+    uint32_t size = 0;
+    if (jpeg_encoder_process(s_jpeg_enc, &cfg, s_rgb, WEBCAM_W * WEBCAM_H * 3, s_jpeg_out,
+                             (uint32_t)s_jpeg_out_cap, &size) != ESP_OK || !size || size > WEBCAM_JPEG_MAX) {
+        return;
+    }
+    xSemaphoreTake(s_frame_lock, portMAX_DELAY);
+    memcpy(s_jpeg, s_jpeg_out, size);
+    s_jpeg_len = size;
+    ++s_jpeg_seq;
+    xSemaphoreGive(s_frame_lock);
+}
+
 static esp_err_t capture(void)
 {
     struct v4l2_buffer buffer = {.type = V4L2_BUF_TYPE_VIDEO_CAPTURE, .memory = V4L2_MEMORY_MMAP};
@@ -396,6 +481,7 @@ static esp_err_t capture(void)
                     && buffer.bytesused >= (size_t)s_cam.bytes_per_line * s_cam.height;
     if (ok) {
         downsample(s_cam.buf[buffer.index]);
+        webcam_encode(s_cam.buf[buffer.index]);
     }
     const esp_err_t requeue = xioctl(VIDIOC_QBUF, &buffer, "QBUF");
     if (!ok) {
@@ -591,6 +677,27 @@ void app_camera_hw_set_mode(app_camera_mode_t mode)
     if (s_task) {
         xTaskNotifyGive(s_task);
     }
+}
+
+void app_camera_hw_set_webcam(bool on)
+{
+    atomic_store(&s_webcam, on);
+}
+
+size_t app_camera_hw_jpeg(uint8_t *out, size_t cap, uint32_t *seq)
+{
+    size_t len = 0;
+    if (!s_frame_lock || !out || !seq) {
+        return 0;
+    }
+    xSemaphoreTake(s_frame_lock, portMAX_DELAY);
+    if (s_jpeg_seq && s_jpeg_seq != *seq && s_jpeg_len <= cap) {
+        memcpy(out, s_jpeg, s_jpeg_len);
+        len = s_jpeg_len;
+        *seq = s_jpeg_seq;
+    }
+    xSemaphoreGive(s_frame_lock);
+    return len;
 }
 
 bool app_camera_hw_present(void)

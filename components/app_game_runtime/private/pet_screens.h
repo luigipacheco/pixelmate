@@ -36,6 +36,7 @@ void screens_camera_icon(const draw_ctx_t *ctx, int x, int y, int w, Color c);
 void screens_filter_swatch(const draw_ctx_t *ctx, int filter, int x, int y, bool owned);
 void screens_lens_swatch(const draw_ctx_t *ctx, int res, int x, int y, bool owned);
 void screens_film_swatch(const draw_ctx_t *ctx, int x, int y, bool owned);
+void screens_webcam_swatch(const draw_ctx_t *ctx, int x, int y, bool owned);
 /** EXIT button shown while a cabinet's game is open. */
 void screens_draw_exit(const draw_ctx_t *ctx, int ox);
 /** Labeled button; filled buttons use dark text. */

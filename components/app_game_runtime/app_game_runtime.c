@@ -624,7 +624,7 @@ static int state_json(const void *value, char *output, size_t capacity)
                         "\"slots\":{\"phase\":%d,\"payout\":%u,\"line\":[%u,%u,%u]},"
                         "\"bits\":{\"phase\":%d,\"target\":%u,\"switches\":%u,\"hits\":%u,\"payout\":%u,\"best\":%u},"
                         "\"arcade\":%d,\"arcade_row\":%u,\"camera_present\":%s,\"filters_owned\":%u,"
-                        "\"lenses_owned\":%u,\"booth\":{\"phase\":%d,\"filter\":%u,\"res\":%u,\"color\":%s,\"unplugged\":%s,"
+                        "\"lenses_owned\":%u,\"booth\":{\"phase\":%d,\"filter\":%u,\"res\":%u,\"color\":%s,\"on_air\":%s,\"cam_code\":%u,\"unplugged\":%s,"
                         "\"camera\":%s,\"photos\":%u,\"gifs\":%u,\"index\":%u,\"result\":%d,"
                         "\"confirm\":%s},"
                         "\"pointer_x\":%ld,\"pointer_y\":%ld,\"pointer_down\":%s,\"state_hash\":\"%08lx\"}",
@@ -646,7 +646,7 @@ static int state_json(const void *value, char *output, size_t capacity)
                         app_game_slot_symbol(s.slots.pos_q[2], 0),
                         (int)s.bits.phase, s.bits.target, s.bits.switches, s.bits.hits, s.bits.payout, s.bits.best,
                         (int)s.arcade, s.arcade_row, s.camera_present ? "true" : "false", s.filters_owned,
-                        s.lenses_owned, (int)s.booth.phase, s.booth.filter, s.booth.res, s.booth.color ? "true" : "false",
+                        s.lenses_owned, (int)s.booth.phase, s.booth.filter, s.booth.res, s.booth.color ? "true" : "false", s.booth.on_air ? "true" : "false", s.booth.cam_code,
                         s.booth.unplugged ? "true" : "false",
                         s.booth.camera ? "true" : "false", s.booth.photos, s.booth.gifs, s.booth.index,
                         (int)s.booth.result, s.booth.confirm_delete ? "true" : "false",

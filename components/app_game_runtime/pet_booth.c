@@ -169,7 +169,22 @@ static void draw_live(const draw_ctx_t *d, int ox)
     const app_booth_snapshot_t *b = &s->booth;
     char text[16];
     draw_live_picture(d, ox);
-    center_text(d, app_photo_filter_name(b->filter), ox, LABEL_Y, 3, d->color);
+    if (b->on_air) {
+        /* Red ON AIR mark with the viewer code in place of the look's name. */
+        char air[24];
+        snprintf(air, sizeof(air), "ON AIR %04u", (unsigned)b->cam_code);
+        const int w = px_text_width(air, 3);
+        if ((d->view->t / REC_BLINK_TICKS) % 2U) {
+            px_box(240 + ox - w / 2 - 26, LABEL_Y, 18, 21, 0, WARN);
+        }
+        px_text(air, 240 + ox - w / 2, LABEL_Y, 3, WARN, d->gap);
+    } else {
+        center_text(d, app_photo_filter_name(b->filter), ox, LABEL_Y, 3, d->color);
+    }
+    /* Webcam chip: dim until WEBCAM is owned; red STOP while streaming. */
+    const bool cam = (s->lenses_owned & APP_OWN_WEBCAM_BIT) != 0;
+    screens_button(d, app_booth_air_rect(), ox, 0, b->on_air ? "STOP" : "ON AIR", 2,
+                   b->on_air ? WARN : (cam ? d->color : d->dim), b->on_air);
     const bool many = count_bits(s->filters_owned | APP_OWN_FILTER_BIT(APP_FILTER_NONE)) > 1;
     draw_arrows(d, ox, many ? d->color : d->dim);
     /* Lens chip: tap to switch resolution. */
@@ -344,6 +359,14 @@ void screens_camera_icon(const draw_ctx_t *d, int x, int y, int w, Color c)
     px_box(x, y + h / 6, w, h - h / 6, 0, c);                        /* body */
     px_box(x + w / 2 - h / 4, y + h / 6 + h / 8, h / 2, h / 2, 0, BLACK);   /* lens */
     px_box(x + w / 2 - h / 8, y + h / 6 + h / 4, h / 4, h / 4, 0, d->accent);
+}
+
+/* Store art for WEBCAM: the camera with a red ON AIR light. */
+void screens_webcam_swatch(const draw_ctx_t *d, int x, int y, bool owned)
+{
+    const Color c = owned ? d->color : px_scale(d->color, 0.6f);
+    screens_camera_icon(d, x, y + 10, 60, c);
+    px_box(x + 46, y + 2, 12, 12, 0, WARN);
 }
 
 /* Store art for COLOR FILM: the 16 film colors. */

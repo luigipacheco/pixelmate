@@ -6,6 +6,7 @@
  * copies frames. ../README.md has the board details (shared I2C,
  * USB-Serial/JTAG pad, orientation, hot-plug). */
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 /* APP_PHOTO_MAX_SIDE/PIXELS: the feed matches the largest photo lens. */
 #include "app_photo.h"
@@ -34,6 +35,13 @@ void app_camera_hw_set_mode(app_camera_mode_t mode);
 /** Camera board detected by the last probes (debounced); any task. Keeps its
  * last value while the mode is OFF. */
 bool app_camera_hw_present(void);
+
+/** Webcam: while on (and streaming), the worker also hardware-encodes an
+ * upright APP_CAMERA_WEBCAM_W x _H color JPEG every other frame (~12 fps). */
+enum { APP_CAMERA_WEBCAM_W = 240, APP_CAMERA_WEBCAM_H = 320, APP_CAMERA_JPEG_MAX = 96 * 1024 };
+void app_camera_hw_set_webcam(bool on);
+/** Copy the newest JPEG when its number differs from *seq; returns its size or 0. Any task. */
+size_t app_camera_hw_jpeg(uint8_t *out, size_t cap, uint32_t *seq);
 
 /** Current state; any task. */
 app_camera_state_t app_camera_hw_state(void);

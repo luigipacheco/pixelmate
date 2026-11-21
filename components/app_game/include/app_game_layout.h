@@ -146,6 +146,11 @@ static inline app_rect_t app_booth_lens_rect(void)
     return (app_rect_t) {12, 70, 110, 44};
 }
 /* Film chip under the lens chip: B&W or COLOR (once COLOR FILM is owned). */
+/* Webcam ON AIR chip, right of the label, above the next-look arrow. */
+static inline app_rect_t app_booth_air_rect(void)
+{
+    return (app_rect_t) {376, 122, 92, 46};
+}
 static inline app_rect_t app_booth_film_rect(void)
 {
     return (app_rect_t) {12, 122, 84, 46};

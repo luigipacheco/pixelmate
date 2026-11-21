@@ -85,6 +85,7 @@ static const app_store_item_t s_store[] = {
     {APP_ITEM_FILTER, APP_FILTER_STICKERS, 150, "EYE STICKERS", "YOUR PAL PHOTOBOMBS"},
     {APP_ITEM_LENS, APP_PHOTO_RES_HIGH, 180, "HI RES", "CRISP 128X128 PHOTOS"},
     {APP_ITEM_FILM, 0, 200, "COLOR FILM", "REAL 16-COLOR PHOTOS"},
+    {APP_ITEM_WEBCAM, 0, 250, "WEBCAM", "STREAM BITSY OVER WI-FI"},
 };
 #define STORE_COUNT ((int)(sizeof(s_store) / sizeof(s_store[0])))
 #define STORE_PAGES ((STORE_COUNT + APP_STORE_PER_PAGE - 1) / APP_STORE_PER_PAGE)
@@ -576,6 +577,7 @@ static uint32_t item_bit(const app_store_item_t *item)
     case APP_ITEM_FILTER: return APP_OWN_FILTER_BIT(item->value);
     case APP_ITEM_LENS: return APP_OWN_LENS_BIT(item->value);
     case APP_ITEM_FILM: return APP_OWN_FILM_BIT;
+    case APP_ITEM_WEBCAM: return APP_OWN_WEBCAM_BIT;
     default: return APP_OWN_ANIM_BIT(item->value);
     }
 }
@@ -586,7 +588,8 @@ static bool owns_item(const struct app_game *g, const app_store_item_t *item)
     switch (item->kind) {
     case APP_ITEM_FILTER: return (g->filters_owned & item_bit(item)) != 0;
     case APP_ITEM_LENS:
-    case APP_ITEM_FILM: return (g->lenses_owned & item_bit(item)) != 0;
+    case APP_ITEM_FILM:
+    case APP_ITEM_WEBCAM: return (g->lenses_owned & item_bit(item)) != 0;
     default: return (g->owned & item_bit(item)) != 0;
     }
 }
@@ -596,7 +599,8 @@ static void grant_item(app_game_handle_t g, const app_store_item_t *item)
     switch (item->kind) {
     case APP_ITEM_FILTER: g->filters_owned |= (uint8_t)item_bit(item); break;
     case APP_ITEM_LENS:
-    case APP_ITEM_FILM: g->lenses_owned |= (uint8_t)item_bit(item); break;
+    case APP_ITEM_FILM:
+    case APP_ITEM_WEBCAM: g->lenses_owned |= (uint8_t)item_bit(item); break;
     default: g->owned |= item_bit(item); break;
     }
 }
@@ -604,6 +608,7 @@ static void grant_item(app_game_handle_t g, const app_store_item_t *item)
 static bool booth_item(const app_store_item_t *item)
 {
     return item->kind == APP_ITEM_FILTER || item->kind == APP_ITEM_LENS || item->kind == APP_ITEM_FILM
+           || item->kind == APP_ITEM_WEBCAM
            || (item->kind == APP_ITEM_GAME && item->value == APP_GAME_PHOTO);
 }
 
@@ -1003,8 +1008,14 @@ static void tap_booth(app_game_handle_t g, int32_t x, int32_t y)
         }
         return;
     }
+    /* A fresh webcam code each time it goes on air (seeded per device). */
+    uint32_t r = g->config.seed ^ (g->tick * 2654435761U) ^ (g->save_seq << 7);
+    r ^= r << 13;
+    r ^= r >> 17;
+    r ^= r << 5;
     const uint32_t events = booth_tap(&g->booth, x, y, g->filters_owned, g->lenses_owned,
-                                      (g->lenses_owned & APP_OWN_FILM_BIT) != 0, g->fainted);
+                                      (g->lenses_owned & APP_OWN_FILM_BIT) != 0, g->fainted,
+                                      (uint16_t)(1000U + r % 9000U));
     g->events |= events;
     const app_booth_snapshot_t *v = &g->booth.view;
     if (events & APP_EVENT_SETTINGS) {
@@ -1339,8 +1350,11 @@ static void update_booth(app_game_handle_t g)
         booth_cancel(&g->booth);
         return;
     }
-    if (booth_capturing(g)) {
-        g->screen_idle_ticks = 0;   /* Holding still for a photo is not idling. */
+    if (g->net == APP_NET_SETUP) {
+        g->booth.view.on_air = false;   /* Never stream while the setup hotspot runs. */
+    }
+    if (booth_capturing(g) || g->booth.view.on_air) {
+        g->screen_idle_ticks = 0;   /* Holding still for a photo or streaming is not idling. */
     }
     const app_booth_phase_t before = g->booth.view.phase;
     g->events |= booth_update(&g->booth);
@@ -1382,6 +1396,9 @@ static app_mood_t compute_mood(const struct app_game *g)
     if (g->overlay == APP_OVERLAY_NONE && g->screen == APP_SCREEN_ARCADE
             && g->arcade == APP_ARCADE_BITS && g->bits.view.phase == APP_BITS_PLAYING) {
         return APP_MOOD_THINKING;
+    }
+    if (booth_open(g) && g->booth.view.on_air) {
+        return APP_MOOD_HAPPY;      /* Smiling for the stream. */
     }
     if (booth_open(g) && g->booth.view.phase == APP_BOOTH_COUNTDOWN) {
         return APP_MOOD_THINKING;   /* Holding still for the photo. */
@@ -1654,7 +1671,8 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
     g->bright_idx = r->bright_code && r->bright_code <= APP_BRIGHT_OPTIONS
                     ? (uint8_t)(r->bright_code - 1) : DEFAULT_BRIGHT_IDX;
     g->filters_owned = (uint8_t)(r->filters_owned | FREE_FILTERS);
-    g->lenses_owned = (uint8_t)((r->lenses_owned & (((1U << APP_PHOTO_RES_COUNT) - 1U) | APP_OWN_FILM_BIT))
+    g->lenses_owned = (uint8_t)((r->lenses_owned & (((1U << APP_PHOTO_RES_COUNT) - 1U) | APP_OWN_FILM_BIT
+                                                    | APP_OWN_WEBCAM_BIT))
                                 | FREE_LENSES);
     const uint8_t lens = (uint8_t)(r->lens & ~APP_RECORD_LENS_COLOR);
     booth_select_lens(&g->booth, lens < APP_PHOTO_RES_COUNT

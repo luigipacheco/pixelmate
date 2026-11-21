@@ -381,7 +381,8 @@ static void on_booth(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
         }
     }
     /* A look/lens picker with nothing else owned reports a change-less event. */
-    if (b->phase == APP_BOOTH_LIVE && v->prev_booth_phase == APP_BOOTH_LIVE && !(ev & APP_EVENT_SETTINGS)) {
+    if (b->phase == APP_BOOTH_LIVE && v->prev_booth_phase == APP_BOOTH_LIVE && !(ev & APP_EVENT_SETTINGS)
+            && b->on_air == v->prev_booth_air) {
         floater(v, "MORE IN STORE", 240, 300, acc);
     }
 }
@@ -425,6 +426,7 @@ void pet_view_update(pet_view_t *v, const app_game_snapshot_t *s, uint32_t event
     v->prev_booth_count = s->booth.count;
     v->prev_booth_result = (uint8_t)s->booth.result;
     v->prev_booth_seq = s->booth.seq;
+    v->prev_booth_air = s->booth.on_air;
     v->prev_sparks = s->sparks;
     if (v->dance_ticks) {
         /* Side-to-side shimmy with a hop on every beat. */

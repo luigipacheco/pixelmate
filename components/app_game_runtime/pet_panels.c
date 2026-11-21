@@ -22,6 +22,7 @@ static bool owns_item(const app_game_snapshot_t *s, const app_store_item_t *item
     case APP_ITEM_FILTER: return s->filters_owned & APP_OWN_FILTER_BIT(item->value);
     case APP_ITEM_LENS: return s->lenses_owned & APP_OWN_LENS_BIT(item->value);
     case APP_ITEM_FILM: return s->lenses_owned & APP_OWN_FILM_BIT;
+    case APP_ITEM_WEBCAM: return s->lenses_owned & APP_OWN_WEBCAM_BIT;
     default: return s->owned & APP_OWN_ANIM_BIT(item->value);
     }
 }
@@ -202,6 +203,9 @@ static void draw_preview(const draw_ctx_t *d, const app_store_item_t *item, int 
     case APP_ITEM_FILM:
         screens_film_swatch(d, x, y, owned);
         return;
+    case APP_ITEM_WEBCAM:
+        screens_webcam_swatch(d, x, y, owned);
+        return;
     case APP_ITEM_GAME:
         if (item->value == APP_GAME_BITS) {
             /* "1010" on four tiny levers. */
@@ -269,9 +273,11 @@ static void draw_status(const draw_ctx_t *d, const app_store_item_t *item, app_r
         if (item->kind == APP_ITEM_GAME) {
             label = "PLAY";
             c = d->accent;
-        } else if (item->kind == APP_ITEM_FILTER || item->kind == APP_ITEM_LENS || item->kind == APP_ITEM_FILM) {
+        } else if (item->kind == APP_ITEM_FILTER || item->kind == APP_ITEM_LENS || item->kind == APP_ITEM_FILM
+                   || item->kind == APP_ITEM_WEBCAM) {
             const bool used = item->kind == APP_ITEM_FILTER ? s->booth.filter == item->value
-                              : (item->kind == APP_ITEM_LENS ? s->booth.res == item->value : s->booth.color);
+                              : (item->kind == APP_ITEM_LENS ? s->booth.res == item->value
+                                 : (item->kind == APP_ITEM_FILM ? s->booth.color : s->booth.on_air));
             label = used ? "IN USE" : "OWNED";
             c = used ? d->accent : d->dim;
         } else if (item->kind == APP_ITEM_ANIM) {
@@ -287,7 +293,8 @@ static void draw_status(const draw_ctx_t *d, const app_store_item_t *item, app_r
         px_text(label, right - px_text_width(label, 3), y, 3, c, d->gap);
         return;
     }
-    if ((item->kind == APP_ITEM_FILTER || item->kind == APP_ITEM_LENS || item->kind == APP_ITEM_FILM)
+    if ((item->kind == APP_ITEM_FILTER || item->kind == APP_ITEM_LENS || item->kind == APP_ITEM_FILM
+            || item->kind == APP_ITEM_WEBCAM)
             && !(s->owned & APP_OWN_GAME_BIT(APP_GAME_PHOTO))) {
         px_text("NEEDS BOOTH", right - px_text_width("NEEDS BOOTH", 2), y + 4, 2, d->dim, false);
         return;

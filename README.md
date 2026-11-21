@@ -63,6 +63,8 @@ the `pixel_pal` name so existing pets carry over.)
   an 8-frame clip; ROLL browses and deletes them. A photo is a lens plus a
   look: LO RES 32x32 is free, MID RES 64x64 (80) and HI RES 128x128 (180) are
   sold; COLOR FILM (200) adds real 16-color photos (B/W chip next to the lens);
+  WEBCAM (250) adds an ON AIR chip that streams the camera over Wi-Fi to
+  `http://<board-ip>:81/cam?k=<code>` (MJPEG, code shown on screen, new each time);
   PLAIN is free, DITHER, SCANLINES, GAME-GREEN, HALFTONE, THERMAL, ASCII
   and EYE STICKERS are sold (50-150). Photos keep the pet's palette. Up to 12
   photos and 2 GIFs are kept in NVS (HI RES photos fill it sooner), and the
