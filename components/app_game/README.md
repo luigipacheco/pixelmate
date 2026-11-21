@@ -9,6 +9,7 @@ touch gestures, feeding and the high-low card game.
 | `app_game.c` | Pet state, moods, gestures, screens, save record |
 | `pedometer.c` | Software step detector over accelerometer magnitude |
 | `cards.c` | High-low rules (deal, guess, reveal, cash out) |
+| `slots.c` | Spark Slots: 3 player-stopped reels, pay table |
 | `include/app_game_layout.h` | Button and eye geometry shared with the view |
 
 ```c
@@ -46,6 +47,11 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
 - `owned` uses the `APP_OWN_*_BIT` layout; `app_game_import()` always restores
   the free items and drops selections or animations that are not owned.
 - With STEP DANCE on, crossing each 100 total steps raises `APP_EVENT_DANCE`.
+- Spark Slots is a store item (250 sparks); owning it adds `APP_SCREEN_SLOTS`
+  as the last swipe page. A spin costs 3 sparks; each STOP tap halts the
+  leftmost spinning reel after it finishes its symbol plus 0..2 random slip.
+  Three of a kind pays 150 (7) / 60 / 30 / 20 / 10 / 8 (shoe); any pair refunds
+  the bet. Blind play returns about 72%, so the machine is a spark sink.
 - Step sources: `app_game_set_sensor_steps()` (a cumulative hardware count; the
   first reading is a baseline) disables the software detector fed by
   `app_game_add_accel()`. `app_game_add_steps()` credits directly.

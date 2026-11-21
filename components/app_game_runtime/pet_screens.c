@@ -260,6 +260,100 @@ static void draw_cards(const draw_ctx_t *d, int ox)
     draw_button(d, app_cards_cash_rect(), ox, "CASH", 3, can_cash ? d->color : d->dim, can_cash);
 }
 
+/* ---- Spark Slots ----------------------------------------------------- */
+
+void screens_slot_symbol(const draw_ctx_t *d, uint8_t symbol, int cx, int cy, int scale_pct)
+{
+    const int k = scale_pct;   /* Percent of full size, for small previews. */
+    switch ((app_slot_symbol_t)symbol) {
+    case APP_SLOT_SEVEN: {
+        const int s = 7 * k / 100 > 1 ? 7 * k / 100 : 1;
+        px_text_center("7", cx, cy - 7 * s / 2, s, d->accent, d->gap);
+        return;
+    }
+    case APP_SLOT_STAR: {
+        const int s = 6 * k / 100 > 1 ? 6 * k / 100 : 1;
+        px_icon(PX_ICON_STAR, cx - 7 * s / 2, cy - 4 * s, s, d->color, d->accent, d->gap);
+        return;
+    }
+    case APP_SLOT_EYE: {
+        const int s = 4 * k / 100 > 1 ? 4 * k / 100 : 1;
+        px_icon(PX_ICON_EYE, cx - 6 * s, cy - 3 * s, s, d->color, d->accent, d->gap);
+        return;
+    }
+    case APP_SLOT_BOLT: {
+        const int s = 6 * k / 100 > 1 ? 6 * k / 100 : 1;
+        px_icon(PX_ICON_BOLT, cx - 3 * s, cy - 7 * s / 2, s, d->color, d->color, d->gap);
+        return;
+    }
+    case APP_SLOT_HEART: {
+        const int s = 6 * k / 100 > 1 ? 6 * k / 100 : 1;
+        px_icon(PX_ICON_HEART, cx - 7 * s / 2, cy - 3 * s, s, d->accent, d->accent, d->gap);
+        return;
+    }
+    default: {
+        const int s = 5 * k / 100 > 1 ? 5 * k / 100 : 1;
+        px_icon(PX_ICON_SHOE, cx - 4 * s, cy - 3 * s, s, d->color, d->accent, d->gap);
+        return;
+    }
+    }
+}
+
+static void draw_reel(const draw_ctx_t *d, int reel, int ox)
+{
+    const app_slots_snapshot_t *sl = &d->snap->slots;
+    const app_rect_t w = app_slots_window_rect(reel);
+    const int x = w.x + ox, cx = x + w.w / 2, cy = w.y + w.h / 2;
+    const int frac = sl->pos_q[reel] % APP_SLOT_Q;
+    const bool win_blink = sl->phase == APP_SLOTS_RESULT && sl->payout > 0 && (d->view->t / 6U) % 2U;
+    for (int row = -2; row <= 2; ++row) {
+        const int y = cy - row * APP_SLOT_SYMBOL_H + frac * APP_SLOT_SYMBOL_H / APP_SLOT_Q;
+        if (row == 0 && frac == 0 && win_blink) {
+            continue;
+        }
+        screens_slot_symbol(d, app_game_slot_symbol(sl->pos_q[reel], row), cx, y, 100);
+    }
+    /* Mask symbols that scrolled past the window edges. */
+    DrawRectangle(x - 6, w.y - 76, w.w + 12, 72, BLACK);
+    DrawRectangle(x - 6, w.y + w.h + 4, w.w + 12, 72, BLACK);
+    const bool stopped = sl->phase == APP_SLOTS_SPINNING && (sl->stopped & (1U << reel));
+    px_box(x - 6, w.y - 6, w.w + 12, w.h + 12, 3, stopped ? d->accent : d->color);
+}
+
+static void draw_slots(const draw_ctx_t *d, int ox)
+{
+    const app_game_snapshot_t *s = d->snap;
+    const app_slots_snapshot_t *sl = &s->slots;
+    for (int reel = 0; reel < APP_SLOT_REELS; ++reel) {
+        draw_reel(d, reel, ox);
+    }
+    const app_rect_t first = app_slots_window_rect(0);
+    const int line_y = first.y + first.h / 2 - 4;
+    DrawRectangle(ox + 24, line_y, 18, 8, d->accent);
+    DrawRectangle(ox + APP_VIEW_W - 42, line_y, 18, 8, d->accent);
+
+    char text[24];
+    if (sl->phase == APP_SLOTS_SPINNING) {
+        px_text_center("TAP TO STOP", 240 + ox, 340, 2, d->dim, false);
+        screens_button(d, app_slots_button_rect(), ox, 0, "STOP", 4, d->accent, true);
+        return;
+    }
+    if (sl->phase == APP_SLOTS_RESULT) {
+        if (sl->payout) {
+            snprintf(text, sizeof(text), "WIN %u", sl->payout);
+            px_text_center(text, 240 + ox, 336, 3, d->accent, d->gap);
+        } else {
+            px_text_center("NO LUCK", 240 + ox, 336, 3, d->dim, d->gap);
+        }
+    } else {
+        snprintf(text, sizeof(text), "777 PAYS %u", app_game_slot_triple_pay(APP_SLOT_SEVEN));
+        px_text_center(text, 240 + ox, 340, 2, d->dim, false);
+    }
+    const bool can = s->sparks >= APP_SLOTS_BET;
+    snprintf(text, sizeof(text), "SPIN %d", APP_SLOTS_BET);
+    screens_button(d, app_slots_button_rect(), ox, 0, text, 4, can ? d->color : d->dim, can);
+}
+
 void screens_draw(const draw_ctx_t *d, app_screen_t screen, int ox)
 {
     if (ox <= -APP_VIEW_W || ox >= APP_VIEW_W) {
@@ -270,6 +364,7 @@ void screens_draw(const draw_ctx_t *d, app_screen_t screen, int ox)
     case APP_SCREEN_STEPS: draw_steps(d, ox); break;
     case APP_SCREEN_FEED: draw_feed(d, ox); break;
     case APP_SCREEN_CARDS: draw_cards(d, ox); break;
+    case APP_SCREEN_SLOTS: draw_slots(d, ox); break;
     default: break;
     }
 }

@@ -5,6 +5,7 @@
     "components/app_game/app_game.c",
     "components/app_game/pedometer.c",
     "components/app_game/cards.c",
+    "components/app_game/slots.c",
     "components/app_game_runtime/app_game_runtime.c",
     "components/app_game_runtime/pet_view.c",
     "components/app_game_runtime/pet_screens.c",

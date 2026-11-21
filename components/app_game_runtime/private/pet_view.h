@@ -36,6 +36,7 @@ typedef struct {
     float overlay_pos;        /* 0 = hidden above, 1 = fully down. */
     float anchor_x, anchor_y, anchor_s;  /* Eased eye placement. */
     uint16_t dance_ticks;
+    uint8_t prev_slot_stopped;  /* Reel-stop bits seen last tick. */
     float steps_shown, sparks_shown, ring_shown;
     uint32_t prev_sparks;
     uint16_t spark_pulse, spark_flash;

@@ -184,6 +184,32 @@ static void on_events(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
         floater(v, text, 240, 90, acc);
         v->dance_ticks = DANCE_TICKS;
     }
+    if (ev & APP_EVENT_SLOT_SPIN) {
+        pet_eyes_kick(&v->eyes, -5.0f);
+        pet_eyes_force_gaze(&v->eyes, 0, 18.0f, 20);   /* Look down at the reels. */
+    }
+    const uint8_t newly = (uint8_t)(s->slots.stopped & ~v->prev_slot_stopped);
+    for (int reel = 0; reel < APP_SLOT_REELS; ++reel) {
+        if (newly & (1U << reel)) {
+            const app_rect_t w = app_slots_window_rect(reel);
+            burst(v, P_SQUARE, w.x + w.w / 2, w.y + w.h / 2, 6, 4.0f, 0.3f, acc, c);
+            pet_eyes_force_gaze(&v->eyes, (reel - 1) * 24.0f, 16.0f, 12);
+        }
+    }
+    v->prev_slot_stopped = s->slots.stopped;
+    if (ev & APP_EVENT_SLOT_DONE && s->slots.payout) {
+        char text[VIEW_FLOATER_TEXT];
+        const bool jackpot = s->slots.payout >= app_game_slot_triple_pay(APP_SLOT_SEVEN);
+        snprintf(text, sizeof(text), jackpot ? "JACKPOT!" : "+%u", s->slots.payout);
+        floater(v, text, 240, 300, acc);
+        const int amount = s->slots.payout >= 30 ? 30 : 8;
+        burst(v, P_BOLT, 240, 240, amount / 2, 8.0f, 0.3f, c, acc);
+        burst(v, P_SQUARE, 240, 240, amount, 9.0f, 0.35f, acc, CONFETTI_WHITE);
+        v->spark_pulse = SPARK_PULSE_TICKS;
+        if (jackpot) {
+            v->dance_ticks = DANCE_TICKS;
+        }
+    }
     if (ev & APP_EVENT_BOUGHT) {
         floater(v, "NEW!", 240, 300, acc);
         burst(v, P_SQUARE, 240, 200, 26, 9.0f, 0.35f, c, CONFETTI_WHITE);
@@ -407,8 +433,9 @@ static void draw_sparks_counter(const pet_view_t *v, const draw_ctx_t *d)
 static void draw_dots(const pet_view_t *v, const draw_ctx_t *d)
 {
     const int spacing = 24, size = 10;
-    const int x0 = APP_VIEW_W / 2 - (APP_SCREEN_COUNT - 1) * spacing / 2 - size / 2;
-    for (int i = 0; i < APP_SCREEN_COUNT; ++i) {
+    const int pages = (d->snap->owned & APP_OWN_GAME_BIT(APP_GAME_SLOTS)) ? APP_SCREEN_COUNT : APP_SCREEN_SLOTS;
+    const int x0 = APP_VIEW_W / 2 - (pages - 1) * spacing / 2 - size / 2;
+    for (int i = 0; i < pages; ++i) {
         DrawRectangle(x0 + i * spacing, APP_DOTS_Y, size, size, d->dim);
     }
     const float e = screens_ease_out(v->trans);

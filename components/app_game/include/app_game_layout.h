@@ -45,6 +45,7 @@ static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay)
     case 0: return (app_eye_anchor_t) {240, 236, 1.0f};    /* home */
     case 2: return (app_eye_anchor_t) {240, 150, 0.62f};   /* feed */
     case 3: return (app_eye_anchor_t) {240, 104, 0.46f};   /* cards */
+    case 4: return (app_eye_anchor_t) {240, 98, 0.42f};    /* slots */
     default: return (app_eye_anchor_t) {240, 206, 0.0f};   /* steps: no eyes */
     }
 }
@@ -78,6 +79,21 @@ static inline app_rect_t app_cards_lo_rect(void)
 static inline app_rect_t app_cards_slot_rect(int slot)
 {
     return (app_rect_t) {(int16_t)(slot ? 256 : 112), 176, 112, 160};
+}
+
+/* Spark Slots: three reel windows and the SPIN/STOP button. */
+enum { APP_SLOT_WINDOW_W = 112, APP_SLOT_WINDOW_H = 160, APP_SLOT_SYMBOL_H = 64 };
+static inline app_rect_t app_slots_window_rect(int reel)
+{
+    return (app_rect_t) {(int16_t)(56 + reel * 128), 160, APP_SLOT_WINDOW_W, APP_SLOT_WINDOW_H};
+}
+static inline app_rect_t app_slots_reels_rect(void)
+{
+    return (app_rect_t) {48, 152, 384, 176};
+}
+static inline app_rect_t app_slots_button_rect(void)
+{
+    return (app_rect_t) {130, 372, 220, 64};
 }
 
 /* Pull-down menu entries (inside the APP_MENU_H panel). */

@@ -18,6 +18,7 @@ static bool owns_item(const app_game_snapshot_t *s, const app_store_item_t *item
     switch (item->kind) {
     case APP_ITEM_COLOR: return s->owned & APP_OWN_COLOR_BIT(item->value);
     case APP_ITEM_STYLE: return s->owned & APP_OWN_STYLE_BIT(item->value);
+    case APP_ITEM_GAME: return s->owned & APP_OWN_GAME_BIT(item->value);
     default: return s->owned & APP_OWN_ANIM_BIT(item->value);
     }
 }
@@ -146,6 +147,13 @@ static void draw_preview(const draw_ctx_t *d, const app_store_item_t *item, int 
                       mini_eye_inside, &eye, c);
         return;
     }
+    case APP_ITEM_GAME:
+        /* Three tiny reels showing sevens. */
+        for (int i = 0; i < APP_SLOT_REELS; ++i) {
+            px_box(x + i * 20, y + 12, 18, 36, 2, c);
+            px_text("7", x + i * 20 + 5, y + 23, 2, d->accent, false);
+        }
+        return;
     default:
         break;
     }
@@ -175,7 +183,10 @@ static void draw_status(const draw_ctx_t *d, const app_store_item_t *item, app_r
     if (owns_item(s, item)) {
         const char *label;
         Color c = d->color;
-        if (item->kind == APP_ITEM_ANIM) {
+        if (item->kind == APP_ITEM_GAME) {
+            label = "PLAY";
+            c = d->accent;
+        } else if (item->kind == APP_ITEM_ANIM) {
             const bool on = s->anims_on & (1U << item->value);
             label = on ? "ON" : "OFF";
             c = on ? d->accent : d->dim;

@@ -17,10 +17,12 @@ react to how much you walk, what you feed it and how you play with it.
   pixel styles (80–150) and animations (100–300): a spark trail as you walk, a
   dance every 100 steps, star eyes when happy and rainbow eyes while walking.
   Home always shows how many steps until your next unlock.
+- **Spark Slots (unlockable, 250 sparks):** a three-reel slot machine where
+  you stop each reel yourself; 3 sparks a spin, 7-7-7 pays 150.
 - **Style:** pick among the pixel sizes and colors you own.
 - Progress is saved to NVS.
 
-Swipe left/right between Home, Steps, Feed and Cards. Pull down from the top
+Swipe left/right between Home, Steps, Feed, Cards (and Slots once bought). Pull down from the top
 edge for the menu (Store, Style, Goal); swipe up to close. Tap the eyes to pet.
 
 ## Build and run

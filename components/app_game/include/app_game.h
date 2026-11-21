@@ -22,6 +22,7 @@ typedef enum {
     APP_SCREEN_STEPS,
     APP_SCREEN_FEED,
     APP_SCREEN_CARDS,
+    APP_SCREEN_SLOTS,      /**< Only reachable once Spark Slots is bought. */
     APP_SCREEN_COUNT,
 } app_screen_t;
 
@@ -76,11 +77,49 @@ typedef enum {
     APP_ANIM_COUNT,
 } app_anim_t;
 
+/** Unlockable mini games. */
+typedef enum {
+    APP_GAME_SLOTS = 0,
+    APP_GAME_COUNT,
+} app_minigame_t;
+
 typedef enum {
     APP_ITEM_COLOR = 0,
     APP_ITEM_STYLE,
     APP_ITEM_ANIM,
+    APP_ITEM_GAME,
 } app_item_kind_t;
+
+/* ---- Spark Slots ---- */
+enum {
+    APP_SLOT_REELS = 3,
+    APP_SLOT_STRIP = 16,     /**< Symbols per reel strip. */
+    APP_SLOT_Q = 16,         /**< Reel position units per symbol. */
+    APP_SLOTS_BET = 3,       /**< Sparks per spin. */
+};
+
+typedef enum {
+    APP_SLOT_SEVEN = 0,
+    APP_SLOT_STAR,
+    APP_SLOT_EYE,
+    APP_SLOT_BOLT,
+    APP_SLOT_HEART,
+    APP_SLOT_SHOE,
+    APP_SLOT_SYMBOLS,
+} app_slot_symbol_t;
+
+typedef enum {
+    APP_SLOTS_READY = 0,     /**< Waiting for a paid spin. */
+    APP_SLOTS_SPINNING,      /**< Reels turning; STOP halts them left to right. */
+    APP_SLOTS_RESULT,        /**< All reels stopped; payout shown. */
+} app_slots_phase_t;
+
+typedef struct {
+    app_slots_phase_t phase;
+    uint16_t pos_q[APP_SLOT_REELS];  /**< Reel position, 0..STRIP*Q-1. */
+    uint8_t stopped;                 /**< Bit per stopped reel. */
+    uint16_t payout;                 /**< Sparks won by the last spin. */
+} app_slots_snapshot_t;
 
 typedef struct {
     app_item_kind_t kind;
@@ -96,6 +135,7 @@ enum { APP_STORE_PER_PAGE = 4 };
 #define APP_OWN_COLOR_BIT(i) (1UL << (i))
 #define APP_OWN_STYLE_BIT(i) (1UL << (8 + (i)))
 #define APP_OWN_ANIM_BIT(i)  (1UL << (16 + (i)))
+#define APP_OWN_GAME_BIT(i)  (1UL << (24 + (i)))
 
 typedef enum {
     APP_CARDS_READY = 0,   /**< Waiting for a paid deal. */
@@ -129,12 +169,15 @@ enum {
     APP_EVENT_BOUGHT = 1U << 14,
     APP_EVENT_DANCE = 1U << 15,
     APP_EVENT_STORE_PAGE = 1U << 16,
+    APP_EVENT_SLOT_SPIN = 1U << 17,
+    APP_EVENT_SLOT_STOP = 1U << 18,
+    APP_EVENT_SLOT_DONE = 1U << 19,   /**< See snapshot slots.payout. */
 };
 
 /** Events that change spendable or configured data and deserve a prompt save. */
 #define APP_EVENTS_SAVE_NOW (APP_EVENT_ATE | APP_EVENT_CARD_DEAL | APP_EVENT_CARD_REVEAL | \
                              APP_EVENT_CASH_OUT | APP_EVENT_SETTINGS | APP_EVENT_GOAL | \
-                             APP_EVENT_BOUGHT)
+                             APP_EVENT_BOUGHT | APP_EVENT_SLOT_DONE)
 
 typedef struct {
     const char *name;   /**< Upper-case label drawable by the pixel font. */
@@ -176,6 +219,7 @@ typedef struct {
     uint8_t color_index;        /**< 0..APP_COLOR_COUNT-1. */
     int8_t last_food;           /**< Food index of the last meal, -1 if none. */
     app_cards_snapshot_t cards;
+    app_slots_snapshot_t slots;
     uint32_t save_seq;          /**< Increments whenever persistent data changes. */
 } app_game_snapshot_t;
 
@@ -240,6 +284,10 @@ const app_store_item_t *app_game_store_item(int index);
 int app_game_store_count(void);
 /** Catalog index selling this item, or -1 if it is free/not sold. */
 int app_game_store_find(app_item_kind_t kind, uint8_t value);
+/** Symbol shown on a reel at `row` (0 = pay line, +1 = next symbol up). */
+uint8_t app_game_slot_symbol(int reel_pos_q, int row);
+/** Sparks paid for three of `symbol` on the pay line. */
+uint16_t app_game_slot_triple_pay(int symbol);
 
 void app_game_export(app_game_handle_t handle, app_game_record_t *record);
 /** Load a record; out-of-range fields are clamped. NULL arguments are no-ops. */

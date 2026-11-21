@@ -284,7 +284,7 @@ static int state_json(const void *value, char *output, size_t capacity)
     if (!output || !capacity) {
         return -1;
     }
-    static const char *const screens[APP_SCREEN_COUNT] = {"home", "steps", "feed", "cards"};
+    static const char *const screens[APP_SCREEN_COUNT] = {"home", "steps", "feed", "cards", "slots"};
     static const char *const overlays[APP_OVERLAY_COUNT] = {"none", "menu", "style", "store", "goal"};
     static const char *const moods[APP_MOOD_COUNT] = {
         "idle", "happy", "sleepy", "hungry", "sad", "walk", "eating", "thinking", "surprised", "grumpy"
@@ -296,6 +296,7 @@ static int state_json(const void *value, char *output, size_t capacity)
                         "\"steps_total\":%lu,\"steps_today\":%lu,\"sparks\":%lu,\"hunger\":%u,"
                         "\"happiness\":%u,\"friendship\":%u,\"pixel_style\":%d,\"color\":%u,"
                         "\"cards\":{\"phase\":%d,\"current\":%u,\"pot\":%u,\"streak\":%u,\"result\":%d},"
+                        "\"slots\":{\"phase\":%d,\"payout\":%u,\"line\":[%u,%u,%u]},"
                         "\"pointer_x\":%ld,\"pointer_y\":%ld,\"pointer_down\":%s,\"state_hash\":\"%08lx\"}",
                         s.paused ? "paused" : "running", (unsigned long)s.tick,
                         screens[s.screen < APP_SCREEN_COUNT ? s.screen : 0],
@@ -306,6 +307,9 @@ static int state_json(const void *value, char *output, size_t capacity)
                         (unsigned long)s.sparks, s.hunger, s.happiness, s.friendship,
                         (int)s.pixel_style, s.color_index, (int)s.cards.phase, s.cards.current,
                         s.cards.pot, s.cards.streak, (int)s.cards.result,
+                        (int)s.slots.phase, s.slots.payout,
+                        app_game_slot_symbol(s.slots.pos_q[0], 0), app_game_slot_symbol(s.slots.pos_q[1], 0),
+                        app_game_slot_symbol(s.slots.pos_q[2], 0),
                         (long)s.pointer_x, (long)s.pointer_y,
                         s.pointer_down ? "true" : "false", (unsigned long)state_hash(value));
     return size < 0 || (size_t)size >= capacity ? -1 : size;
