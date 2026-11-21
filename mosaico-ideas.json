@@ -1,0 +1,50 @@
+{
+  "schema": "mosaico-ideas/project-release/1",
+  "project": {
+    "title": "PixelMate: Bitsy, a walking pixel pet",
+    "categories": ["sensors", "display", "audio"],
+    "boards": ["camera", "battery"],
+    "tags": ["pet", "pedometer", "steps", "game", "arcade", "pixel-art", "virtual-pet", "photo-booth", "webcam", "wifi", "tamagotchi-like", "bitsy"],
+    "license": "Apache-2.0",
+    "external_links": [
+      {"label": "Luis Pacheco", "url": "https://www.luigipacheco.com", "platform": "other"},
+      {"label": "Source code on GitHub", "url": "https://github.com/luigipacheco/pixel_pal", "platform": "github"}
+    ]
+  },
+  "firmware": "build/pixel_pal-system-update.irisfw",
+  "website": {
+    "readme": "ideas/README.md",
+    "covers": [
+      "ideas/cover.png",
+      "ideas/screens/01_home.png",
+      "ideas/screens/02_steps.png",
+      "ideas/screens/04_arcade.png",
+      "ideas/screens/05_bitflip.png",
+      "ideas/screens/06_hilo.png",
+      "ideas/screens/07_booth_color.png",
+      "ideas/screens/08_webcam.png",
+      "ideas/screens/09_about.png"
+    ],
+    "resources": ["ideas/screens/03_feed.png"],
+    "attachments": []
+  },
+  "device": {
+    "default_locale": "en",
+    "presentations": {
+      "zh-CN": {
+        "mode": "generate",
+        "name": "PixelMate",
+        "description": "Walk to feed Bitsy, a pixel pet. Earn sparks, unlock games, photos and a webcam.",
+        "font": "ideas/fonts/DejaVuSans-Bold.ttf",
+        "icon": "ideas/icon.png"
+      },
+      "en": {
+        "mode": "generate",
+        "name": "PixelMate",
+        "description": "Walk to feed Bitsy, a pixel pet. Earn sparks, unlock games, photos and a webcam.",
+        "font": "ideas/fonts/DejaVuSans-Bold.ttf",
+        "icon": "ideas/icon.png"
+      }
+    }
+  }
+}
