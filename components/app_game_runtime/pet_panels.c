@@ -128,6 +128,29 @@ static void draw_header(const draw_ctx_t *d, int oy, const char *title)
     px_text_center(title, 240, oy + 20, 3, d->color, d->gap);
 }
 
+/* ---- About: the credits page under Settings ------------------------- */
+
+static void draw_about(const draw_ctx_t *d, int oy)
+{
+    const app_game_snapshot_t *s = d->snap;
+    char text[32];
+    draw_header(d, oy, "ABOUT");
+    px_text_center("PIXELMATE", 240, oy + 96, 6, d->color, d->gap);
+    snprintf(text, sizeof(text), "MEET %s  V%s", APP_PET_NAME, APP_VERSION);
+    px_text_center(text, 240, oy + 160, 3, d->accent, d->gap);
+    px_text_center("A WALKING PET FOR ESP-MOSAICO", 240, oy + 200, 2, d->dim, false);
+    px_text_center("MADE BY", 240, oy + 250, 2, d->dim, false);
+    px_text_center(APP_AUTHOR, 240, oy + 272, 4, d->color, d->gap);
+    px_text_center(APP_AUTHOR_URL, 240, oy + 316, 3, d->accent, d->gap);
+    if (s->battery_pct >= 0) {
+        snprintf(text, sizeof(text), "BATT %d%%  TOTAL %lu", s->battery_pct, (unsigned long)s->steps_total);
+    } else {
+        snprintf(text, sizeof(text), "TOTAL %lu STEPS", (unsigned long)s->steps_total);
+    }
+    px_text_center(text, 240, oy + 384, 2, d->dim, false);
+    px_text_center("FREE - APACHE-2.0", 240, oy + 410, 2, d->dim, false);
+}
+
 /* ---- Style ----------------------------------------------------------- */
 
 static void draw_lock(int x, int y, Color color)
@@ -408,7 +431,6 @@ static void draw_wifi(const draw_ctx_t *d, int oy)
 
 /* ---- Settings -------------------------------------------------------- */
 
-#define ABOUT_VERSION "0.1.0"
 static const Color RESET_RED = {255, 48, 48, 255};
 
 static const char *sound_name(app_sound_t sound)
@@ -493,13 +515,8 @@ static void draw_setting_row(const draw_ctx_t *d, int row, int index, int oy)
         snprintf(hint, sizeof(hint), "HOW BRIGHT THE PET GLOWS");
         break;
     case 5:
-        snprintf(value, sizeof(value), "%s V%s", APP_PET_NAME, ABOUT_VERSION);
-        if (s->battery_pct >= 0) {
-            snprintf(hint, sizeof(hint), "BATT %d%%  TOTAL %lu", s->battery_pct,
-                     (unsigned long)s->steps_total);
-        } else {
-            snprintf(hint, sizeof(hint), "TOTAL %lu STEPS", (unsigned long)s->steps_total);
-        }
+        snprintf(value, sizeof(value), "V%s", APP_VERSION);
+        snprintf(hint, sizeof(hint), "BY %s - TAP FOR MORE", APP_AUTHOR);
         break;
     default:
         snprintf(value, sizeof(value), "HOLD");
@@ -555,6 +572,7 @@ void screens_draw_overlay(const draw_ctx_t *d, app_overlay_t overlay, int oy)
     case APP_OVERLAY_GOAL: draw_goal(d, oy); break;
     case APP_OVERLAY_WIFI: draw_wifi(d, oy); break;
     case APP_OVERLAY_SETTINGS: draw_settings(d, oy); break;
+    case APP_OVERLAY_ABOUT: draw_about(d, oy); break;
     default: break;
     }
 }

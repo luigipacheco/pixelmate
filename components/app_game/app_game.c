@@ -825,7 +825,8 @@ static void tap_settings(app_game_handle_t g, int32_t x, int32_t y)
         case 2: open_wifi(g); return;
         case 3: g->sleep_idx = (uint8_t)((g->sleep_idx + 1) % APP_SLEEP_OPTIONS); break;
         case 4: g->bright_idx = (uint8_t)((g->bright_idx + 1) % APP_BRIGHT_OPTIONS); break;
-        default: return;   /* ABOUT is read-only; RESET needs a hold. */
+        case 5: set_overlay(g, APP_OVERLAY_ABOUT); return;
+        default: return;   /* RESET needs a hold. */
         }
         g->events |= APP_EVENT_SETTINGS;
         changed(g);
@@ -1070,6 +1071,11 @@ static void handle_tap(app_game_handle_t g, int32_t x, int32_t y)
     case APP_OVERLAY_GOAL: tap_goal(g, x, y); return;
     case APP_OVERLAY_WIFI: tap_wifi(g, x, y); return;
     case APP_OVERLAY_SETTINGS: tap_settings(g, x, y); return;
+    case APP_OVERLAY_ABOUT:
+        if (app_rect_hit(app_panel_back_rect(), x, y)) {
+            set_overlay(g, APP_OVERLAY_SETTINGS);
+        }
+        return;
     default: break;
     }
     switch (g->screen) {

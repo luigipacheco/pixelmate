@@ -55,6 +55,7 @@ typedef enum {
     APP_OVERLAY_GOAL,      /**< Adjust the daily step goal. */
     APP_OVERLAY_WIFI,      /**< Wi-Fi status and first-time setup. */
     APP_OVERLAY_SETTINGS,  /**< Sound, goal, Wi-Fi, screen sleep, brightness, about, reset. */
+    APP_OVERLAY_ABOUT,     /**< Credits: app, version, author and website. */
     APP_OVERLAY_COUNT,
 } app_overlay_t;
 
@@ -99,6 +100,9 @@ enum {
     APP_RESET_HOLD_S = 3,        /**< Hold RESET PET this long to start over. */
 };
 
+#define APP_VERSION "1.0.0"
+#define APP_AUTHOR "LUIS PACHECO"
+#define APP_AUTHOR_URL "WWW.LUIGIPACHECO.COM"
 #define APP_PET_NAME "BITSY"     /* The pet's name (the app is PixelMate). */
 
 enum {

@@ -57,6 +57,7 @@ enum {
     GAME_ACTION_DEBUG_DAY = 0,    /* Host: left key ends the simulated day. */
     GAME_ACTION_DEBUG_CAMERA = 1, /* Host: right key unplugs/replugs the camera. */
     GAME_ACTION_DEBUG_STEPS = 2,
+    GAME_ACTION_DEBUG_UNLOCK = 9, /* Host: replay action 9 owns everything (screenshots). */
     DEBUG_STEPS = 50,
     HOST_BATTERY_PCT = 76,
     HOST_FIRST_DAY = 20000,
@@ -548,6 +549,18 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
             }
             state->debug_camera_down = event->pressed;
         }
+        if (event->code == GAME_ACTION_DEBUG_UNLOCK && event->pressed) {
+            app_game_record_t r;
+            app_game_export(state->game, &r);
+            for (int i = 0; i < APP_COLOR_COUNT; ++i) r.owned |= APP_OWN_COLOR_BIT(i);
+            for (int i = 0; i < APP_PIXEL_COUNT; ++i) r.owned |= APP_OWN_STYLE_BIT(i);
+            for (int i = 0; i < APP_ANIM_COUNT; ++i) r.owned |= APP_OWN_ANIM_BIT(i);
+            for (int i = 0; i < APP_GAME_COUNT; ++i) r.owned |= APP_OWN_GAME_BIT(i);
+            r.filters_owned = 0xFF;
+            r.lenses_owned = 0xFF;
+            r.sparks += 1000U;
+            app_game_import(state->game, &r);
+        }
         if (event->code == GAME_ACTION_DEBUG_DAY) {
             if (event->pressed && !state->debug_day_down) {
                 app_game_set_day(state->game, ++state->host_day);
@@ -654,7 +667,7 @@ static int state_json(const void *value, char *output, size_t capacity)
         return -1;
     }
     static const char *const screens[APP_SCREEN_COUNT] = {"home", "steps", "feed", "arcade", "booth"};
-    static const char *const overlays[APP_OVERLAY_COUNT] = {"none", "menu", "style", "store", "goal", "wifi", "settings"};
+    static const char *const overlays[APP_OVERLAY_COUNT] = {"none", "menu", "style", "store", "goal", "wifi", "settings", "about"};
     static const char *const nets[] = {"off", "no_config", "connecting", "online", "failed", "setup"};
     static const char *const moods[APP_MOOD_COUNT] = {
         "idle", "happy", "sleepy", "hungry", "sad", "walk", "eating", "thinking", "surprised", "grumpy",

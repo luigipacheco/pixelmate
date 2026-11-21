@@ -41,6 +41,7 @@ static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay, int arcad
     case 4: return (app_eye_anchor_t) {240, 400, 0.42f};   /* goal: watching the number */
     case 5: return (app_eye_anchor_t) {240, 140, 0.0f};    /* wifi: hidden */
     case 6: return (app_eye_anchor_t) {240, 140, 0.0f};    /* settings: hidden */
+    case 7: return (app_eye_anchor_t) {240, 360, 0.2f};   /* about: peeking at the credits */
     default: break;
     }
     switch (screen) {
@@ -49,10 +50,11 @@ static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay, int arcad
     case 4: return (app_eye_anchor_t) {416, 92, 0.22f};    /* booth: peeking over the viewfinder */
     case 3:                                                 /* arcade */
         switch (arcade) {
-        case 1: return (app_eye_anchor_t) {240, 104, 0.46f};   /* HI-LO */
-        case 2: return (app_eye_anchor_t) {240, 98, 0.42f};    /* slots */
-        case 3: return (app_eye_anchor_t) {426, 340, 0.26f};   /* grid: watching from the side */
-        case 4: return (app_eye_anchor_t) {240, 96, 0.4f};     /* bit flip */
+        /* app_arcade_t order: slots, grid, bit flip, HI-LO. */
+        case 1: return (app_eye_anchor_t) {240, 98, 0.42f};    /* slots */
+        case 2: return (app_eye_anchor_t) {426, 340, 0.26f};   /* grid: watching from the side */
+        case 3: return (app_eye_anchor_t) {240, 96, 0.4f};     /* bit flip */
+        case 4: return (app_eye_anchor_t) {240, 104, 0.46f};   /* HI-LO */
         default: return (app_eye_anchor_t) {240, 98, 0.42f};   /* lobby: watching */
         }
     default: return (app_eye_anchor_t) {240, 206, 0.0f};   /* steps: no eyes */

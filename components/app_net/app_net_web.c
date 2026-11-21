@@ -58,7 +58,7 @@ static const char PAGE[] =
     "<div class=row><span>SPARKS</span><span id=sparks></span></div>"
     "<div class=row><span>BATTERY</span><span id=batt></span></div>"
     "<div class=row><span>MOOD</span><span id=mood></span></div></section>"
-    "<section><a href=/photos style='color:var(--c)'>PHOTO BOOTH GALLERY</a></section></main><script>"
+    "<section><a href=/photos style='color:var(--c)'>PHOTO BOOTH GALLERY</a></section><footer style='opacity:.6;font-size:12px;margin-top:24px'>PixelMate v1.0.0 &middot; made by Luis Pacheco &middot; <a href='https://www.luigipacheco.com' style='color:var(--c)'>www.luigipacheco.com</a></footer></main><script>"
     "const $=i=>document.getElementById(i);"
     "fetch('/api/tz?offset='+new Date().getTimezoneOffset(),{method:'POST'}).catch(()=>{});"
     "const pct=(a,b)=>Math.min(100,b?Math.round(a*100/b):0)+'%';"

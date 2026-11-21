@@ -1,0 +1,12 @@
+PixelMate
+Copyright 2026 Luis Pacheco
+https://www.luigipacheco.com
+
+PixelMate is a walking virtual pet (Bitsy) for the ESP-Mosaico board.
+This product includes software developed by Luis Pacheco, licensed under
+the Apache License, Version 2.0 (see LICENSE).
+
+Some files come from Espressif's ESP-Mosaico application template and keep
+their original license header (LicenseRef-Espressif-Modified-MIT).
+It is built on the Raylib Lite Engine and ESP-IDF, which carry their own
+licenses.
