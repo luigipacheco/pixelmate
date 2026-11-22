@@ -5,6 +5,12 @@ if(IDF_TARGET STREQUAL "esp32s31")
         INCLUDE_DIRS "include"
         REQUIRES esp_common
         PRIV_REQUIRES esp_board_manager esp_driver_i2c)
+elseif(IDF_TARGET STREQUAL "esp32s3")
+    # StackChan body: INA226 voltage/current monitor.
+    idf_component_register(SRCS "app_power_hw_cores3.c"
+        INCLUDE_DIRS "include"
+        REQUIRES esp_common
+        PRIV_REQUIRES esp_board_manager esp_driver_i2c)
 else()
     idf_component_register(SRCS "app_power_hw_none.c"
         INCLUDE_DIRS "include"

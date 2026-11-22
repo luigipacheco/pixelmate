@@ -119,6 +119,7 @@ struct app_game {
     app_power_t power;
     uint32_t screen_idle_ticks;   /* Touch-free ticks; steps do not reset it. */
     bool swallow_touch;           /* The touch that woke the screen does nothing else. */
+    bool keep_awake;              /* External supply: no idle dimming or dozing. */
     uint32_t pointer_still_ticks; /* Ticks since the last pointer sample while pressed. */
     int8_t battery_pct;
     bool battery_charging;
@@ -561,6 +562,11 @@ static void update_power(app_game_handle_t g)
     /* The hotspot name must stay readable while someone types on their phone
      * (the hotspot itself times out in the runtime). */
     if (g->overlay == APP_OVERLAY_WIFI && g->net == APP_NET_SETUP) {
+        g->screen_idle_ticks = 0;
+        set_power(g, APP_POWER_AWAKE);
+        return;
+    }
+    if (g->keep_awake) {
         g->screen_idle_ticks = 0;
         set_power(g, APP_POWER_AWAKE);
         return;
@@ -1207,6 +1213,17 @@ void app_game_set_sensor_steps(app_game_handle_t g, uint32_t cumulative)
     const uint32_t delta = cumulative - g->sensor_last;
     g->sensor_last = cumulative;
     credit_steps(g, delta);
+}
+
+void app_game_set_keep_awake(app_game_handle_t g, bool on)
+{
+    if (!g || g->keep_awake == on) {
+        return;
+    }
+    g->keep_awake = on;
+    if (on) {
+        wake(g);   /* Plugging in wakes a sleeping screen. */
+    }
 }
 
 void app_game_add_steps(app_game_handle_t g, uint32_t steps)

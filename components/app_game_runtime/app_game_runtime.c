@@ -276,10 +276,17 @@ static void poll_battery(host_state_t *state)
     state->battery_ok = app_power_hw_battery(&battery) == ESP_OK;
     if (!state->battery_ok) {
         app_game_set_battery(state->game, -1, false);
+#if defined(APP_DESK_PET)
+        app_game_set_keep_awake(state->game, false);
+#endif
         return;
     }
     state->battery = battery;
     app_game_set_battery(state->game, battery.percent, battery.current_ma > CHARGING_MIN_MA);
+#if defined(APP_DESK_PET)
+    /* A desk pet on its charger stays awake: it is there to be looked at. */
+    app_game_set_keep_awake(state->game, battery.external_power);
+#endif
     const app_power_t power = app_game_read(state->game).power;
     if (battery.current_ma < 0 && (unsigned)power < POWER_STATES) {
         state->drain_sum[power] += (uint32_t)(-battery.current_ma);

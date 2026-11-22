@@ -1,7 +1,15 @@
-# The camera driver is written for the ESP-Mosaico's left-slot camera module
-# (hardware JPEG, slot EEPROM, shared pads). Other boards (the Stack-chan build)
-# get a stand-in that reports "no camera", which hides the photo booth.
-if(NOT IDF_TARGET STREQUAL "esp32s31")
+# Three builds of one interface (include/app_camera_hw.h):
+# - ESP-Mosaico (esp32s31): the left-slot camera module, hardware JPEG (below).
+# - M5Stack CoreS3 / StackChan (esp32s3): the built-in GC0308 through the
+#   Board Manager "camera" device.
+# - Anything else: a stand-in that reports "no camera", which hides the booth.
+if(IDF_TARGET STREQUAL "esp32s3")
+    idf_component_register(SRCS "app_camera_hw_cores3.c"
+        INCLUDE_DIRS "include"
+        REQUIRES app_photo
+        PRIV_REQUIRES esp_video esp_board_manager freertos log)
+    return()
+elseif(NOT IDF_TARGET STREQUAL "esp32s31")
     idf_component_register(SRCS "app_camera_hw_none.c"
         INCLUDE_DIRS "include"
         REQUIRES app_photo)

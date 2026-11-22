@@ -572,6 +572,10 @@ void app_game_set_booth(app_game_handle_t handle, bool camera, uint8_t photos, u
 bool app_game_take_booth_request(app_game_handle_t handle, app_booth_request_t *request);
 /** Report how the last booth request ended. */
 void app_game_booth_result(app_game_handle_t handle, app_booth_result_t result);
+/** Keep the screen on (true) while the board runs from an external supply: it
+ * neither dims nor turns off by itself, and turning this on wakes it. The
+ * menu's SLEEP still turns the screen off until the next touch. */
+void app_game_set_keep_awake(app_game_handle_t handle, bool on);
 /** Wake the screen (button press, external event). No-op when awake. */
 void app_game_wake(app_game_handle_t handle);
 /** Advance one 30 Hz tick unless paused. No rendering or hardware access. */

@@ -17,9 +17,11 @@ typedef struct {
     uint16_t time_to_empty_min;  /**< 0xFFFF while not discharging or unread. */
     uint16_t remaining_mah;      /**< RemainingCapacity; 0 if unread. */
     uint16_t full_mah;           /**< FullChargeCapacity; 0 if unread. */
+    bool external_power;         /**< A supply is connected (USB); false when the driver cannot tell. */
 } app_battery_reading_t;
 
-/** Read the BQ27220 fuel gauge on the shared I2C bus (address 0x55). */
+/** Read the battery: the BQ27220 fuel gauge on the ESP-Mosaico (I2C 0x55), the
+ * INA226 monitor on the StackChan body (I2C 0x41, percent estimated). */
 esp_err_t app_power_hw_battery(app_battery_reading_t *reading);
 
 #ifdef __cplusplus
