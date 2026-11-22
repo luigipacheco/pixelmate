@@ -84,3 +84,25 @@ esp_err_t app_pedometer_hw_motion(float accel_g[3], float gyro_dps[3])
     gyro_dps[2] = data.gyr.z * s_gyr_scale;
     return ESP_OK;
 }
+
+esp_err_t app_pedometer_hw_low_power(void)
+{
+    if (!s_started) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const uint8_t gyro[] = {BMI2_GYRO};
+    if (bmi270_sensor_disable(gyro, 1, s_sensor) != BMI2_OK) {
+        return ESP_FAIL;
+    }
+    struct bmi2_sens_config accel = {.type = BMI2_ACCEL};
+    if (bmi2_get_sensor_config(&accel, 1, s_sensor) != BMI2_OK) {
+        return ESP_FAIL;
+    }
+    accel.cfg.acc.odr = BMI2_ACC_ODR_50HZ;
+    accel.cfg.acc.bwp = BMI2_ACC_OSR2_AVG2;
+    accel.cfg.acc.filter_perf = BMI2_POWER_OPT_MODE;
+    if (bmi2_set_sensor_config(&accel, 1, s_sensor) != BMI2_OK) {
+        return ESP_FAIL;
+    }
+    return bmi2_set_adv_power_save(BMI2_ENABLE, s_sensor) == BMI2_OK ? ESP_OK : ESP_FAIL;
+}

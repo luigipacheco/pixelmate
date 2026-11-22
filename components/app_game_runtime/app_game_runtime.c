@@ -22,6 +22,7 @@
 #include "app_power_hw.h"
 #include "app_sensors_hw.h"
 #include "app_interact_hw.h"
+#include "app_sleep_hw.h"
 #include "app_sfx.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -152,6 +153,9 @@ typedef struct {
     uint8_t ai_down_ticks;        /* AI button held this many ticks (debounce). */
     bool ai_swallow;              /* Ignore the AI button until it is released. */
     bool ai_ready;                /* GPIO input enabled. */
+    app_net_sleep_test_t sleep_test;   /* Deep-sleep experiment waiting to start. */
+    uint8_t sleep_countdown;      /* Ticks until it starts (0 = none). */
+    bool sleep_reported;          /* The last test's result is on /api/sleep. */
 #endif
 } host_state_t;
 
@@ -316,6 +320,90 @@ static void poll_sensor(host_state_t *state)
     uint32_t steps = 0;
     if (app_pedometer_hw_read(&steps) == ESP_OK) {
         app_game_set_sensor_steps(state->game, steps);
+    }
+}
+
+/* ---- Deep-sleep experiment (POST /api/sleeptest, result on /api/sleep) ---- */
+
+enum { SLEEP_START_TICKS = 45 };   /* 1.5 s: let the HTTP reply leave first. */
+
+static void poll_sleep_test(host_state_t *state)
+{
+    if (state->sleep_countdown == 0) {
+        if (app_net_take_sleep_test(&state->sleep_test)) {
+            state->sleep_countdown = SLEEP_START_TICKS;
+        }
+        return;
+    }
+    if (--state->sleep_countdown > 0) {
+        return;
+    }
+    if (state->save_ready) {   /* The wake is a restart: save first. */
+        app_game_record_t record;
+        app_game_export(state->game, &record);
+        const uint64_t now = now_ms();
+        if (raylib_lite_save_request(&state->save, &record, now) == RAYLIB_LITE_OK
+                && raylib_lite_save_flush(&state->save, now, true) == RAYLIB_LITE_OK) {
+            state->saved_seq = app_game_read(state->game).save_seq;
+        }
+    }
+    app_sfx_close();
+    if (app_interact_hw_present()) {
+        const uint8_t dark[APP_INTERACT_LEDS][3] = {{0}};
+        (void)app_interact_hw_leds(dark);
+    }
+    app_sleep_request_t request = {
+        .seconds = state->sleep_test.seconds,
+        .rail_off = state->sleep_test.rail_off,
+        .touch_wake = state->sleep_test.touch_wake,
+        .remaining_mah = state->battery_ok ? state->battery.remaining_mah : 0,
+        .voltage_mv = state->battery_ok ? state->battery.voltage_mv : 0,
+    };
+    (void)app_pedometer_hw_read(&request.steps);
+    if (state->sleep_test.imu_low_power) {
+        const esp_err_t err = app_pedometer_hw_low_power();
+        ESP_LOGI(TAG, "sleep test: IMU low power: %s", esp_err_to_name(err));
+    }
+    (void)app_net_suspend(true);
+    const esp_err_t err = app_sleep_hw_enter(&request);
+    ESP_LOGE(TAG, "sleep test did not start: %s", esp_err_to_name(err));
+    (void)app_net_suspend(false);
+}
+
+/* Once the gauge has a reading after a restart: publish what the last sleep did. */
+static void publish_sleep_report(host_state_t *state)
+{
+    if (state->sleep_reported || !state->battery_ok) {
+        return;
+    }
+    state->sleep_reported = true;
+    app_sleep_report_t r;
+    if (!app_sleep_hw_report(&r)) {
+        return;
+    }
+    char alive[64] = "";
+    size_t used = 0;
+    for (int i = 0; i < app_sleep_probe_count && used + 6 < sizeof(alive); ++i) {
+        if (r.alive_rail_off & (1U << i)) {
+            used += (size_t)snprintf(alive + used, sizeof(alive) - used, "%s\"%02x\"", used ? "," : "",
+                                     app_sleep_probe_addrs[i]);
+        }
+    }
+    char json[600];
+    const int n = snprintf(json, sizeof(json),
+                           "{\"valid\":1,\"woke\":%d,\"reset_reason\":%u,\"wake_causes\":%lu,\"rail\":\"%s\","
+                           "\"touch_wake\":%d,\"board\":\"%s\",\"asked_s\":%lu,\"slept_s\":%lu,"
+                           "\"steps_before\":%lu,\"steps_at_wake\":%ld,\"imu_answered_rail_off\":%d,"
+                           "\"imu_chip_id\":%u,\"imu_status\":%u,\"alive_rail_off\":[%s],"
+                           "\"mah_before\":%u,\"mah_after\":%u,\"mv_before\":%u,\"mv_after\":%u}",
+                           r.woke, r.reset_reason, (unsigned long)r.wake_causes, r.rail_off ? "off" : "on",
+                           r.touch_wake, r.v1_0 ? "v1.0" : "v1.1+", (unsigned long)r.asked_s,
+                           (unsigned long)r.slept_s, (unsigned long)r.steps_before, (long)r.steps_at_wake,
+                           r.imu_answered_rail_off, r.imu_chip_id, r.imu_status, alive, r.mah_before,
+                           state->battery.remaining_mah, r.mv_before, state->battery.voltage_mv);
+    ESP_LOGW(TAG, "sleep test result: %s", json);
+    if (n > 0 && (size_t)n < sizeof(json)) {
+        (void)app_net_publish_sleep(json);
     }
 }
 
@@ -990,6 +1078,8 @@ static void update(void *value)
     poll_day(state);
     poll_battery(state);
     poll_net(state);
+    publish_sleep_report(state);
+    poll_sleep_test(state);
 #endif
     app_game_update(state->game);
     const Color pet = px_color(app_game_read(state->game).color_index);
