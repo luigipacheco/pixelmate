@@ -26,6 +26,7 @@
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_sleep.h"
+#include "driver/rtc_io.h"
 #include "esp_timer.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -736,6 +737,13 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
     const uint32_t causes = esp_sleep_get_wakeup_causes();
     gpio_wakeup_disable(POCKET_BUTTON_GPIO);
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+    /* EXT1 hands the button pad to the RTC domain and leaves it there; give
+     * it back to the digital GPIO matrix, or the app can no longer read the
+     * AI button (it could not be put back to sleep after the first wake). */
+    if (!ext1_failed) {
+        rtc_gpio_deinit(POCKET_BUTTON_GPIO);
+    }
+    state->ai_ready = false;   /* Re-enable the input on the next poll. */
     const bool by_button = causes & (BIT(ESP_SLEEP_WAKEUP_GPIO) | BIT(ESP_SLEEP_WAKEUP_EXT1));
     const bool held = gpio_get_level(POCKET_BUTTON_GPIO) == 0;   /* Backup if the wake source failed. */
     if (!by_button && !held) {
