@@ -16,6 +16,7 @@
 #if defined(RAYLIB_LITE_GAME_NATIVE)
 #include <stdlib.h>
 #include <time.h>
+#include "app_face_hw.h"
 #include "app_neck_hw.h"
 #include "app_net.h"
 #include "app_pedometer_hw.h"
@@ -801,7 +802,16 @@ static void update(void *value)
     poll_net(state);
 #endif
     app_game_update(state->game);
-    const Color pet = px_color(app_game_read(state->game).color_index);
+    const app_game_snapshot_t before = app_game_read(state->game);
+#if defined(RAYLIB_LITE_GAME_NATIVE) && defined(APP_DESK_PET)
+    /* A desk pet looks for faces while it is awake on Home (clock mode too):
+     * the camera streams and the face finder runs. */
+    const bool look_for_faces = before.power == APP_POWER_AWAKE && before.screen == APP_SCREEN_HOME
+                                && before.overlay == APP_OVERLAY_NONE && !before.fainted;
+    state->media.face_feed = look_for_faces;
+    app_face_hw_enable(look_for_faces);
+#endif
+    const Color pet = px_color(before.color_index);
     booth_media_update(&state->media, state->game, (app_photo_rgb_t) {pet.r, pet.g, pet.b});
     const uint32_t events = app_game_take_events(state->game);
     handle_wifi_events(state, events);
@@ -816,7 +826,9 @@ static void update(void *value)
     maybe_save(state, events);
     app_sfx_update(events, &snapshot);
     /* Neck: asleep the head goes home and the servos let go. */
-    pet_head_update(&state->head, &snapshot, events, NULL);
+    pet_head_face_t face = {0};
+    face.fresh = app_face_hw_take(&face.seen, &face.x, &face.y);
+    pet_head_update(&state->head, &snapshot, events, &face);
     app_neck_hw_aim(state->head.pan, state->head.tilt);
     app_neck_hw_rest(snapshot.power == APP_POWER_DOZE);
     pocket_maybe_sleep(state, &snapshot);

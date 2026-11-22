@@ -102,9 +102,10 @@ static bool presence_wanted(const app_game_snapshot_t *s)
 static void run_feed(booth_media_t *m, const app_game_snapshot_t *s)
 {
     const bool want = booth_open(s) && (s->booth.phase != APP_BOOTH_GALLERY || s->booth.on_air);
+    const bool stream = want || m->face_feed;
 #if defined(RAYLIB_LITE_GAME_NATIVE)
     app_cam_stream_set(s->booth.on_air, s->booth.cam_code);
-    app_camera_hw_set_mode(want ? APP_CAMERA_MODE_STREAM
+    app_camera_hw_set_mode(stream ? APP_CAMERA_MODE_STREAM
                            : (presence_wanted(s) ? APP_CAMERA_MODE_PROBE : APP_CAMERA_MODE_OFF));
     m->present = app_camera_hw_present();
     static const booth_camera_t map[] = {

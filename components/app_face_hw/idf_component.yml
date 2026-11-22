@@ -1,0 +1,7 @@
+dependencies:
+  # Espressif's on-device face detector (ESP-DL). Only the M5Stack CoreS3
+  # (StackChan) build uses it.
+  espressif/human_face_detect:
+    version: "^0.5.2"
+    rules:
+      - if: "target == esp32s3"
