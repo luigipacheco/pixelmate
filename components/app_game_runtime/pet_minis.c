@@ -112,7 +112,7 @@ void screens_draw_stack(const draw_ctx_t *d, int ox)
         const bool can = d->snap->sparks >= APP_STACK_COST;
         snprintf(text, sizeof(text), "PLAY %d", APP_STACK_COST);
         screens_button(d, app_stack_button_rect(), ox, 0, text, 4, can ? d->color : d->dim, can);
-        snprintf(text, sizeof(text), s->best ? "BEST %u ROWS" : "TAP TO DROP", s->best);
+        snprintf(text, sizeof(text), s->best ? "BEST %u/12  TOP PAYS 20+" : "REACH THE TOP TO WIN", s->best);
         px_text_center(text, 240 + ox, 330, 2, s->best ? d->accent : d->dim, false);
         break;
     }

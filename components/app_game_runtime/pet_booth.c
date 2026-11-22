@@ -403,11 +403,6 @@ void screens_filter_swatch(const draw_ctx_t *d, int filter, int x, int y, bool o
         luma[i] = (uint8_t)(dx * dx + dy * dy < 12 ? 250 : 20 + (px + py) * 8);
     }
     app_photo_filter(luma, N, (app_photo_filter_t)filter, shades);   /* B/W art. */
-    if (filter == APP_FILTER_STICKERS) {
-        for (int k = 0; k < 2; ++k) {   /* Two tiny pal eyes in the corner. */
-            shades[1 * N + 2 + k * 3] = shades[2 * N + 2 + k * 3] = 3;
-        }
-    }
     Color pal[APP_PHOTO_COLORS];
     palette_colors(filter, d->color, owned ? 1.0f : 0.6f, pal);
     draw_photo(shades, 0, N, N, x, y, CELL, pal);

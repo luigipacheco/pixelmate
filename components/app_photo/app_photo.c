@@ -16,7 +16,7 @@ enum {
 };
 
 static const char *const s_names[APP_FILTER_COUNT] = {
-    "PLAIN", "DITHER", "SCANLINES", "GAME-GREEN", "THERMAL", "EYE STICKERS", "ASCII", "HALFTONE",
+    "PLAIN", "DITHER", "SCANLINES", "GAME-GREEN", "THERMAL", "GLITCH", "ASCII", "HALFTONE",
     "EDGES", "POP", "MIRROR", "CRT",
 };
 static const char *const s_res_names[APP_PHOTO_RES_COUNT] = {"LO RES", "MID RES", "HI RES"};
@@ -32,23 +32,8 @@ static const uint8_t s_glyphs[ASCII_LEVELS][4] = {
     {0x4, 0xE, 0x4, 0x0}, {0xA, 0x4, 0xA, 0x0}, {0xE, 0xA, 0xE, 0x0}, {0xE, 0xE, 0xE, 0x0},
 };
 
-/* Sticker: one of the pet's eyes, '#' = bright fill, 'o' = dark outline. */
-static const char *const s_sticker_eye[] = {
-    " ooooooo ",
-    "o#######o",
-    "o#######o",
-    "o#######o",
-    "o#######o",
-    "o#######o",
-    "o#######o",
-    "o#######o",
-    "o#######o",
-    "o#######o",
-    " ooooooo ",
-};
-enum { STICKER_W = 9, STICKER_H = 11, STICKER_X = 40, STICKER_GAP = 3, STICKER_Y = 4 };
 
-/* Color film's palette: index 0 black and 3 white, so stickers and the
+/* Color film's palette: index 0 black and 3 white, so the
  * cell looks can draw with the same indices as B&W shades 0 and 3. */
 const app_photo_rgb_t app_photo_color_palette[APP_PHOTO_COLORS] = {
     {0, 0, 0}, {84, 84, 92}, {168, 168, 176}, {255, 255, 255},
@@ -168,7 +153,7 @@ static int cell_mean(const uint8_t *luma, int side, int x0, int y0, int c, int l
     return n ? stretched(sum / n, lo, span) : 0;
 }
 
-static void draw_stickers(uint8_t *shades, int side);
+static void glitch_rows(uint8_t *px, int side, bool invert_band);
 static int edge_at(const uint8_t *luma, int side, int x, int y, int lo, int span);
 static void mirror_left(uint8_t *px, int side);
 
@@ -303,6 +288,10 @@ void app_photo_filter_color(const uint8_t *yuv, int side, app_photo_filter_t fil
             c.r += t;
             c.g += t;
             c.b += t;
+            if (filter == APP_FILTER_GLITCH) {
+                const int j = y * side + (x + 2 < side ? x + 2 : x);
+                c.r = yuv_to_rgb(color_luma(yuv[j], lo, span), yuv[n + j], yuv[2 * n + j]).r;
+            }
             if (filter == APP_FILTER_SCANLINES && (y & 1)) {
                 c = (rgb_t) {c.r * 5 / 10, c.g * 5 / 10, c.b * 5 / 10};
             } else if (filter == APP_FILTER_EDGES) {
@@ -322,8 +311,8 @@ void app_photo_filter_color(const uint8_t *yuv, int side, app_photo_filter_t fil
             out[i] = nearest_color(c);
         }
     }
-    if (filter == APP_FILTER_STICKERS && side >= APP_PHOTO_MIN_SIDE) {
-        draw_stickers(out, side);   /* Indices 3/0 are white/black in both films. */
+    if (filter == APP_FILTER_GLITCH) {
+        glitch_rows(out, side, false);   /* Color indices are not shades: no invert. */
     }
     if (filter == APP_FILTER_MIRROR) {
         mirror_left(out, side);
@@ -372,20 +361,32 @@ static void halftone(const uint8_t *luma, int side, int lo, int span, uint8_t *s
     }
 }
 
-/* Stickers are laid out at 64x64 and resampled to the lens. */
-static void draw_stickers(uint8_t *shades, int side)
+/* GLITCH: tear bands of rows sideways (wrapping), like a worn VHS tape. The
+ * seed comes from the picture, so every GIF frame tears differently. One band
+ * is inverted (B&W) for a flash of noise. */
+static void glitch_rows(uint8_t *px, int side, bool invert_band)
 {
-    for (int eye = 0; eye < 2; ++eye) {
-        const int ex = STICKER_X + eye * (STICKER_W + STICKER_GAP);
-        for (int py = STICKER_Y * side / REF_SIDE; py < (STICKER_Y + STICKER_H) * side / REF_SIDE; ++py) {
-            for (int px = ex * side / REF_SIDE; px < (ex + STICKER_W) * side / REF_SIDE; ++px) {
-                const int bx = px * REF_SIDE / side - ex, by = py * REF_SIDE / side - STICKER_Y;
-                if (bx < 0 || by < 0 || bx >= STICKER_W || by >= STICKER_H || px >= side || py >= side) {
-                    continue;
+    uint32_t seed = 2166136261U;
+    for (int i = 0; i < side * side; i += 97) {
+        seed = (seed ^ px[i]) * 16777619U;
+    }
+    const int band = side >= 32 ? side / 16 : 2;
+    uint8_t row[APP_PHOTO_MAX_SIDE];
+    const uint32_t flash = seed % (uint32_t)(side / band);
+    for (int b0 = 0; b0 * band < side; ++b0) {
+        const uint32_t h = (seed ^ (uint32_t)b0 * 2654435761U) * 2246822519U;
+        const int shift = (h % 2U == 0U) ? (int)((h >> 8) % (uint32_t)(side / 3 + 1)) - side / 6 : 0;
+        for (int y = b0 * band; y < (b0 + 1) * band && y < side; ++y) {
+            uint8_t *r = px + y * side;
+            if (shift) {
+                for (int x = 0; x < side; ++x) {
+                    row[x] = r[((x - shift) % side + side) % side];
                 }
-                const char c = s_sticker_eye[by][bx];
-                if (c != ' ') {
-                    shades[py * side + px] = c == '#' ? 3 : 0;
+                memcpy(r, row, (size_t)side);
+            }
+            if (invert_band && (uint32_t)b0 == flash) {
+                for (int x = 0; x < side; ++x) {
+                    r[x] = (uint8_t)(3 - (r[x] & 3U));
                 }
             }
         }
@@ -460,8 +461,8 @@ void app_photo_filter(const uint8_t *luma, int side, app_photo_filter_t filter, 
             shades[y * side + x] = (uint8_t)(shade > 3 ? 3 : shade);
         }
     }
-    if (filter == APP_FILTER_STICKERS && side >= APP_PHOTO_MIN_SIDE) {
-        draw_stickers(shades, side);
+    if (filter == APP_FILTER_GLITCH) {
+        glitch_rows(shades, side, true);
     }
     if (filter == APP_FILTER_MIRROR) {
         mirror_left(shades, side);

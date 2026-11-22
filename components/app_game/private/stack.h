@@ -20,5 +20,5 @@ uint32_t stack_start(spark_stack_t *s, uint32_t sparks, uint8_t *cue);
 void stack_drop(spark_stack_t *s, uint8_t *cue);
 /** One 30 Hz tick. Returns sparks won when a run ends (*done set then). */
 uint32_t stack_update(spark_stack_t *s, bool *done, uint8_t *cue);
-/** Sparks for a run: one per row, one per perfect drop, a bonus for the top. */
+/** Sparks for a run: nothing unless it reached the top; then 20 + 2 per perfect drop. */
 uint32_t stack_payout(uint8_t rows, uint8_t perfects, bool topped);

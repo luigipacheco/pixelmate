@@ -4,7 +4,7 @@
 
 enum {
     Q = 16,               /* Bar position in 1/16 cells. */
-    TOP_BONUS = 10,
+    TOP_PAY = 20,         /* Reaching the top pays this, +2 per perfect drop. */
     RESULT_TICKS = 75,
 };
 
@@ -18,9 +18,14 @@ static uint32_t next_random(spark_stack_t *s)
     return s->rng;
 }
 
+/* All or nothing: only a tower that reaches the top pays. */
 uint32_t stack_payout(uint8_t rows, uint8_t perfects, bool topped)
 {
-    const uint32_t p = (uint32_t)rows + perfects + (topped ? TOP_BONUS : 0U);
+    (void)rows;
+    if (!topped) {
+        return 0;
+    }
+    const uint32_t p = TOP_PAY + 2U * perfects;
     return p < APP_STACK_PAYOUT_MAX ? p : APP_STACK_PAYOUT_MAX;
 }
 
