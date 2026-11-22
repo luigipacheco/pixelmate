@@ -33,7 +33,8 @@ the `pixel_pal` name so existing pets carry over.)
   luck, and it keeps a house edge.
 - **Spark Stack (unlockable cabinet, 150 sparks):** a bar slides back and
   forth; tap to drop it on the tower and the overhang is cut off. 5 sparks a
-  run; 1 spark per row, +1 per perfect drop, +10 for reaching the top (12 rows).
+  run; all or nothing: only reaching the top (12 rows) pays, 20 sparks +2 per
+  perfect drop (up to 40).
 - **Bitsy Says (unlockable cabinet, 300 sparks):** Bitsy's eyes flash a growing
   sequence of four colors (the pads light up with tones); repeat it. 5 sparks a
   run, 1 spark per round completed (up to 30).

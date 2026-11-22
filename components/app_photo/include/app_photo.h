@@ -44,7 +44,7 @@ typedef enum {
     APP_FILTER_SCANLINES,      /**< Every other row one shade darker. */
     APP_FILTER_GREEN,          /**< Four pocket-console greens. */
     APP_FILTER_THERMAL,        /**< Heat-camera palette, contrast pushed. */
-    APP_FILTER_STICKERS,       /**< The pet's eyes stuck in a corner. */
+    APP_FILTER_GLITCH,         /**< VHS tears: row bands shifted, a color split. (Was EYE STICKERS.) */
     APP_FILTER_ASCII,          /**< 4x4 character cells picked by brightness. */
     APP_FILTER_HALFTONE,       /**< Dots on a staggered grid, sized by brightness. */
     APP_FILTER_EDGES,          /**< Glowing outlines on black. */
