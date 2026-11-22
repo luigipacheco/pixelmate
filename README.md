@@ -17,8 +17,8 @@ the `pixel_pal` name so existing pets carry over.)
   fullness boost (they don't count toward survival).
 - **Arcade:** a row of pixel cabinets with attract-mode demos; tap one to
   play (EXIT returns). Every game is bought in the store, in unlock order:
-  Spark Slots (100), Spark Grid (200), Bit Flip (250) and HI-LO (400), the
-  best earner, last.
+  Spark Slots (100), Spark Stack (150), Spark Grid (200), Bit Flip (250),
+  Bitsy Says (300) and HI-LO (400), the best earner, last.
 - **HI-LO (unlockable cabinet, 400 sparks):** deal for 5 sparks, each right
   guess doubles the pot, cash out any time (auto cash-out after 5 wins).
 - **Moods:** idle, happy, sleepy, hungry, sad, walking, eating, thinking,
@@ -31,6 +31,12 @@ the `pixel_pal` name so existing pets carry over.)
 - **Spark Slots (unlockable cabinet, 100 sparks):** a three-reel slot machine
   where you stop each reel yourself; 3 sparks a spin, 7-7-7 pays 150. Pure
   luck, and it keeps a house edge.
+- **Spark Stack (unlockable cabinet, 150 sparks):** a bar slides back and
+  forth; tap to drop it on the tower and the overhang is cut off. 5 sparks a
+  run; 1 spark per row, +1 per perfect drop, +10 for reaching the top (12 rows).
+- **Bitsy Says (unlockable cabinet, 300 sparks):** Bitsy's eyes flash a growing
+  sequence of four colors (the pads light up with tones); repeat it. 5 sparks a
+  run, 1 spark per round completed (up to 30).
 - **Bit Flip (unlockable cabinet, 250 sparks):** flip 8 switches (128..1) to
   match the target number before the timer runs out; every hit brings a new
   number and a shorter timer. 5 sparks a run, 1 spark per hit (up to 30).
@@ -42,7 +48,8 @@ the `pixel_pal` name so existing pets carry over.)
   a hidden tile to cycle a memo (X guards it from taps, or a note 1/2/3).
 - **Low-energy mode:** after 20 s without a touch the pet dozes off and the
   screen dims; at 30 s the screen turns off (12 s on low battery). SLEEP in
-  the menu does it at once. Steps keep counting; tap the screen to wake.
+  the menu or a press of the AI button does it at once. Steps keep counting;
+  tap the screen or press the AI button to wake.
 - **Pocket mode (on battery):** 3 s after the screen goes dark, Wi-Fi stops
   and the chip light-sleeps; the BMI270 keeps counting steps. Wake it with the
   AI button (touch does not wake it in pocket mode). It wakes itself every 10

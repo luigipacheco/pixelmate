@@ -239,6 +239,14 @@ static void draw_preview(const draw_ctx_t *d, const app_store_item_t *item, int 
             }
             return;
         }
+        if (item->value == APP_GAME_SAYS) {
+            screens_icon_says(d, x, y, c);
+            return;
+        }
+        if (item->value == APP_GAME_STACK) {
+            screens_icon_stack(d, x, y, c);
+            return;
+        }
         if (item->value == APP_GAME_CARDS) {
             /* Two tiny cards: a face-up 7 and a face-down one. */
             DrawRectangle(x, y + 8, 26, 40, (Color){240, 240, 232, 255});

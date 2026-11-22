@@ -649,8 +649,12 @@ void pet_view_draw(const pet_view_t *v, const app_game_snapshot_t *s)
     const bool rainbow_on = anim_on(s, APP_ANIM_RAINBOW) && s->mood == APP_MOOD_WALK;
     const bool stars = anim_on(s, APP_ANIM_STARS) && s->mood == APP_MOOD_HAPPY;
     const bool fainted = s->mood == APP_MOOD_FAINTED;
-    pet_eyes_draw(&v->eyes, current_anchor(v), grid,
-                  fainted ? px_scale(c, 0.55f) : (rainbow_on ? rainbow(v->t) : c), stars, fainted);
+    Color eye = fainted ? px_scale(c, 0.55f) : (rainbow_on ? rainbow(v->t) : c);
+    if (s->screen == APP_SCREEN_ARCADE && s->arcade == APP_ARCADE_SAYS && s->says.lit >= 0
+            && s->overlay == APP_OVERLAY_NONE) {
+        eye = px_scale(screens_says_color(s->says.lit), level);   /* Bitsy says this color. */
+    }
+    pet_eyes_draw(&v->eyes, current_anchor(v), grid, eye, stars, fainted);
     draw_food_toss(v, &d);
     draw_particles(v, &d);
     draw_crt(v, &d);

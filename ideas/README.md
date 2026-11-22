@@ -19,7 +19,7 @@ Made by **Luis Pacheco**: [www.luigipacheco.com](https://www.luigipacheco.com)
 | ![Bitsy](screens/01_home.png) | **Bitsy** reacts to everything: blinks, follows your finger, gets happy, sleepy, hungry or grumpy. |
 | ![Steps](screens/02_steps.png) | **Steps ring** with today's progress, your all-time total and Bitsy's health (5 hearts). The BMI270's own step counter keeps counting while the screen sleeps. |
 | ![Feed](screens/03_feed.png) | **Feed** Bitsy snacks with sparks. To stay healthy it needs half your daily goal in steps; a missed day costs a heart. |
-| ![Arcade](screens/04_arcade.png) | **Arcade** of pixel cabinets, unlocked in order: Spark Slots, Spark Grid, Bit Flip and HI-LO. Each costs a few sparks a play. |
+| ![Arcade](screens/04_arcade.png) | **Arcade** of pixel cabinets, unlocked in order: Spark Slots, Spark Stack, Spark Grid, Bit Flip, Bitsy Says and HI-LO. Each costs a few sparks a play. |
 | ![Bit Flip](screens/05_bitflip.png) | **Bit Flip**: set eight switches to the target number in binary before the timer runs out. |
 | ![HI-LO](screens/06_hilo.png) | **HI-LO**: double or nothing. Guess whether the next card is higher or lower, and cash out before you lose it all. |
 | ![Photo booth](screens/07_booth_color.png) | **Photo booth** (needs the camera module): low-res photos and GIFs with retro looks (dither, scanlines, game-green, thermal, ASCII, halftone, stickers, edges, pop, mirror, CRT) and **COLOR FILM**. Plug the camera in or out at any time. |

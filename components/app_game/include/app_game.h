@@ -32,11 +32,13 @@ typedef enum {
 /** Cabinets in the arcade, left to right. LOBBY = no game open. */
 typedef enum {
     APP_ARCADE_LOBBY = 0,
-    /* Cabinets in unlock order: cheapest (luck) first, best earner last. */
-    APP_ARCADE_SLOTS,      /**< Spark Slots, bought in the store. */
-    APP_ARCADE_GRID,       /**< Spark Grid, bought in the store. */
-    APP_ARCADE_BITS,       /**< Bit Flip, bought in the store. */
-    APP_ARCADE_CARDS,      /**< HI-LO, bought in the store (the last unlock). */
+    /* Cabinets in unlock order (store price): cheapest first, best earner last. */
+    APP_ARCADE_SLOTS,      /**< Spark Slots, 100. */
+    APP_ARCADE_STACK,      /**< Spark Stack, 150. */
+    APP_ARCADE_GRID,       /**< Spark Grid, 200. */
+    APP_ARCADE_BITS,       /**< Bit Flip, 250. */
+    APP_ARCADE_SAYS,       /**< Bitsy Says, 300. */
+    APP_ARCADE_CARDS,      /**< HI-LO, 400 (the last unlock). */
     APP_ARCADE_COUNT,
 } app_arcade_t;
 
@@ -163,8 +165,72 @@ typedef enum {
     APP_GAME_BITS,
     APP_GAME_PHOTO,        /**< Photo booth page (needs the camera module). */
     APP_GAME_CARDS,        /**< HI-LO (was free before it moved to the store). */
+    APP_GAME_SAYS,         /**< Bitsy Says. */
+    APP_GAME_STACK,        /**< Spark Stack. */
     APP_GAME_COUNT,
 } app_minigame_t;
+
+/* ---- Arcade sound/visual cues: the event bits are all taken, so newer
+ * games bump snapshot.cue_seq and set snapshot.cue instead. ---- */
+typedef enum {
+    APP_CUE_NONE = 0,
+    APP_CUE_START,
+    APP_CUE_PAD0, APP_CUE_PAD1, APP_CUE_PAD2, APP_CUE_PAD3,   /**< Bitsy Says colors. */
+    APP_CUE_DROP,          /**< Spark Stack: bar placed (overhang cut). */
+    APP_CUE_PERFECT,       /**< Spark Stack: exact drop. */
+    APP_CUE_WIN, APP_CUE_COINS, APP_CUE_LOSE,
+} app_cue_t;
+
+/* ---- Bitsy Says: repeat a growing sequence of four colors ---- */
+enum {
+    APP_SAYS_PADS = 4,
+    APP_SAYS_MAX = 32,           /**< Longest sequence (a perfect run). */
+    APP_SAYS_COST = 5,
+    APP_SAYS_PAYOUT_MAX = 30,    /**< A run pays 1 spark per completed round, up to this. */
+};
+
+typedef enum {
+    APP_SAYS_READY = 0, APP_SAYS_SHOW, APP_SAYS_INPUT, APP_SAYS_RESULT,
+} app_says_phase_t;
+
+typedef struct {
+    app_says_phase_t phase;
+    uint8_t round;               /**< Sequence length this round. */
+    uint8_t shown;               /**< SHOW: colors shown so far. */
+    uint8_t entered;             /**< INPUT: colors repeated so far. */
+    int8_t lit;                  /**< Pad glowing now, -1 none. */
+    int8_t wrong;                /**< Pad tapped by mistake, -1 none (timeout). */
+    uint16_t wait;               /**< SHOW: ticks before the first color. */
+    uint8_t payout, best;        /**< Last run's sparks; best rounds (saved). */
+    bool failed;
+} app_says_snapshot_t;
+
+/* ---- Spark Stack: drop sliding bars into a tower ---- */
+enum {
+    APP_STACK_COLS = 12,
+    APP_STACK_ROWS = 12,         /**< Reach the top for a bonus. */
+    APP_STACK_START_W = 5,
+    APP_STACK_COST = 5,
+    APP_STACK_PAYOUT_MAX = 40,
+};
+
+typedef enum {
+    APP_STACK_READY = 0, APP_STACK_PLAYING, APP_STACK_RESULT,
+} app_stack_phase_t;
+
+typedef struct {
+    app_stack_phase_t phase;
+    uint8_t rows;                        /**< Rows placed. */
+    uint8_t left[APP_STACK_ROWS], row_w[APP_STACK_ROWS];
+    uint8_t width;                       /**< Moving bar width (cells). */
+    int16_t pos_q;                       /**< Moving bar left edge, 1/16 cells. */
+    int8_t dir;
+    uint8_t speed_q;
+    uint8_t perfects, payout, best;      /**< best = most rows (saved). */
+    bool topped;
+    uint8_t cut_left, cut_w, cut_row;    /**< Last overhang that fell off. */
+    uint8_t drop_seq;                    /**< Bumped on every drop (view animation). */
+} app_stack_snapshot_t;
 
 /* ---- Bit Flip: set 8 switches (128..1) to the target before time runs out ---- */
 enum {
@@ -489,6 +555,10 @@ typedef struct {
     app_bits_snapshot_t bits;
     uint8_t arcade_row;         /**< Cabinet row shown in the arcade lobby. */
     app_booth_snapshot_t booth;
+    app_says_snapshot_t says;
+    app_stack_snapshot_t stack;
+    uint8_t cue;                /**< app_cue_t of the newest cue... */
+    uint8_t cue_seq;            /**< ...bumped (wraps) whenever a cue fires. */
     uint32_t save_seq;          /**< Increments whenever persistent data changes. */
 } app_game_snapshot_t;
 
@@ -531,7 +601,8 @@ typedef struct {
     /* v7 */
     uint8_t filters_owned_hi;   /**< Looks 8..15 (APP_OWN_FILTER_BIT >> 8). */
     uint8_t grid_level;         /**< Spark Grid level 1..APP_GRID_LEVELS; 0 = 1. */
-    uint16_t reserved4;
+    uint8_t says_best;          /**< Bitsy Says best rounds (was reserved, 0). */
+    uint8_t stack_best;         /**< Spark Stack best rows (was reserved, 0). */
 } app_game_record_t;
 
 /** Sizes of older records (prefixes of the current one), for save migration. */
@@ -588,6 +659,8 @@ bool app_game_take_booth_request(app_game_handle_t handle, app_booth_request_t *
 void app_game_booth_result(app_game_handle_t handle, app_booth_result_t result);
 /** Wake the screen (button press, external event). No-op when awake. */
 void app_game_wake(app_game_handle_t handle);
+/** Put the pet to sleep now (screen off), like the menu's SLEEP. */
+void app_game_sleep(app_game_handle_t handle);
 /** Advance one 30 Hz tick unless paused. No rendering or hardware access. */
 void app_game_update(app_game_handle_t handle);
 

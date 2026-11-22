@@ -64,6 +64,7 @@ static struct {
     uint8_t pending_ticks;
     sfx_t deferred;            /* Cue that arrived while the codec was reopening. */
     uint8_t deferred_ticks;
+    uint8_t cue_seq;           /* Last arcade cue played (snapshot.cue_seq). */
 } s_sfx;
 
 static void load_sounds(void)
@@ -184,6 +185,22 @@ static sfx_t pick(uint32_t ev, const app_game_snapshot_t *s, sfx_t *follow, uint
         *follow = slot_result(s->slots.payout);
         *delay = RESULT_DELAY_TICKS;
         return SFX_REEL;
+    }
+    if (s->cue_seq != s_sfx.cue_seq) {
+        s_sfx.cue_seq = s->cue_seq;
+        switch ((app_cue_t)s->cue) {
+        case APP_CUE_START: return SFX_DEAL;
+        case APP_CUE_PAD0: return SFX_TAP;
+        case APP_CUE_PAD1: return SFX_FLIP;
+        case APP_CUE_PAD2: return SFX_TILE;
+        case APP_CUE_PAD3: return SFX_TILE_BONUS;
+        case APP_CUE_DROP: return SFX_TILE;
+        case APP_CUE_PERFECT: return SFX_TILE_BONUS;
+        case APP_CUE_WIN: return SFX_WIN;
+        case APP_CUE_COINS: return SFX_COINS;
+        case APP_CUE_LOSE: return SFX_LOSE;
+        default: break;
+        }
     }
     if (ev & APP_EVENT_GRID_DONE) return grid_result(s->grid.result);
     if (ev & APP_EVENT_BIT_DONE) {

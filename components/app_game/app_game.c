@@ -9,6 +9,8 @@
 #include "private/cards.h"
 #include "private/pedometer.h"
 #include "private/bits.h"
+#include "private/says.h"
+#include "private/stack.h"
 #include "private/grid.h"
 #include "private/slots.h"
 
@@ -70,8 +72,10 @@ static const app_store_item_t s_store[] = {
     {APP_ITEM_STYLE, APP_PIXEL_SMOOTH, 150, "SMOOTH", "NO PIXELS AT ALL"},
     {APP_ITEM_ANIM, APP_ANIM_STARS, 200, "STAR EYES", "STARS WHEN HAPPY"},
     {APP_ITEM_GAME, APP_GAME_SLOTS, 100, "SPARK SLOTS", "STOP THE REELS TO WIN"},
+    {APP_ITEM_GAME, APP_GAME_STACK, 150, "SPARK STACK", "STACK BARS TO THE TOP"},
     {APP_ITEM_GAME, APP_GAME_GRID, 200, "SPARK GRID", "FLIP TILES DODGE DUDS"},
     {APP_ITEM_GAME, APP_GAME_BITS, 250, "BIT FLIP", "MATCH NUMBERS IN BINARY"},
+    {APP_ITEM_GAME, APP_GAME_SAYS, 300, "BITSY SAYS", "REPEAT THE COLORS"},
     {APP_ITEM_ANIM, APP_ANIM_RAINBOW, 300, "RAINBOW", "COLORS WHILE WALKING"},
     {APP_ITEM_GAME, APP_GAME_PHOTO, 300, "PHOTO BOOTH", "LO-RES PICS AND GIFS"},
     {APP_ITEM_GAME, APP_GAME_CARDS, 400, "HI-LO", "DOUBLE OR NOTHING CARDS"},
@@ -158,6 +162,9 @@ struct app_game {
     slots_t slots;
     grid_t grid;
     bits_t bits;
+    says_t says;
+    spark_stack_t stack;
+    uint8_t cue, cue_seq;         /* Newest arcade cue (see app_cue_t). */
     uint8_t arcade_row;
     booth_t booth;
     bool camera_present;
@@ -298,6 +305,10 @@ static void fresh_pet(app_game_handle_t g)
     grid_init(&g->grid, g->grid.rng);
     g->bits.view.best = 0;
     bits_init(&g->bits, g->bits.rng);
+    g->says.view.best = 0;
+    says_init(&g->says, g->says.rng);
+    g->stack.view.best = 0;
+    stack_init(&g->stack, g->stack.rng);
     g->arcade_row = 0;
     /* Keep what the runtime reported about the camera and stored photos. */
     const app_booth_snapshot_t status = g->booth.view;
@@ -325,6 +336,8 @@ app_game_err_t app_game_create(const app_game_config_t *config, app_game_handle_
     slots_init(&g->slots, config->seed ^ 0xa5a5a5a5U);
     grid_init(&g->grid, config->seed ^ 0x5a5a5a5aU);
     bits_init(&g->bits, config->seed ^ 0x3c3c3c3cU);
+    says_init(&g->says, config->seed ^ 0x6b6b6b6bU);
+    stack_init(&g->stack, config->seed ^ 0x1d1d1d1dU);
     fresh_pet(g);
     *ret_handle = g;
     return APP_GAME_OK;
@@ -504,6 +517,8 @@ static void set_overlay(app_game_handle_t g, app_overlay_t overlay)
     }
 }
 
+static app_minigame_t cabinet_game(app_arcade_t cabinet);
+
 static void set_arcade(app_game_handle_t g, app_arcade_t arcade)
 {
     if (g->arcade != arcade) {
@@ -638,8 +653,12 @@ static void open_game(app_game_handle_t g, app_minigame_t game)
         return;
     }
     set_screen(g, APP_SCREEN_ARCADE);
-    const app_arcade_t cabinet = game == APP_GAME_GRID ? APP_ARCADE_GRID
-                                 : (game == APP_GAME_BITS ? APP_ARCADE_BITS : APP_ARCADE_SLOTS);
+    app_arcade_t cabinet = APP_ARCADE_SLOTS;
+    for (int a = APP_ARCADE_LOBBY + 1; a < APP_ARCADE_COUNT; ++a) {
+        if (cabinet_game((app_arcade_t)a) == game) {
+            cabinet = (app_arcade_t)a;
+        }
+    }
     g->arcade_row = (uint8_t)((cabinet - 1) / APP_ARCADE_PER_ROW);
     set_arcade(g, cabinet);
 }
@@ -955,6 +974,78 @@ static void tap_grid(app_game_handle_t g, int32_t x, int32_t y)
     }
 }
 
+static void fire_cue(app_game_handle_t g, uint8_t cue)
+{
+    if (cue != APP_CUE_NONE) {
+        g->cue = cue;
+        ++g->cue_seq;
+    }
+}
+
+/* Shared PLAY handling for the cue-based games: pay, or grumble if broke. */
+static void started(app_game_handle_t g, uint32_t cost, uint8_t cue)
+{
+    if (!cost) {
+        react(g, APP_MOOD_GRUMPY, REACT_GRUMPY_TICKS);
+        g->events |= APP_EVENT_NO_SPARKS;
+        return;
+    }
+    g->sparks -= cost;
+    fire_cue(g, cue);
+    changed(g);
+}
+
+static void tap_says(app_game_handle_t g, int32_t x, int32_t y)
+{
+    if (blocked_by_faint(g)) {
+        return;
+    }
+    uint8_t cue = APP_CUE_NONE;
+    if (g->says.view.phase == APP_SAYS_READY) {
+        if (app_rect_hit(app_says_button_rect(), x, y)) {
+            started(g, says_start(&g->says, g->sparks, &cue), cue);
+        }
+        return;
+    }
+    for (int i = 0; i < APP_SAYS_PADS; ++i) {
+        if (app_rect_hit(app_says_pad_rect(i), x, y)) {
+            says_tap(&g->says, i, &cue);
+            fire_cue(g, cue);
+            return;
+        }
+    }
+}
+
+static void tap_stack(app_game_handle_t g, int32_t x, int32_t y)
+{
+    if (blocked_by_faint(g)) {
+        return;
+    }
+    uint8_t cue = APP_CUE_NONE;
+    if (g->stack.view.phase == APP_STACK_READY) {
+        if (app_rect_hit(app_stack_button_rect(), x, y)) {
+            started(g, stack_start(&g->stack, g->sparks, &cue), cue);
+        }
+        return;
+    }
+    if (y > 120) {   /* Anywhere below the top bar drops the bar. */
+        stack_drop(&g->stack, &cue);
+        fire_cue(g, cue);
+    }
+}
+
+/* A cue-based game ended: bank the payout and react. */
+static void arcade_paid(app_game_handle_t g, uint32_t won, uint32_t cost)
+{
+    g->sparks += won;
+    if (won) {
+        react(g, APP_MOOD_HAPPY, won >= cost * 2 ? REACT_GOAL_TICKS : REACT_WIN_TICKS);
+    } else {
+        react(g, APP_MOOD_SAD, REACT_SURPRISE_TICKS);
+    }
+    changed(g);
+}
+
 static void tap_bits(app_game_handle_t g, int32_t x, int32_t y)
 {
     if (blocked_by_faint(g)) {
@@ -988,6 +1079,8 @@ static app_minigame_t cabinet_game(app_arcade_t cabinet)
     switch (cabinet) {
     case APP_ARCADE_GRID: return APP_GAME_GRID;
     case APP_ARCADE_BITS: return APP_GAME_BITS;
+    case APP_ARCADE_SAYS: return APP_GAME_SAYS;
+    case APP_ARCADE_STACK: return APP_GAME_STACK;
     case APP_ARCADE_CARDS: return APP_GAME_CARDS;
     default: return APP_GAME_SLOTS;
     }
@@ -1078,6 +1171,8 @@ static void tap_arcade(app_game_handle_t g, int32_t x, int32_t y)
         case APP_ARCADE_SLOTS: tap_slots(g, x, y); break;
         case APP_ARCADE_GRID: tap_grid(g, x, y); break;
         case APP_ARCADE_BITS: tap_bits(g, x, y); break;
+        case APP_ARCADE_SAYS: tap_says(g, x, y); break;
+        case APP_ARCADE_STACK: tap_stack(g, x, y); break;
         default: break;
         }
         return;
@@ -1322,6 +1417,13 @@ void app_game_wake(app_game_handle_t g)
     }
 }
 
+void app_game_sleep(app_game_handle_t g)
+{
+    if (g && g->power != APP_POWER_DOZE) {
+        doze(g);
+    }
+}
+
 void app_game_set_day(app_game_handle_t g, int32_t day)
 {
     if (!g || day <= 0 || day == g->day) {
@@ -1438,6 +1540,11 @@ static app_mood_t compute_mood(const struct app_game *g)
             && g->arcade == APP_ARCADE_BITS && g->bits.view.phase == APP_BITS_PLAYING) {
         return APP_MOOD_THINKING;
     }
+    if (g->overlay == APP_OVERLAY_NONE && g->screen == APP_SCREEN_ARCADE
+            && ((g->arcade == APP_ARCADE_SAYS && g->says.view.phase == APP_SAYS_INPUT)
+                || (g->arcade == APP_ARCADE_STACK && g->stack.view.phase == APP_STACK_PLAYING))) {
+        return APP_MOOD_THINKING;
+    }
     if (booth_open(g) && g->booth.view.on_air) {
         return APP_MOOD_HAPPY;      /* Smiling for the stream. */
     }
@@ -1500,6 +1607,21 @@ void app_game_update(app_game_handle_t g)
         changed(g);
     }
     grid_update(&g->grid);
+    {
+        bool done = false;
+        uint8_t cue = APP_CUE_NONE;
+        uint32_t won = says_update(&g->says, &done, &cue);
+        fire_cue(g, cue);
+        if (done) {
+            arcade_paid(g, won, APP_SAYS_COST);
+        }
+        cue = APP_CUE_NONE;
+        won = stack_update(&g->stack, &done, &cue);
+        fire_cue(g, cue);
+        if (done) {
+            arcade_paid(g, won, APP_STACK_COST);
+        }
+    }
     const uint32_t before_bits = g->events;
     const uint32_t bits_won = bits_update(&g->bits, &g->events);
     if ((g->events & ~before_bits) & APP_EVENT_BIT_DONE) {
@@ -1580,6 +1702,10 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .slots = g->slots.view,
         .grid = g->grid.view,
         .bits = g->bits.view,
+        .says = g->says.view,
+        .stack = g->stack.view,
+        .cue = g->cue,
+        .cue_seq = g->cue_seq,
         .arcade_row = g->arcade_row,
         .booth = g->booth.view,
         .save_seq = g->save_seq,
@@ -1670,6 +1796,8 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->anims_on = g->anims_on;
     r->sound = (uint8_t)g->sound;
     r->bits_best = g->bits.view.best;
+    r->says_best = g->says.view.best;
+    r->stack_best = g->stack.view.best;
     r->sleep_code = g->sleep_idx == DEFAULT_SLEEP_IDX ? 0 : (uint8_t)(g->sleep_idx + 1);
     r->bright_code = g->bright_idx == DEFAULT_BRIGHT_IDX ? 0 : (uint8_t)(g->bright_idx + 1);
     r->goal_k = (uint8_t)(g->step_goal / 1000U);
@@ -1710,6 +1838,8 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
     g->anims_on = anims;
     g->sound = r->sound < APP_SOUND_COUNT ? (app_sound_t)r->sound : APP_SOUND_MID;
     g->bits.view.best = r->bits_best;
+    g->says.view.best = r->says_best;
+    g->stack.view.best = r->stack_best;
     g->sleep_idx = r->sleep_code && r->sleep_code <= APP_SLEEP_OPTIONS
                    ? (uint8_t)(r->sleep_code - 1) : DEFAULT_SLEEP_IDX;
     g->bright_idx = r->bright_code && r->bright_code <= APP_BRIGHT_OPTIONS
