@@ -21,8 +21,8 @@ desk pet that earns sparks from pats instead of steps: see
   fullness boost (they don't count toward survival).
 - **Arcade:** a row of pixel cabinets with attract-mode demos; tap one to
   play (EXIT returns). Every game is bought in the store, in unlock order:
-  Spark Slots (100), Spark Grid (200), Bit Flip (250) and HI-LO (400), the
-  best earner, last.
+  Spark Slots (100), Spark Stack (150), Spark Grid (200), Bit Flip (250),
+  Bitsy Says (300) and HI-LO (400), the best earner, last.
 - **HI-LO (unlockable cabinet, 400 sparks):** deal for 5 sparks, each right
   guess doubles the pot, cash out any time (auto cash-out after 5 wins).
 - **Moods:** idle, happy, sleepy, hungry, sad, walking, eating, thinking,
@@ -35,20 +35,43 @@ desk pet that earns sparks from pats instead of steps: see
 - **Spark Slots (unlockable cabinet, 100 sparks):** a three-reel slot machine
   where you stop each reel yourself; 3 sparks a spin, 7-7-7 pays 150. Pure
   luck, and it keeps a house edge.
+- **Spark Stack (unlockable cabinet, 150 sparks):** a bar slides back and
+  forth; tap to drop it on the tower and the overhang is cut off. 5 sparks a
+  run; 1 spark per row, +1 per perfect drop, +10 for reaching the top (12 rows).
+- **Bitsy Says (unlockable cabinet, 300 sparks):** Bitsy's eyes flash a growing
+  sequence of four colors (the pads light up with tones); repeat it. 5 sparks a
+  run, 1 spark per round completed (up to 30).
 - **Bit Flip (unlockable cabinet, 250 sparks):** flip 8 switches (128..1) to
   match the target number before the timer runs out; every hit brings a new
   number and a shorter timer. 5 sparks a run, 1 spark per hit (up to 30).
 - **Spark Grid (unlockable cabinet, 200 sparks):** a 5x5 logic flip puzzle.
   Tiles hide x1/x2/x3 or a dud; row/column hints show totals and dud counts.
-  10 sparks a round, each flip multiplies the score, CASH banks it.
+  10 sparks a round, each flip multiplies the score, CASH banks it. Levels
+  1-5 like the original: clear a board to climb (level 5 boards pay up to
+  576), a dud or CASH drops you to the number of tiles you flipped. Long-press
+  a hidden tile to cycle a memo (X guards it from taps, or a note 1/2/3).
 - **Low-energy mode:** after 20 s without a touch the pet dozes off and the
   screen dims; at 30 s the screen turns off (12 s on low battery). SLEEP in
-  the menu does it at once. Steps keep counting; tap the screen to wake.
-- **Pocket mode (on battery):** 3 s after the screen goes dark, Wi-Fi stops
-  and the chip light-sleeps; the BMI270 keeps counting steps. Wake it with the
-  AI button (touch does not wake it in pocket mode). It wakes itself every 10
-  minutes to log steps and settle the day. On USB power it stays awake so
-  installs and logs keep working.
+  the menu or a press of the AI button does it at once. Steps keep counting;
+  tap the screen or press the AI button to wake.
+- **TAP STEPS (Settings, off by default):** an accessibility mode for people who
+  can't walk (or boards without a step counter): every 10 pats on Bitsy count
+  as one step, with no daily cap.
+- **DEV MODE (secret):** on Settings > ABOUT enter the Konami code: swipe up,
+  up, down, down, left, right, left, right, then tap the left half (B) and the
+  right half (A). Each input lights a glyph; unlocking plays a jackpot. A
+  sandbox with infinite sparks: its Settings row (page 3) turns it off, and
+  turning it off or restarting restores the real sparks and items.
+- **Clock mode (on USB power):** when the pet sleeps while plugged in and the
+  time is known (Wi-Fi), the screen shows a dim clock instead of going black:
+  big pixel digits with Bitsy's eyes as the blinking colon (they hop on the
+  hour and doze at night), the date and today's steps. It drifts a few pixels
+  each minute to protect the AMOLED. Tap to wake.
+- **Pocket mode (on battery):** a few seconds after the screen goes dark,
+  Wi-Fi stops and the game loop naps (one tick a second) so the CPU idles; the
+  BMI270 keeps counting steps. Press the AI button to wake it. (It does not use
+  ESP-IDF light sleep: on this ESP32-S31 IDF, light sleep aborted in the clock
+  driver and rebooted the board.) On USB power it stays awake.
 - **Battery:** percentage in the pull-down menu; a top-bar icon appears while
   charging or when the battery is low.
 - **Wi-Fi setup:** first time, pull down the menu and tap **SET UP WIFI**. The

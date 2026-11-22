@@ -18,7 +18,7 @@ void booth_cancel(booth_t *b);
 /** Tap inside the open booth; returns APP_EVENT_* bits. `lenses_owned` also
  * carries COLOR FILM and WEBCAM ownership. `code` is the webcam code to use if
  * this tap goes on air. */
-uint32_t booth_tap(booth_t *b, int32_t x, int32_t y, uint8_t filters_owned, uint8_t lenses_owned,
+uint32_t booth_tap(booth_t *b, int32_t x, int32_t y, uint16_t filters_owned, uint8_t lenses_owned,
                    bool film_owned, bool fainted, uint16_t code);
 /** One 30 Hz tick; returns APP_EVENT_* bits. */
 uint32_t booth_update(booth_t *b);

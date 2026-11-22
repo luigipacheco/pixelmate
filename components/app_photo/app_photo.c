@@ -17,6 +17,7 @@ enum {
 
 static const char *const s_names[APP_FILTER_COUNT] = {
     "PLAIN", "DITHER", "SCANLINES", "GAME-GREEN", "THERMAL", "EYE STICKERS", "ASCII", "HALFTONE",
+    "EDGES", "POP", "MIRROR", "CRT",
 };
 static const char *const s_res_names[APP_PHOTO_RES_COUNT] = {"LO RES", "MID RES", "HI RES"};
 
@@ -168,6 +169,8 @@ static int cell_mean(const uint8_t *luma, int side, int x0, int y0, int c, int l
 }
 
 static void draw_stickers(uint8_t *shades, int side);
+static int edge_at(const uint8_t *luma, int side, int x, int y, int lo, int span);
+static void mirror_left(uint8_t *px, int side);
 
 /* ---- Color film ---------------------------------------------------- */
 
@@ -302,12 +305,28 @@ void app_photo_filter_color(const uint8_t *yuv, int side, app_photo_filter_t fil
             c.b += t;
             if (filter == APP_FILTER_SCANLINES && (y & 1)) {
                 c = (rgb_t) {c.r * 5 / 10, c.g * 5 / 10, c.b * 5 / 10};
+            } else if (filter == APP_FILTER_EDGES) {
+                /* Outlines in the scene's own colors, on black. */
+                out[i] = edge_at(yuv, side, x, y, lo, span) > 80 ? nearest_color(lift(c)) : 0;
+                continue;
+            } else if (filter == APP_FILTER_POP) {
+                c = (rgb_t) {c.r > 140 ? 255 : (c.r > 70 ? 128 : 0), c.g > 140 ? 255 : (c.g > 70 ? 128 : 0),
+                             c.b > 140 ? 255 : (c.b > 70 ? 128 : 0)};
+            } else if (filter == APP_FILTER_CRT) {
+                /* Each column glows in one phosphor color; odd rows dimmer. */
+                const int k = (y & 1) ? 6 : 10;
+                c = (rgb_t) {x % 3 == 0 ? c.r * 12 / 10 : c.r * 7 / 10, x % 3 == 1 ? c.g * 12 / 10 : c.g * 7 / 10,
+                             x % 3 == 2 ? c.b * 12 / 10 : c.b * 7 / 10};
+                c = (rgb_t) {c.r * k / 10, c.g * k / 10, c.b * k / 10};
             }
             out[i] = nearest_color(c);
         }
     }
     if (filter == APP_FILTER_STICKERS && side >= APP_PHOTO_MIN_SIDE) {
         draw_stickers(out, side);   /* Indices 3/0 are white/black in both films. */
+    }
+    if (filter == APP_FILTER_MIRROR) {
+        mirror_left(out, side);
     }
 }
 
@@ -373,6 +392,27 @@ static void draw_stickers(uint8_t *shades, int side)
     }
 }
 
+/* Edge strength at (x, y): sum of the horizontal and vertical brightness
+ * steps across the pixel (stretched luma, clamped at the borders). */
+static int edge_at(const uint8_t *luma, int side, int x, int y, int lo, int span)
+{
+    const int xl = x > 0 ? x - 1 : x, xr = x < side - 1 ? x + 1 : x;
+    const int yu = y > 0 ? y - 1 : y, yd = y < side - 1 ? y + 1 : y;
+    const int gx = stretched(luma[y * side + xr], lo, span) - stretched(luma[y * side + xl], lo, span);
+    const int gy = stretched(luma[yd * side + x], lo, span) - stretched(luma[yu * side + x], lo, span);
+    return (gx < 0 ? -gx : gx) + (gy < 0 ? -gy : gy);
+}
+
+/* MIRROR: copy the left half, reflected, over the right half. */
+static void mirror_left(uint8_t *px, int side)
+{
+    for (int y = 0; y < side; ++y) {
+        for (int x = 0; x < side / 2; ++x) {
+            px[y * side + side - 1 - x] = px[y * side + x];
+        }
+    }
+}
+
 void app_photo_filter(const uint8_t *luma, int side, app_photo_filter_t filter, uint8_t *shades)
 {
     if (!luma || !shades || side <= 0 || side > APP_PHOTO_MAX_SIDE) {
@@ -397,7 +437,12 @@ void app_photo_filter(const uint8_t *luma, int side, app_photo_filter_t filter, 
         for (int x = 0; x < side; ++x) {
             const int v = stretched(luma[y * side + x], lo, span);
             int shade;
-            if (filter == APP_FILTER_DITHER) {
+            if (filter == APP_FILTER_EDGES) {
+                const int e = edge_at(luma, side, x, y, lo, span);
+                shade = e > 150 ? 3 : (e > 90 ? 2 : (e > 50 ? 1 : 0));
+            } else if (filter == APP_FILTER_POP) {
+                shade = v < 70 ? 0 : (v < 150 ? 2 : 3);   /* Hard poster steps, no mid-dark. */
+            } else if (filter == APP_FILTER_DITHER) {
                 const int scaled = v * (APP_PHOTO_SHADES - 1);
                 shade = scaled / 255;
                 if ((scaled % 255) * 16 / 255 > s_bayer[y & 3][x & 3]) {
@@ -408,12 +453,18 @@ void app_photo_filter(const uint8_t *luma, int side, app_photo_filter_t filter, 
                 if (filter == APP_FILTER_SCANLINES && (y & 1) && shade > 0) {
                     --shade;
                 }
+                if (filter == APP_FILTER_CRT && (x % 3 == 2 || (y & 1)) && shade > 0) {
+                    --shade;   /* Dark gaps between "phosphor" columns and rows. */
+                }
             }
             shades[y * side + x] = (uint8_t)(shade > 3 ? 3 : shade);
         }
     }
     if (filter == APP_FILTER_STICKERS && side >= APP_PHOTO_MIN_SIDE) {
         draw_stickers(shades, side);
+    }
+    if (filter == APP_FILTER_MIRROR) {
+        mirror_left(shades, side);
     }
 }
 

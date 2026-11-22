@@ -41,6 +41,14 @@ static void draw_tile(const draw_ctx_t *d, int tile, int ox)
     if (!face) {
         px_box(x, y, w, h, 0, px_scale(d->color, 0.18f));
         px_box(x, y, w, h, 2, g->phase == APP_GRID_PLAYING ? d->color : d->dim);
+        /* Memo mark (long press): a red X guards the tile, digits are notes. */
+        const uint8_t mark = g->phase == APP_GRID_PLAYING ? g->marks[tile] : 0;
+        if (mark == APP_GRID_MARK_DUD && width > 0.6f) {
+            draw_dud_mark(x + w / 2, y + h / 2, 4, WARN);
+        } else if (mark >= APP_GRID_MARK_1 && width > 0.6f) {
+            char note[2] = {(char)('1' + mark - APP_GRID_MARK_1), 0};
+            px_text_center(note, x + w / 2, y + h / 2 - 10, 3, d->accent, false);
+        }
         return;
     }
     /* After a round, tiles nobody flipped are shown dimmer. */
@@ -92,6 +100,9 @@ static void draw_side(const draw_ctx_t *d, int ox)
         screens_button(d, b, ox, 0, text, 2, can ? d->color : d->dim, can);
     }
     const int cx = b.x + ox + b.w / 2;
+    /* Level badge: clear a board to climb, a dud drops you back. */
+    snprintf(text, sizeof(text), "LV %u", g->level ? g->level : 1U);
+    px_text_center(text, cx, 98, 3, g->level >= APP_GRID_LEVELS ? d->accent : d->color, d->gap);
     px_text_center("SCORE", cx, 206, 2, d->dim, false);
     snprintf(text, sizeof(text), "x%u", g->phase == APP_GRID_READY ? 0U : g->score);
     px_text_center(text, cx, 228, 3, g->score > 1 ? d->accent : d->dim, d->gap);
@@ -100,7 +111,7 @@ static void draw_side(const draw_ctx_t *d, int ox)
     }
     switch (g->result) {
     case APP_GRID_RESULT_DUD: px_text_center("DUD!", cx, 268, 3, WARN, d->gap); break;
-    case APP_GRID_RESULT_CLEARED: px_text_center("CLEAR", cx, 268, 2, d->accent, false); break;
+    case APP_GRID_RESULT_CLEARED: px_text_center("LEVEL UP", cx, 268, 2, d->accent, false); break;
     default: break;
     }
     if (g->payout) {

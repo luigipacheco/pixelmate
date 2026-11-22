@@ -130,6 +130,25 @@ static void draw_header(const draw_ctx_t *d, int oy, const char *title)
 
 /* ---- About: the credits page under Settings ------------------------- */
 
+/* A small pixel arrow (U/D/L/R) centered on (cx, cy). */
+static void draw_arrow_glyph(int cx, int cy, char dir, Color c)
+{
+    for (int i = 0; i < 4; ++i) {
+        const int len = 1 + i * 2;
+        for (int k = 0; k < len; ++k) {
+            const int a = k - len / 2, b = i - 2;
+            int x, y;
+            switch (dir) {
+            case 'U': x = a; y = b; break;
+            case 'D': x = a; y = -b; break;
+            case 'L': x = b; y = a; break;
+            default: x = -b; y = a; break;
+            }
+            DrawRectangle(cx + x * 3 - 1, cy + y * 3 - 1, 3, 3, c);
+        }
+    }
+}
+
 static void draw_about(const draw_ctx_t *d, int oy)
 {
     const app_game_snapshot_t *s = d->snap;
@@ -149,6 +168,23 @@ static void draw_about(const draw_ctx_t *d, int oy)
     }
     px_text_center(text, 240, oy + 384, 2, d->dim, false);
     px_text_center("FREE - APACHE-2.0", 240, oy + 410, 2, d->dim, false);
+    /* Konami code progress: hidden until the first correct input, then each
+     * input lights the next glyph. */
+    if (s->konami_pos) {
+        static const char glyphs[APP_KONAMI_LEN] = {'U', 'U', 'D', 'D', 'L', 'R', 'L', 'R', 'B', 'A'};
+        const int cell = 40, x0 = 240 - APP_KONAMI_LEN * cell / 2;
+        for (int i = 0; i < APP_KONAMI_LEN; ++i) {
+            const bool lit = i < s->konami_pos;
+            const Color c = lit ? d->accent : px_scale(d->dim, 0.6f);
+            const int cx = x0 + i * cell + cell / 2, cy = oy + 446;
+            if (glyphs[i] == 'B' || glyphs[i] == 'A') {
+                char t[2] = {glyphs[i], 0};
+                px_text_center(t, cx, cy - 8, 2, c, false);
+            } else {
+                draw_arrow_glyph(cx, cy, glyphs[i], c);
+            }
+        }
+    }
 }
 
 /* ---- Style ----------------------------------------------------------- */
@@ -237,6 +273,14 @@ static void draw_preview(const draw_ctx_t *d, const app_store_item_t *item, int 
                 px_box(x + i * 15, y + 14, 13, 32, 1, c);
                 DrawRectangle(x + i * 15 + 3, on ? y + 17 : y + 31, 7, 12, on ? d->accent : c);
             }
+            return;
+        }
+        if (item->value == APP_GAME_SAYS) {
+            screens_icon_says(d, x, y, c);
+            return;
+        }
+        if (item->value == APP_GAME_STACK) {
+            screens_icon_stack(d, x, y, c);
             return;
         }
         if (item->value == APP_GAME_CARDS) {
@@ -476,7 +520,7 @@ static void ip_text(uint32_t ipv4, char *out, size_t cap)
 static void draw_setting_row(const draw_ctx_t *d, int row, int index, int oy)
 {
     static const char *const names[APP_SETTINGS_ROWS] = {
-        "SOUND", "DAILY GOAL", "WI-FI", "SCREEN SLEEP", "BRIGHTNESS", "ABOUT", "RESET PET",
+        "SOUND", "DAILY GOAL", "WI-FI", "SCREEN SLEEP", "BRIGHTNESS", "TAP STEPS", "ABOUT", "RESET PET",
     };
     const app_game_snapshot_t *s = d->snap;
     const app_rect_t r = app_settings_row_rect(row);
@@ -515,6 +559,15 @@ static void draw_setting_row(const draw_ctx_t *d, int row, int index, int oy)
         snprintf(hint, sizeof(hint), "HOW BRIGHT THE PET GLOWS");
         break;
     case 5:
+        snprintf(value, sizeof(value), "%s", s->tap_steps ? "ON" : "OFF");
+        if (s->tap_steps) {
+            snprintf(hint, sizeof(hint), "%d PATS = 1 STEP  %lu TODAY", APP_TAPS_PER_STEP,
+                     (unsigned long)s->tap_steps_today);
+        } else {
+            snprintf(hint, sizeof(hint), "NO WALKING NEEDED: PAT BITSY");
+        }
+        break;
+    case 6:
         snprintf(value, sizeof(value), "V%s", APP_VERSION);
         snprintf(hint, sizeof(hint), "BY %s - TAP FOR MORE", APP_AUTHOR);
         break;
@@ -541,18 +594,34 @@ static void draw_setting_row(const draw_ctx_t *d, int row, int index, int oy)
     px_text(value, right - px_text_width(value, 3), y + 14, 3, reset ? RESET_RED : d->accent, d->gap);
 }
 
+/* The secret row: only there while DEV MODE is on; tapping it turns it off. */
+static void draw_dev_row(const draw_ctx_t *d, int row, int oy)
+{
+    const app_rect_t r = app_settings_row_rect(row);
+    const bool blink = (d->view->t / 10U) % 2U;
+    px_box(r.x, r.y + oy, r.w, r.h, 3, blink ? d->accent : d->color);
+    px_text("DEV MODE", r.x + 14, r.y + oy + 12, 3, d->accent, d->gap);
+    px_text("ON", r.x + r.w - 14 - px_text_width("ON", 3), r.y + oy + 12, 3, d->accent, d->gap);
+    px_text("INFINITE SPARKS - TAP TO TURN OFF", r.x + 14, r.y + oy + 46, 2, d->dim, false);
+}
+
 static void draw_settings(const draw_ctx_t *d, int oy)
 {
     const app_game_snapshot_t *s = d->snap;
     draw_header(d, oy, "SETTINGS");
+    const int rows = APP_SETTINGS_ROWS + (s->dev_mode ? 1 : 0);
     for (int row = 0; row < APP_SETTINGS_PER_PAGE; ++row) {
         const int index = s->settings_page * APP_SETTINGS_PER_PAGE + row;
-        if (index >= APP_SETTINGS_ROWS) {
+        if (index >= rows) {
             break;
+        }
+        if (index == APP_SETTINGS_ROWS) {
+            draw_dev_row(d, row, oy);
+            continue;
         }
         draw_setting_row(d, row, index, oy);
     }
-    const int pages = (APP_SETTINGS_ROWS + APP_SETTINGS_PER_PAGE - 1) / APP_SETTINGS_PER_PAGE;
+    const int pages = (rows + APP_SETTINGS_PER_PAGE - 1) / APP_SETTINGS_PER_PAGE;
     const int x0 = 240 - (pages - 1) * 12 - 5;
     for (int p = 0; p < pages; ++p) {
         if (p == s->settings_page) {

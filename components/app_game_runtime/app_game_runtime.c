@@ -22,10 +22,15 @@
 #include "app_power_hw.h"
 #include "app_rtc_hw.h"
 #include "app_sfx.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "driver/gpio.h"
+#include "esp_attr.h"
+#include "esp_system.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_sleep.h"
+#include "driver/rtc_io.h"
 #include "esp_timer.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -34,9 +39,32 @@
 #include "raylib_lite_save.h"
 
 static const char *TAG = "pixel_pal";
+
+/* What pocket mode did, kept across a software restart (RTC memory) so a
+ * stuck wake can be diagnosed afterwards: logged at boot and in /api/stats. */
+#define POCKET_LOG_MAGIC 0x504B4C31U
+typedef struct {
+    uint32_t magic;
+    uint32_t sleeps, timer_wakes, poll_wakes, button_wakes, stuck_restarts;
+} pocket_log_t;
+static RTC_NOINIT_ATTR pocket_log_t s_pocket_log;
+static volatile uint32_t s_frames_drawn;     /* Frames submitted (render). */
+
+static void pocket_log_init(void)
+{
+    if (s_pocket_log.magic != POCKET_LOG_MAGIC) {
+        memset(&s_pocket_log, 0, sizeof(s_pocket_log));
+        s_pocket_log.magic = POCKET_LOG_MAGIC;
+    }
+    ESP_LOGI(TAG, "pocket log: %lu sleeps, %lu timer, %lu poll and %lu button wakes, %lu stuck restarts",
+             (unsigned long)s_pocket_log.sleeps, (unsigned long)s_pocket_log.timer_wakes,
+             (unsigned long)s_pocket_log.poll_wakes, (unsigned long)s_pocket_log.button_wakes,
+             (unsigned long)s_pocket_log.stuck_restarts);
+}
+
 enum {
     /* v1 builds could store an all-zero pet (ignored); v2..v5 migrate by prefix. */
-    SAVE_VERSION = 6,
+    SAVE_VERSION = 8,
     SAVE_SOON_MS = 2000,          /* After spending, settings or a goal. */
     SAVE_LATER_MS = 30000,        /* After step/stat drift; limits flash wear. */
     SENSOR_POLL_TICKS = GAME_TICK_HZ,          /* 1 s */
@@ -63,8 +91,10 @@ enum {
     GAME_ACTION_DEBUG_DAY = 0,    /* Host: left key ends the simulated day. */
     GAME_ACTION_DEBUG_CAMERA = 1, /* Host: right key unplugs/replugs the camera. */
     GAME_ACTION_DEBUG_STEPS = 2,
-    GAME_ACTION_DEBUG_CLOCK = 8,  /* Host: replay action 8 plugs in at 10:08, then adds a minute per press. */
+    GAME_ACTION_DEBUG_CLOCK = 7,  /* Host: replay action 7 keeps the pet awake (desk pet on USB) at 10:08 for
+                                   * the awake clock, then adds a minute per press. */
     GAME_ACTION_DEBUG_UNLOCK = 9, /* Host: replay action 9 owns everything (screenshots). */
+    GAME_ACTION_DEBUG_USB = 8,    /* Host: replay action 8 toggles pretend USB power. */
     DEBUG_STEPS = 50,
     HOST_BATTERY_PCT = 76,
     HOST_FIRST_DAY = 20000,
@@ -78,6 +108,8 @@ typedef struct {
     booth_media_t media;          /* Photo booth pixels; the view reads them. */
     bool debug_key_down, debug_day_down, debug_camera_down;
     int host_clock;               /* Host: pretend minute of the day, 0 = not started. */
+    bool host_usb;                /* Host: action 8 pretends USB power (clock mode). */
+    int clock_drawn_second;       /* Clock mode: second last drawn, -1 none. */
     bool blanked;                 /* Black frame already submitted while the screen is off. */
     app_power_t drawn_power;      /* Power state of the last frame submitted. */
     uint32_t dim_ticks;           /* Render calls since the screen dimmed. */
@@ -104,6 +136,10 @@ typedef struct {
     bool pocket_radio_off;        /* Pocket mode suspended Wi-Fi. */
     pet_head_t head;              /* Head pose for boards with a neck (StackChan). */
     uint32_t clock_timer;
+    uint16_t pocket_after;        /* Dark ticks before pocket mode (shorter after the AI button). */
+    uint8_t ai_down_ticks;        /* AI button held this many ticks (debounce). */
+    bool ai_swallow;              /* Ignore the AI button until it is released. */
+    bool ai_ready;                /* GPIO input enabled. */
 #endif
 } host_state_t;
 
@@ -143,7 +179,9 @@ static raylib_lite_result_t migrate_save(uint16_t old_version, const void *old_d
     const bool v3 = old_version == 3 && old_size == APP_GAME_RECORD_V3_SIZE;
     const bool v4 = old_version == 4 && old_size == APP_GAME_RECORD_V4_SIZE;
     const bool v5 = old_version == 5 && old_size == APP_GAME_RECORD_V5_SIZE;
-    if ((!v2 && !v3 && !v4 && !v5) || new_size != sizeof(app_game_record_t)) {
+    const bool v6 = old_version == 6 && old_size == APP_GAME_RECORD_V6_SIZE;
+    const bool v7 = old_version == 7 && old_size == APP_GAME_RECORD_V7_SIZE;
+    if ((!v2 && !v3 && !v4 && !v5 && !v6 && !v7) || new_size != sizeof(app_game_record_t)) {
         return RAYLIB_LITE_INVALID_VERSION;
     }
     app_game_record_t *record = new_data;
@@ -417,12 +455,16 @@ static int build_stats_json(const host_state_t *state, const app_game_snapshot_t
     if (n > 0 && (size_t)n < cap) {
         n += snprintf(out + n, cap - (size_t)n,
                       "],\"power_mv\":%u,\"power_ma\":%d,\"power_avg_ma\":%d,\"power_mah\":%u,"
-                      "\"power_full_mah\":%u,\"power_tte_min\":%u,\"drain_ma\":[%ld,%ld,%ld]}",
+                      "\"power_full_mah\":%u,\"power_tte_min\":%u,\"drain_ma\":[%ld,%ld,%ld],"
+                      "\"pocket\":[%lu,%lu,%lu,%lu,%lu]}",
                       state->battery_ok ? b->voltage_mv : 0U, state->battery_ok ? b->current_ma : 0,
                       state->battery_ok ? b->avg_current_ma : 0, state->battery_ok ? b->remaining_mah : 0U,
                       state->battery_ok ? b->full_mah : 0U, state->battery_ok ? b->time_to_empty_min : 0xFFFFU,
                       mean_drain(state, APP_POWER_AWAKE), mean_drain(state, APP_POWER_DIM),
-                      mean_drain(state, APP_POWER_DOZE));
+                      mean_drain(state, APP_POWER_DOZE),
+                      (unsigned long)s_pocket_log.sleeps, (unsigned long)s_pocket_log.timer_wakes,
+                      (unsigned long)s_pocket_log.poll_wakes, (unsigned long)s_pocket_log.button_wakes,
+                      (unsigned long)s_pocket_log.stuck_restarts);
     }
     return n > 0 && (size_t)n < cap ? n : -1;
 }
@@ -504,6 +546,7 @@ static int initialize(void *value, const char *asset_root)
 #if defined(RAYLIB_LITE_GAME_NATIVE)
     seed = esp_random();
 #endif
+    state->clock_drawn_second = -1;
 #if defined(APP_DESK_PET)
     const bool desk = true;    /* Set by the build for boards nobody walks with. */
 #else
@@ -516,6 +559,7 @@ static int initialize(void *value, const char *asset_root)
 #if defined(RAYLIB_LITE_GAME_NATIVE)
     state->logged_power = -1;
     load_save(state);
+    pocket_log_init();
     load_timezone();
     if (time(NULL) < VALID_EPOCH && app_rtc_hw_load() == ESP_OK) {
         ESP_LOGI(TAG, "clock set from the board's real-time clock");
@@ -602,6 +646,9 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
             app_game_set_keep_awake(state->game, true);
             app_game_set_clock(state->game, state->host_clock);
         }
+        if (event->code == GAME_ACTION_DEBUG_USB && event->pressed) {
+            state->host_usb = !state->host_usb;
+        }
         if (event->code == GAME_ACTION_DEBUG_UNLOCK && event->pressed) {
             app_game_record_t r;
             app_game_export(state->game, &r);
@@ -610,6 +657,7 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
             for (int i = 0; i < APP_ANIM_COUNT; ++i) r.owned |= APP_OWN_ANIM_BIT(i);
             for (int i = 0; i < APP_GAME_COUNT; ++i) r.owned |= APP_OWN_GAME_BIT(i);
             r.filters_owned = 0xFF;
+            r.filters_owned_hi = 0xFF;
             r.lenses_owned = 0xFF;
             r.sparks += 1000U;
             app_game_import(state->game, &r);
@@ -635,7 +683,10 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
  * raced the board's frame task before). The AI button wakes the pet; a timer wakes it briefly to read steps, settle the day and save. */
 enum {
     POCKET_AFTER_TICKS = 90,           /* 3 s of dark screen first. */
-    POCKET_TIMER_S = 600,              /* Bookkeeping wake every 10 minutes. */
+    POCKET_NAP_MS = 1000,              /* Deep doze: one game tick a second. */
+    POCKET_POLL_MS = 20,               /* AI button check while napping. */
+    POCKET_WATCH_MS = 3000,            /* No new frame this long after waking: restart. */
+    POCKET_SOON_TICKS = 30,            /* After the AI button: pocket mode in 1 s. */
 };
 #define POCKET_BUTTON_GPIO GPIO_NUM_7  /* AI button, active low: the only wake key. */
 
@@ -650,57 +701,99 @@ static void pocket_resume_radio(host_state_t *state)
         }
     }
 }
-#endif
 
 static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s)
 {
-#if !defined(APP_POCKET_MODE)
-    /* Only the ESP-Mosaico build has pocket mode: its wake button and battery
-     * rule are that board's (see CMakeLists.txt). */
-    (void)state;
-    (void)s;
-    return;
-#else
     if (s->power != APP_POWER_DOZE || !state->blanked) {
         state->pocket_ticks = 0;
         pocket_resume_radio(state);
         return;
     }
-    if (++state->pocket_ticks < POCKET_AFTER_TICKS) {
+    if (++state->pocket_ticks < (state->pocket_after ? state->pocket_after : POCKET_AFTER_TICKS)) {
         return;
     }
-    /* On USB power stay reachable: light sleep drops the USB link Iris uses.
-     * A held button would wake us at once, so wait for its release. */
+    /* On USB power stay reachable for installs and the stats page. A held
+     * button would wake us at once, so wait for its release. */
     if (!state->battery_ok || state->battery.current_ma >= 0 || gpio_get_level(POCKET_BUTTON_GPIO) == 0) {
         return;
     }
     if (!state->pocket_radio_off && app_net_suspend(true) == ESP_OK) {
         state->pocket_radio_off = true;
+        ++s_pocket_log.sleeps;
     }
-    esp_sleep_enable_timer_wakeup((uint64_t)POCKET_TIMER_S * 1000000ULL);
-    gpio_wakeup_enable(POCKET_BUTTON_GPIO, GPIO_INTR_LOW_LEVEL);
-    esp_sleep_enable_gpio_wakeup();
-    const int64_t slept_at = esp_timer_get_time();
-    esp_light_sleep_start();
-    const int64_t slept_s = (esp_timer_get_time() - slept_at) / 1000000LL;
-    const uint32_t causes = esp_sleep_get_wakeup_causes();
-    gpio_wakeup_disable(POCKET_BUTTON_GPIO);
-    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-    if (!(causes & BIT(ESP_SLEEP_WAKEUP_GPIO))) {
-        return;   /* Timer: this tick reads steps and the day; then back to sleep. */
+    /* Deep doze, not light sleep: on this ESP32-S31 IDF, esp_light_sleep_start
+     * aborted in the clock driver (rtc_clk_apb_freq_get) and rebooted the board.
+     * Instead the game loop naps here, so the CPU idles between ticks; the AI
+     * button is checked every few milliseconds. Steps, the day and saving still
+     * run on every (now rare) tick. */
+    for (int i = 0; i < POCKET_NAP_MS / POCKET_POLL_MS; ++i) {
+        vTaskDelay(pdMS_TO_TICKS(POCKET_POLL_MS));
+        if (gpio_get_level(POCKET_BUTTON_GPIO) == 0) {
+            ++s_pocket_log.button_wakes;
+            ESP_LOGI(TAG, "pocket: AI button woke the pet");
+            state->pocket_ticks = 0;
+            state->pocket_after = 0;
+            state->ai_swallow = true;   /* The press that woke us must not put it back to sleep. */
+            app_game_wake(state->game);
+            pocket_resume_radio(state);
+            return;
+        }
     }
-    ESP_LOGI(TAG, "pocket: AI button woke the pet after %lld s", slept_s);
-    state->pocket_ticks = 0;
-    app_game_wake(state->game);
-    pocket_resume_radio(state);
-#endif
+    ++s_pocket_log.timer_wakes;
 }
+
+/* The engine does not report the AI button on this board, so read it here:
+ * a press puts the pet to sleep (pocket mode follows a second later on
+ * battery), and a press while asleep wakes it, on battery or USB. */
+static void poll_ai_button(host_state_t *state)
+{
+    if (!state->ai_ready) {
+        gpio_input_enable(POCKET_BUTTON_GPIO);
+        state->ai_ready = true;
+    }
+    if (gpio_get_level(POCKET_BUTTON_GPIO) != 0) {
+        state->ai_down_ticks = 0;
+        state->ai_swallow = false;
+        return;
+    }
+    if (state->ai_down_ticks < UINT8_MAX) {
+        ++state->ai_down_ticks;
+    }
+    if (state->ai_down_ticks != 2 || state->ai_swallow) {
+        return;   /* Debounced: act once per press. */
+    }
+    state->ai_swallow = true;
+    if (app_game_read(state->game).power == APP_POWER_DOZE) {
+        ESP_LOGI(TAG, "AI button: wake");
+        app_game_wake(state->game);
+        state->pocket_after = 0;
+    } else {
+        ESP_LOGI(TAG, "AI button: sleep");
+        app_game_sleep(state->game);
+        state->pocket_after = POCKET_SOON_TICKS;
+    }
+}
+#else
+/* Pocket mode and the AI button are the ESP-Mosaico's (see CMakeLists.txt):
+ * on the StackChan GPIO7 is the neck-servo line, so it is never read here. */
+static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s)
+{
+    (void)state;
+    (void)s;
+}
+
+static void poll_ai_button(host_state_t *state)
+{
+    (void)state;
+}
+#endif
 #endif
 
 static void update(void *value)
 {
     host_state_t *state = value;
 #if defined(RAYLIB_LITE_GAME_NATIVE)
+    poll_ai_button(state);
     poll_sensor(state);
     poll_day(state);
     poll_clock(state);
@@ -730,6 +823,31 @@ static void update(void *value)
 #endif
 }
 
+/* Clock mode: the pet sleeps on outside power (USB) and the time is known.
+ * The Host simulator stands in with action 8 and a fixed time. */
+static bool clock_mode(host_state_t *state, pet_clock_t *out)
+{
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    if (!state->battery_ok || state->battery.current_ma < 0) {
+        return false;   /* On battery: dark screen (and pocket mode) instead. */
+    }
+    const time_t now = time(NULL);
+    struct tm t;
+    if (now < VALID_EPOCH || !localtime_r(&now, &t)) {
+        return false;
+    }
+    *out = (pet_clock_t) {t.tm_hour, t.tm_min, t.tm_sec, t.tm_wday, t.tm_mday, t.tm_mon};
+    return true;
+#else
+    if (!state->host_usb) {
+        return false;
+    }
+    const uint32_t secs = app_game_read(state->game).tick / 30U;
+    *out = (pet_clock_t) {10, (int)(41 + secs / 60U) % 60, (int)(secs % 60U), 6, 21, 10};
+    return true;
+#endif
+}
+
 static int render(void *value)
 {
     host_state_t *state = value;
@@ -738,6 +856,29 @@ static int render(void *value)
     }
     const app_game_snapshot_t snapshot = app_game_read(state->game);
     const bool screen_off = snapshot.power == APP_POWER_DOZE;
+    pet_clock_t clock;
+    if (screen_off && clock_mode(state, &clock)) {
+        /* Sleeping on USB power with the time known: a clock instead of black,
+         * redrawn once a second (the panel keeps the frame in between). */
+        if (clock.second == state->clock_drawn_second) {
+            return 0;
+        }
+        BeginDrawing();
+        if (!raylib_lite_raylib_frame_available()) {
+            EndDrawing();
+            return -1;
+        }
+        pet_view_draw_clock(&state->view, &snapshot, &clock);
+        EndDrawing();
+        state->clock_drawn_second = clock.second;
+        state->blanked = false;   /* Not black: pocket mode stays off. */
+        state->drawn_power = snapshot.power;
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+        ++s_frames_drawn;
+#endif
+        return 0;
+    }
+    state->clock_drawn_second = -1;
     /* Screen off: push one black frame (so nothing stale can stay visible even
      * if the panel ignores "off"), then submit nothing until it wakes. The
      * panel keeps the last frame, so a dimmed screen only needs every
@@ -765,6 +906,9 @@ static int render(void *value)
         pet_view_draw(&state->view, &snapshot);
     }
     EndDrawing();
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    ++s_frames_drawn;
+#endif
     return 0;
 }
 
@@ -803,6 +947,12 @@ static int state_json(const void *value, char *output, size_t capacity)
         "fainted"
     };
     const app_game_snapshot_t s = app_game_read(((const host_state_t *)value)->game);
+    char grid_tiles[APP_GRID_TILES + 1], grid_marks[APP_GRID_TILES + 1];
+    for (int i = 0; i < APP_GRID_TILES; ++i) {
+        grid_tiles[i] = (char)('0' + s.grid.tiles[i]);
+        grid_marks[i] = (char)('0' + s.grid.marks[i]);
+    }
+    grid_tiles[APP_GRID_TILES] = grid_marks[APP_GRID_TILES] = 0;
     int size = snprintf(output, capacity,
                         "{\"phase\":\"%s\",\"tick\":%lu,\"screen\":\"%s\",\"overlay\":\"%s\","
                         "\"store_page\":%u,\"owned\":%lu,\"anims_on\":%u,\"mood\":\"%s\","
@@ -813,6 +963,11 @@ static int state_json(const void *value, char *output, size_t capacity)
                         "\"cards\":{\"phase\":%d,\"current\":%u,\"pot\":%u,\"streak\":%u,\"result\":%d},"
                         "\"slots\":{\"phase\":%d,\"payout\":%u,\"line\":[%u,%u,%u]},"
                         "\"bits\":{\"phase\":%d,\"target\":%u,\"switches\":%u,\"hits\":%u,\"payout\":%u,\"best\":%u},"
+                        "\"grid\":{\"phase\":%d,\"level\":%u,\"flips\":%u,\"score\":%u,\"payout\":%u,\"result\":%d,"
+                        "\"revealed\":%lu,\"tiles\":\"%s\",\"marks\":\"%s\"},"
+                        "\"says\":{\"phase\":%d,\"round\":%u,\"entered\":%u,\"lit\":%d,\"payout\":%u,\"best\":%u,\"failed\":%s},"
+                        "\"stack\":{\"phase\":%d,\"rows\":%u,\"width\":%u,\"pos_q\":%d,\"dir\":%d,\"speed_q\":%u,"
+                        "\"perfects\":%u,\"payout\":%u,\"best\":%u,\"top_left\":%u},"
                         "\"arcade\":%d,\"arcade_row\":%u,\"camera_present\":%s,\"filters_owned\":%u,"
                         "\"lenses_owned\":%u,\"booth\":{\"phase\":%d,\"filter\":%u,\"res\":%u,\"color\":%s,\"on_air\":%s,\"cam_code\":%u,\"unplugged\":%s,"
                         "\"camera\":%s,\"photos\":%u,\"gifs\":%u,\"index\":%u,\"result\":%d,"
@@ -835,6 +990,13 @@ static int state_json(const void *value, char *output, size_t capacity)
                         app_game_slot_symbol(s.slots.pos_q[0], 0), app_game_slot_symbol(s.slots.pos_q[1], 0),
                         app_game_slot_symbol(s.slots.pos_q[2], 0),
                         (int)s.bits.phase, s.bits.target, s.bits.switches, s.bits.hits, s.bits.payout, s.bits.best,
+                        (int)s.grid.phase, s.grid.level, s.grid.flips, s.grid.score, s.grid.payout, (int)s.grid.result,
+                        (unsigned long)s.grid.revealed, grid_tiles, grid_marks,
+                        (int)s.says.phase, s.says.round, s.says.entered, (int)s.says.lit, s.says.payout, s.says.best,
+                        s.says.failed ? "true" : "false",
+                        (int)s.stack.phase, s.stack.rows, s.stack.width, (int)s.stack.pos_q, (int)s.stack.dir,
+                        s.stack.speed_q, s.stack.perfects, s.stack.payout, s.stack.best,
+                        s.stack.rows ? s.stack.left[s.stack.rows - 1] : 0U,
                         (int)s.arcade, s.arcade_row, s.camera_present ? "true" : "false", s.filters_owned,
                         s.lenses_owned, (int)s.booth.phase, s.booth.filter, s.booth.res, s.booth.color ? "true" : "false", s.booth.on_air ? "true" : "false", s.booth.cam_code,
                         s.booth.unplugged ? "true" : "false",

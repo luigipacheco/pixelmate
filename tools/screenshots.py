@@ -62,14 +62,14 @@ mark("03_feed")
 next_page()
 wait(30)
 mark("04_arcade")
-tap(392, 290, 20)                 # BIT FLIP cabinet (row 1, third)
+drag(240, 400, 240, 200, settle=30)   # row 2: BIT FLIP, BITSY SAYS, HI-LO
+tap(88, 290, 20)                  # BIT FLIP cabinet (row 2, first)
 tap(240, 412, 30)                 # PLAY
 tap(16 + 4 * 56 + 26, 308, 6)     # flip two switches
 tap(16 + 6 * 56 + 26, 308, 45)
 mark("05_bitflip")
-tap(64, 94, 20)                   # EXIT
-drag(240, 400, 240, 200, settle=30)   # row 2
-tap(88, 290, 20)                  # HI-LO
+tap(64, 94, 20)                   # EXIT (lobby stays on row 2)
+tap(392, 290, 20)                 # HI-LO (row 2, third)
 tap(240, 394, 40)                 # DEAL
 mark("06_hilo")
 tap(64, 94, 20)                   # EXIT

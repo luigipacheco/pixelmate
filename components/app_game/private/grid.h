@@ -7,7 +7,6 @@
 #include "../include/app_game.h"
 
 enum {
-    GRID_DUDS = 6,
     GRID_RESULT_TICKS = 75,   /* Revealed board stays this long. */
 };
 
@@ -18,6 +17,10 @@ typedef struct {
 } grid_t;
 
 void grid_init(grid_t *grid, uint32_t seed);
+/** Restore a saved level (clamped to 1..APP_GRID_LEVELS). */
+void grid_set_level(grid_t *grid, uint8_t level);
+/** Long press: cycle the memo mark on a hidden tile; true if it changed. */
+bool grid_mark(grid_t *grid, int tile);
 /** Start a round if affordable; returns sparks to subtract (0 if not started). */
 uint32_t grid_deal(grid_t *grid, uint32_t sparks);
 /** Flip one hidden tile. Returns sparks won (board cleared) and sets *events. */

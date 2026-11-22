@@ -28,6 +28,7 @@ enum {
 };
 #define ANCHOR_EASE 0.25f
 #define DIM_LEVEL 0.3f
+#define CLOCK_LEVEL 0.45f
 #define ARCADE_SCROLL_EASE 0.3f
 static const Color WARN = {255, 48, 48, 255};
 static const Color CONFETTI_WHITE = {240, 240, 232, 255};
@@ -437,6 +438,29 @@ static void on_events(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
             pet_eyes_shake(&v->eyes);
         }
     }
+    if (s->cue_seq != v->seen_cue_seq) {
+        v->seen_cue_seq = s->cue_seq;
+        switch ((app_cue_t)s->cue) {
+        case APP_CUE_KONAMI: {
+            const int cell = 40, x0 = 240 - APP_KONAMI_LEN * cell / 2;
+            burst(v, P_BOLT, (float)(x0 + (s->konami_pos - 1) * cell + cell / 2), 446, 5, 4.0f, 0.3f, acc, c);
+            break;
+        }
+        case APP_CUE_KONAMI_MISS:
+            pet_eyes_shake(&v->eyes);
+            break;
+        case APP_CUE_DEV_ON:
+            floater(v, "DEV MODE!", 240, 200, acc);
+            burst(v, P_SQUARE, 240, 240, 40, 10.0f, 0.35f, acc, CONFETTI_WHITE);
+            v->spark_pulse = SPARK_PULSE_TICKS;
+            break;
+        case APP_CUE_DEV_OFF:
+            floater(v, "DEV OFF", 240, 200, c);
+            break;
+        default:
+            break;
+        }
+    }
     if (ev & APP_EVENT_BLOCKED) {
         pet_eyes_shake(&v->eyes);
     }
@@ -708,6 +732,10 @@ static void draw_sparks_counter(const pet_view_t *v, const draw_ctx_t *d)
     const int bolt_x = APP_VIEW_W - 18 - 6 * scale;
     px_icon(PX_ICON_BOLT, bolt_x, 18 - (scale - 3) * 3, scale, flash ? WARN : d->accent, c, d->gap);
     px_text(text, bolt_x - 8 - px_text_width(text, scale), 18 - (scale - 3) * 3, scale, c, d->gap);
+    if (d->snap->dev_mode) {
+        /* Under the counter, clear of panel titles. */
+        px_text("DEV", APP_VIEW_W - 18 - px_text_width("DEV", 2), 48, 2, (v->t / 15U) % 2U ? WARN : d->accent, false);
+    }
 }
 
 static int s_pages(const app_game_snapshot_t *s)
@@ -727,6 +755,20 @@ static void draw_dots(const pet_view_t *v, const draw_ctx_t *d)
     const float e = screens_ease_out(v->trans);
     const float pos = v->prev_screen + ((float)v->screen - (float)v->prev_screen) * e;
     DrawRectangle(x0 + (int)(pos * spacing) - 2, APP_DOTS_Y - 2, size + 4, size + 4, d->color);
+}
+
+void pet_view_draw_clock(const pet_view_t *v, const app_game_snapshot_t *s, const pet_clock_t *clock)
+{
+    const px_grid_t grid = px_grid(s->pixel_style);
+    const float level = CLOCK_LEVEL * (float)s->brightness_pct / 100.0f;   /* A bedside glow. */
+    const Color c = px_scale(px_color(s->color_index), level);
+    const draw_ctx_t d = {
+        .view = v, .snap = s, .grid = grid, .gap = grid.gap > 0,
+        .color = c, .accent = px_scale(px_accent(s->color_index), level), .dim = px_scale(c, 0.45f),
+        .level = level,
+    };
+    ClearBackground(BLACK);
+    screens_draw_clock(&d, clock);
 }
 
 void pet_view_draw(const pet_view_t *v, const app_game_snapshot_t *s)
@@ -767,8 +809,12 @@ void pet_view_draw(const pet_view_t *v, const app_game_snapshot_t *s)
     const bool rainbow_on = anim_on(s, APP_ANIM_RAINBOW) && s->mood == APP_MOOD_WALK;
     const bool stars = anim_on(s, APP_ANIM_STARS) && s->mood == APP_MOOD_HAPPY;
     const bool fainted = s->mood == APP_MOOD_FAINTED;
-    pet_eyes_draw(&v->eyes, current_anchor(v), grid,
-                  fainted ? px_scale(c, 0.55f) : (rainbow_on ? rainbow(v->t) : c), stars, fainted);
+    Color eye = fainted ? px_scale(c, 0.55f) : (rainbow_on ? rainbow(v->t) : c);
+    if (s->screen == APP_SCREEN_ARCADE && s->arcade == APP_ARCADE_SAYS && s->says.lit >= 0
+            && s->overlay == APP_OVERLAY_NONE) {
+        eye = px_scale(screens_says_color(s->says.lit), level);   /* Bitsy says this color. */
+    }
+    pet_eyes_draw(&v->eyes, current_anchor(v), grid, eye, stars, fainted);
     draw_food_toss(v, &d);
     draw_particles(v, &d);
     draw_crt(v, &d);

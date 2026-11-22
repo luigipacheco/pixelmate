@@ -44,6 +44,7 @@ typedef struct {
     uint8_t prev_bits_switches;
     float bits_pop_t;         /* 0..1 pop of a new Bit Flip target. */
     float arcade_scroll;      /* Eased arcade row (0 = first row). */
+    uint8_t seen_cue_seq;     /* Last arcade/dev cue animated. */
     float crt_t;              /* 0..1 CRT power-on when a cabinet opens, >= 1 idle. */
     uint8_t prev_slot_stopped;  /* Reel-stop bits seen last tick. */
     uint8_t prev_hp;            /* Health seen last tick, for day-change floaters. */
@@ -66,3 +67,11 @@ typedef struct {
 void pet_view_init(pet_view_t *view);
 void pet_view_update(pet_view_t *view, const app_game_snapshot_t *snapshot, uint32_t events);
 void pet_view_draw(const pet_view_t *view, const app_game_snapshot_t *snapshot);
+
+/** Local time for clock mode. */
+typedef struct {
+    int hour, minute, second, wday, mday, month;
+} pet_clock_t;
+
+/** Clock mode frame (sleeping on USB power with the time known). */
+void pet_view_draw_clock(const pet_view_t *view, const app_game_snapshot_t *snapshot, const pet_clock_t *clock);

@@ -50,11 +50,13 @@ static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay, int arcad
     case 4: return (app_eye_anchor_t) {416, 92, 0.22f};    /* booth: peeking over the viewfinder */
     case 3:                                                 /* arcade */
         switch (arcade) {
-        /* app_arcade_t order: slots, grid, bit flip, HI-LO. */
+        /* app_arcade_t order: slots, stack, grid, bit flip, says, HI-LO. */
         case 1: return (app_eye_anchor_t) {240, 98, 0.42f};    /* slots */
-        case 2: return (app_eye_anchor_t) {426, 340, 0.26f};   /* grid: watching from the side */
-        case 3: return (app_eye_anchor_t) {240, 96, 0.4f};     /* bit flip */
-        case 4: return (app_eye_anchor_t) {240, 104, 0.46f};   /* HI-LO */
+        case 2: return (app_eye_anchor_t) {420, 92, 0.24f};    /* stack: peeking at the tower */
+        case 3: return (app_eye_anchor_t) {426, 340, 0.26f};   /* grid: watching from the side */
+        case 4: return (app_eye_anchor_t) {240, 96, 0.4f};     /* bit flip */
+        case 5: return (app_eye_anchor_t) {240, 104, 0.5f};    /* says: the eyes show the colors */
+        case 6: return (app_eye_anchor_t) {240, 104, 0.46f};   /* HI-LO */
         default: return (app_eye_anchor_t) {240, 98, 0.42f};   /* lobby: watching */
         }
     default: return (app_eye_anchor_t) {240, 206, 0.0f};   /* steps: no eyes */
@@ -189,6 +191,23 @@ static inline app_rect_t app_booth_button_rect(int i)
 static inline app_rect_t app_booth_unlock_rect(void)
 {
     return (app_rect_t) {110, 352, 260, 64};
+}
+
+/* Bitsy Says: four pads in a 2x2 block under the eyes; PLAY sits on top
+ * of them while waiting. */
+static inline app_rect_t app_says_pad_rect(int i)
+{
+    return (app_rect_t) {(int16_t)(48 + (i % 2) * 196), (int16_t)(176 + (i / 2) * 128), 188, 120};
+}
+static inline app_rect_t app_says_button_rect(void)
+{
+    return (app_rect_t) {140, 270, 200, 64};
+}
+/* Spark Stack: a 12x12 cell tower; tap anywhere below the top bar to drop. */
+enum { APP_STACK_CELL = 30, APP_STACK_X = 60, APP_STACK_BOTTOM = 438, APP_STACK_ROW_H = 24 };
+static inline app_rect_t app_stack_button_rect(void)
+{
+    return (app_rect_t) {140, 250, 200, 64};
 }
 
 /* Pull-down menu entries (inside the APP_MENU_H panel). The top row holds the

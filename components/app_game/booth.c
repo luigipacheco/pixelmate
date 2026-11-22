@@ -73,7 +73,7 @@ void booth_select_lens(booth_t *b, uint8_t res)
 }
 
 /* Next owned entry of `count` in `dir` (+1/-1), wrapping; entry 0 is free. */
-static uint8_t step_owned(uint8_t current, int dir, uint8_t owned, int count)
+static uint8_t step_owned(uint8_t current, int dir, uint16_t owned, int count)
 {
     int f = current;
     for (int i = 0; i < count; ++i) {
@@ -109,7 +109,7 @@ static uint32_t start_capture(booth_t *b, bool gif, bool fainted)
     return bump(b);
 }
 
-static uint32_t tap_live(booth_t *b, int32_t x, int32_t y, uint8_t looks, uint8_t lenses,
+static uint32_t tap_live(booth_t *b, int32_t x, int32_t y, uint16_t looks, uint8_t lenses,
                          bool film_owned, bool fainted, uint16_t code)
 {
     if (app_rect_hit(app_booth_air_rect(), x, y)) {
@@ -187,7 +187,7 @@ static uint32_t tap_gallery(booth_t *b, int32_t x, int32_t y)
     return 0;
 }
 
-uint32_t booth_tap(booth_t *b, int32_t x, int32_t y, uint8_t filters_owned, uint8_t lenses_owned,
+uint32_t booth_tap(booth_t *b, int32_t x, int32_t y, uint16_t filters_owned, uint8_t lenses_owned,
                    bool film_owned, bool fainted, uint16_t code)
 {
     switch (b->view.phase) {

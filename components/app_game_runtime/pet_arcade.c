@@ -27,6 +27,8 @@ static bool cabinet_unlocked(const app_game_snapshot_t *s, app_arcade_t game)
     case APP_ARCADE_SLOTS: return s->owned & APP_OWN_GAME_BIT(APP_GAME_SLOTS);
     case APP_ARCADE_GRID: return s->owned & APP_OWN_GAME_BIT(APP_GAME_GRID);
     case APP_ARCADE_BITS: return s->owned & APP_OWN_GAME_BIT(APP_GAME_BITS);
+    case APP_ARCADE_SAYS: return s->owned & APP_OWN_GAME_BIT(APP_GAME_SAYS);
+    case APP_ARCADE_STACK: return s->owned & APP_OWN_GAME_BIT(APP_GAME_STACK);
     default: return false;
     }
 }
@@ -37,6 +39,8 @@ static const char *cabinet_name(app_arcade_t game)
     case APP_ARCADE_CARDS: return "HI-LO";
     case APP_ARCADE_SLOTS: return "SLOTS";
     case APP_ARCADE_GRID: return "GRID";
+    case APP_ARCADE_SAYS: return "SAYS";
+    case APP_ARCADE_STACK: return "STACK";
     default: return "BITS";
     }
 }
@@ -168,6 +172,10 @@ static void draw_cabinet(const draw_ctx_t *d, int index, int ox, int oy)
             attract_slots(d, sx, sy, sw, t);
         } else if (game == APP_ARCADE_GRID) {
             attract_grid(d, sx, sy, sw, t);
+        } else if (game == APP_ARCADE_SAYS) {
+            screens_attract_says(d, sx, sy, sw, t);
+        } else if (game == APP_ARCADE_STACK) {
+            screens_attract_stack(d, sx, sy, sw, t);
         } else {
             attract_bits(d, sx, sy, sw, t);
         }
@@ -189,7 +197,9 @@ static void draw_cabinet(const draw_ctx_t *d, int index, int ox, int oy)
     } else {
         const app_minigame_t id = game == APP_ARCADE_GRID ? APP_GAME_GRID
                                   : game == APP_ARCADE_BITS ? APP_GAME_BITS
-                                  : game == APP_ARCADE_CARDS ? APP_GAME_CARDS : APP_GAME_SLOTS;
+                                  : game == APP_ARCADE_CARDS ? APP_GAME_CARDS
+                                  : game == APP_ARCADE_SAYS ? APP_GAME_SAYS
+                                  : game == APP_ARCADE_STACK ? APP_GAME_STACK : APP_GAME_SLOTS;
         const app_store_item_t *item = app_game_store_item(app_game_store_find(APP_ITEM_GAME, id));
         snprintf(text, sizeof(text), "%u", item ? item->cost : 0);
         const int tw = px_text_width(text, 2);

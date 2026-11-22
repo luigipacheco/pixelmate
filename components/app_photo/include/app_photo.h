@@ -47,7 +47,11 @@ typedef enum {
     APP_FILTER_STICKERS,       /**< The pet's eyes stuck in a corner. */
     APP_FILTER_ASCII,          /**< 4x4 character cells picked by brightness. */
     APP_FILTER_HALFTONE,       /**< Dots on a staggered grid, sized by brightness. */
-    APP_FILTER_COUNT,          /**< At most 8: ownership is one byte. */
+    APP_FILTER_EDGES,          /**< Glowing outlines on black. */
+    APP_FILTER_POP,            /**< Bold poster tones / colors. */
+    APP_FILTER_MIRROR,         /**< Left half reflected onto the right. */
+    APP_FILTER_CRT,            /**< Old-TV stripes. */
+    APP_FILTER_COUNT,          /**< At most 16: ownership is two bytes. */
 } app_photo_filter_t;
 
 typedef struct {
