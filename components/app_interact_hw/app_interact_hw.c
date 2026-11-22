@@ -28,7 +28,8 @@ enum {
 };
 
 static struct {
-    bool present, up;
+    bool present, up, addr_ready;
+    uint8_t last_note;
     uint8_t misses;
     adc_oneshot_unit_handle_t adc;
     adc_channel_t ldr_channel;
@@ -38,15 +39,32 @@ static struct {
     rmt_encoder_handle_t led_enc, ir_enc;
 } s;
 
+/* Log a probe outcome only when it changes. */
+static void log_once(uint8_t note, const char *text)
+{
+    if (s.last_note != note) {
+        s.last_note = note;
+        ESP_LOGI(TAG, "%s", text);
+    }
+}
+
 static bool probe(void)
 {
     void *bus = NULL;
     if (app_camera_hw_slot_bus(&bus) != ESP_OK || !bus) {
         return false;
     }
-    gpio_set_direction(PIN_ADDR_SELECT, GPIO_MODE_OUTPUT);
-    gpio_set_level(PIN_ADDR_SELECT, 1);
+    if (!s.addr_ready) {
+        /* Like the BSP: reset the pad to GPIO, preset high, then drive it, so the
+         * right module's EEPROM sits at 0x51 and never shadows the camera's 0x50. */
+        gpio_reset_pin(PIN_ADDR_SELECT);
+        gpio_set_level(PIN_ADDR_SELECT, 1);
+        const gpio_config_t sel = {.pin_bit_mask = BIT64(PIN_ADDR_SELECT), .mode = GPIO_MODE_OUTPUT};
+        s.addr_ready = gpio_config(&sel) == ESP_OK && gpio_set_level(PIN_ADDR_SELECT, 1) == ESP_OK;
+        ESP_LOGI(TAG, "right slot address select GPIO%d high: %s", PIN_ADDR_SELECT, s.addr_ready ? "ok" : "failed");
+    }
     if (i2c_master_probe((i2c_master_bus_handle_t)bus, EEPROM_ADDR, I2C_TIMEOUT_MS) != ESP_OK) {
+        log_once(1, "right slot: nothing answers at EEPROM 0x51");
         return false;
     }
     const i2c_device_config_t config = {
@@ -60,7 +78,20 @@ static bool probe(void)
     uint8_t head[4] = {0};
     const esp_err_t err = i2c_master_transmit_receive(eeprom, &offset, 1, head, sizeof(head), I2C_TIMEOUT_MS);
     i2c_master_bus_rm_device(eeprom);
-    return err == ESP_OK && memcmp(head, "ESP", 3) == 0 && head[3] == BOARD_TYPE_INTERACT;
+    if (err != ESP_OK) {
+        log_once(2, "right slot: EEPROM 0x51 read failed");
+        return false;
+    }
+    if (memcmp(head, "ESP", 3) != 0 || head[3] != BOARD_TYPE_INTERACT) {
+        if (s.last_note != 3) {
+            s.last_note = 3;
+            ESP_LOGW(TAG, "right slot holds %02x %02x %02x type 0x%02x, not the interaction module (0x16)",
+                     head[0], head[1], head[2], head[3]);
+        }
+        return false;
+    }
+    log_once(4, "right slot: interaction module found");
+    return true;
 }
 
 static void release(void)
