@@ -337,7 +337,14 @@ static void poll_battery(host_state_t *state)
         return;
     }
     app_battery_reading_t battery;
-    state->battery_ok = app_power_hw_battery(&battery) == ESP_OK;
+    const esp_err_t err = app_power_hw_battery(&battery);
+    if (err == ESP_ERR_NOT_FINISHED) {
+        /* Gauge profile check still running (a moment at boot): keep what the
+         * pet shows and ask again in a second instead of flashing NO BAT. */
+        state->battery_timer = BATTERY_POLL_TICKS - GAME_TICK_HZ;
+        return;
+    }
+    state->battery_ok = err == ESP_OK;
     if (!state->battery_ok) {
         app_game_set_battery(state->game, -1, false);
         return;
