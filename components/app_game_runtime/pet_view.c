@@ -28,6 +28,7 @@ enum {
 };
 #define ANCHOR_EASE 0.25f
 #define DIM_LEVEL 0.3f
+#define CLOCK_LEVEL 0.45f
 #define ARCADE_SCROLL_EASE 0.3f
 static const Color WARN = {255, 48, 48, 255};
 static const Color CONFETTI_WHITE = {240, 240, 232, 255};
@@ -610,6 +611,20 @@ static void draw_dots(const pet_view_t *v, const draw_ctx_t *d)
     const float e = screens_ease_out(v->trans);
     const float pos = v->prev_screen + ((float)v->screen - (float)v->prev_screen) * e;
     DrawRectangle(x0 + (int)(pos * spacing) - 2, APP_DOTS_Y - 2, size + 4, size + 4, d->color);
+}
+
+void pet_view_draw_clock(const pet_view_t *v, const app_game_snapshot_t *s, const pet_clock_t *clock)
+{
+    const px_grid_t grid = px_grid(s->pixel_style);
+    const float level = CLOCK_LEVEL * (float)s->brightness_pct / 100.0f;   /* A bedside glow. */
+    const Color c = px_scale(px_color(s->color_index), level);
+    const draw_ctx_t d = {
+        .view = v, .snap = s, .grid = grid, .gap = grid.gap > 0,
+        .color = c, .accent = px_scale(px_accent(s->color_index), level), .dim = px_scale(c, 0.45f),
+        .level = level,
+    };
+    ClearBackground(BLACK);
+    screens_draw_clock(&d, clock);
 }
 
 void pet_view_draw(const pet_view_t *v, const app_game_snapshot_t *s)

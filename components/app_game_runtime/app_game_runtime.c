@@ -21,6 +21,8 @@
 #include "app_power_hw.h"
 #include "app_sfx.h"
 #include "driver/gpio.h"
+#include "esp_attr.h"
+#include "esp_system.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_sleep.h"
@@ -31,6 +33,31 @@
 #include "raylib_lite_save.h"
 
 static const char *TAG = "pixel_pal";
+
+/* What pocket mode did, kept across a software restart (RTC memory) so a
+ * stuck wake can be diagnosed afterwards: logged at boot and in /api/stats. */
+#define POCKET_LOG_MAGIC 0x504B4C31U
+typedef struct {
+    uint32_t magic;
+    uint32_t sleeps, timer_wakes, poll_wakes, button_wakes, stuck_restarts;
+} pocket_log_t;
+static RTC_NOINIT_ATTR pocket_log_t s_pocket_log;
+static volatile uint32_t s_frames_drawn;     /* Frames submitted (render). */
+static uint32_t s_frames_at_wake;
+static esp_timer_handle_t s_pocket_watch;
+
+static void pocket_log_init(void)
+{
+    if (s_pocket_log.magic != POCKET_LOG_MAGIC) {
+        memset(&s_pocket_log, 0, sizeof(s_pocket_log));
+        s_pocket_log.magic = POCKET_LOG_MAGIC;
+    }
+    ESP_LOGI(TAG, "pocket log: %lu sleeps, %lu timer, %lu poll and %lu button wakes, %lu stuck restarts",
+             (unsigned long)s_pocket_log.sleeps, (unsigned long)s_pocket_log.timer_wakes,
+             (unsigned long)s_pocket_log.poll_wakes, (unsigned long)s_pocket_log.button_wakes,
+             (unsigned long)s_pocket_log.stuck_restarts);
+}
+
 enum {
     /* v1 builds could store an all-zero pet (ignored); v2..v5 migrate by prefix. */
     SAVE_VERSION = 7,
@@ -61,6 +88,7 @@ enum {
     GAME_ACTION_DEBUG_CAMERA = 1, /* Host: right key unplugs/replugs the camera. */
     GAME_ACTION_DEBUG_STEPS = 2,
     GAME_ACTION_DEBUG_UNLOCK = 9, /* Host: replay action 9 owns everything (screenshots). */
+    GAME_ACTION_DEBUG_USB = 8,    /* Host: replay action 8 toggles pretend USB power. */
     DEBUG_STEPS = 50,
     HOST_BATTERY_PCT = 76,
     HOST_FIRST_DAY = 20000,
@@ -73,6 +101,8 @@ typedef struct {
     pet_view_t view;
     booth_media_t media;          /* Photo booth pixels; the view reads them. */
     bool debug_key_down, debug_day_down, debug_camera_down;
+    bool host_usb;                /* Host: action 8 pretends USB power (clock mode). */
+    int clock_drawn_second;       /* Clock mode: second last drawn, -1 none. */
     bool blanked;                 /* Black frame already submitted while the screen is off. */
     app_power_t drawn_power;      /* Power state of the last frame submitted. */
     uint32_t dim_ticks;           /* Render calls since the screen dimmed. */
@@ -396,12 +426,16 @@ static int build_stats_json(const host_state_t *state, const app_game_snapshot_t
     if (n > 0 && (size_t)n < cap) {
         n += snprintf(out + n, cap - (size_t)n,
                       "],\"power_mv\":%u,\"power_ma\":%d,\"power_avg_ma\":%d,\"power_mah\":%u,"
-                      "\"power_full_mah\":%u,\"power_tte_min\":%u,\"drain_ma\":[%ld,%ld,%ld]}",
+                      "\"power_full_mah\":%u,\"power_tte_min\":%u,\"drain_ma\":[%ld,%ld,%ld],"
+                      "\"pocket\":[%lu,%lu,%lu,%lu,%lu]}",
                       state->battery_ok ? b->voltage_mv : 0U, state->battery_ok ? b->current_ma : 0,
                       state->battery_ok ? b->avg_current_ma : 0, state->battery_ok ? b->remaining_mah : 0U,
                       state->battery_ok ? b->full_mah : 0U, state->battery_ok ? b->time_to_empty_min : 0xFFFFU,
                       mean_drain(state, APP_POWER_AWAKE), mean_drain(state, APP_POWER_DIM),
-                      mean_drain(state, APP_POWER_DOZE));
+                      mean_drain(state, APP_POWER_DOZE),
+                      (unsigned long)s_pocket_log.sleeps, (unsigned long)s_pocket_log.timer_wakes,
+                      (unsigned long)s_pocket_log.poll_wakes, (unsigned long)s_pocket_log.button_wakes,
+                      (unsigned long)s_pocket_log.stuck_restarts);
     }
     return n > 0 && (size_t)n < cap ? n : -1;
 }
@@ -476,6 +510,7 @@ static int initialize(void *value, const char *asset_root)
 #if defined(RAYLIB_LITE_GAME_NATIVE)
     seed = esp_random();
 #endif
+    state->clock_drawn_second = -1;
     const app_game_config_t config = {GAME_WIDTH, GAME_HEIGHT, seed};
     if (app_game_create(&config, &state->game) != APP_GAME_OK) {
         return -1;
@@ -483,6 +518,7 @@ static int initialize(void *value, const char *asset_root)
 #if defined(RAYLIB_LITE_GAME_NATIVE)
     state->logged_power = -1;
     load_save(state);
+    pocket_log_init();
     load_timezone();
 #else
     app_game_set_battery(state->game, HOST_BATTERY_PCT, false);
@@ -559,6 +595,9 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
             }
             state->debug_camera_down = event->pressed;
         }
+        if (event->code == GAME_ACTION_DEBUG_USB && event->pressed) {
+            state->host_usb = !state->host_usb;
+        }
         if (event->code == GAME_ACTION_DEBUG_UNLOCK && event->pressed) {
             app_game_record_t r;
             app_game_export(state->game, &r);
@@ -593,10 +632,36 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
  * raced the board's frame task before). The AI button wakes the pet; a timer wakes it briefly to read steps, settle the day and save. */
 enum {
     POCKET_AFTER_TICKS = 90,           /* 3 s of dark screen first. */
-    POCKET_TIMER_S = 600,              /* Bookkeeping wake every 10 minutes. */
+    POCKET_TIMER_S = 2,                /* Wake briefly every 2 s: steps, the day, and a held AI button. */
+    POCKET_WATCH_MS = 3000,            /* No new frame this long after waking: restart. */
     POCKET_SOON_TICKS = 30,            /* After the AI button: pocket mode in 1 s. */
 };
 #define POCKET_BUTTON_GPIO GPIO_NUM_7  /* AI button, active low: the only wake key. */
+
+/* esp_timer task: if the screen never drew a frame after waking (the
+ * display pipeline did not survive light sleep), restart rather than
+ * leave a black screen. Steps are saved before every sleep. */
+static void pocket_watch_fired(void *arg)
+{
+    (void)arg;
+    if (s_frames_drawn == s_frames_at_wake) {
+        ++s_pocket_log.stuck_restarts;
+        esp_restart();
+    }
+}
+
+static void pocket_arm_watch(void)
+{
+    if (!s_pocket_watch) {
+        const esp_timer_create_args_t args = {.callback = pocket_watch_fired, .name = "pocket_watch"};
+        if (esp_timer_create(&args, &s_pocket_watch) != ESP_OK) {
+            return;
+        }
+    }
+    s_frames_at_wake = s_frames_drawn;
+    esp_timer_stop(s_pocket_watch);
+    esp_timer_start_once(s_pocket_watch, (uint64_t)POCKET_WATCH_MS * 1000ULL);
+}
 
 static void pocket_resume_radio(host_state_t *state)
 {
@@ -638,15 +703,25 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
         ESP_LOGW(TAG, "pocket: EXT1 wake unavailable; GPIO wake only");
     }
     const int64_t slept_at = esp_timer_get_time();
+    ++s_pocket_log.sleeps;
     esp_light_sleep_start();
     const int64_t slept_s = (esp_timer_get_time() - slept_at) / 1000000LL;
     const uint32_t causes = esp_sleep_get_wakeup_causes();
     gpio_wakeup_disable(POCKET_BUTTON_GPIO);
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-    if (!(causes & (BIT(ESP_SLEEP_WAKEUP_GPIO) | BIT(ESP_SLEEP_WAKEUP_EXT1)))) {
+    const bool by_button = causes & (BIT(ESP_SLEEP_WAKEUP_GPIO) | BIT(ESP_SLEEP_WAKEUP_EXT1));
+    const bool held = gpio_get_level(POCKET_BUTTON_GPIO) == 0;   /* Backup if the wake source failed. */
+    if (!by_button && !held) {
+        ++s_pocket_log.timer_wakes;
         return;   /* Timer: this tick reads steps and the day; then back to sleep. */
     }
-    ESP_LOGI(TAG, "pocket: AI button woke the pet after %lld s", slept_s);
+    if (by_button) {
+        ++s_pocket_log.button_wakes;
+    } else {
+        ++s_pocket_log.poll_wakes;
+    }
+    ESP_LOGI(TAG, "pocket: AI button (%s) woke the pet after %lld s", by_button ? "wake" : "poll", slept_s);
+    pocket_arm_watch();
     state->pocket_ticks = 0;
     state->pocket_after = 0;
     state->ai_swallow = true;   /* The press that woke us must not put it back to sleep. */
@@ -718,6 +793,31 @@ static void update(void *value)
 #endif
 }
 
+/* Clock mode: the pet sleeps on outside power (USB) and the time is known.
+ * The Host simulator stands in with action 8 and a fixed time. */
+static bool clock_mode(host_state_t *state, pet_clock_t *out)
+{
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    if (!state->battery_ok || state->battery.current_ma < 0) {
+        return false;   /* On battery: dark screen (and pocket mode) instead. */
+    }
+    const time_t now = time(NULL);
+    struct tm t;
+    if (now < VALID_EPOCH || !localtime_r(&now, &t)) {
+        return false;
+    }
+    *out = (pet_clock_t) {t.tm_hour, t.tm_min, t.tm_sec, t.tm_wday, t.tm_mday, t.tm_mon};
+    return true;
+#else
+    if (!state->host_usb) {
+        return false;
+    }
+    const uint32_t secs = app_game_read(state->game).tick / 30U;
+    *out = (pet_clock_t) {10, (int)(41 + secs / 60U) % 60, (int)(secs % 60U), 6, 21, 10};
+    return true;
+#endif
+}
+
 static int render(void *value)
 {
     host_state_t *state = value;
@@ -726,6 +826,29 @@ static int render(void *value)
     }
     const app_game_snapshot_t snapshot = app_game_read(state->game);
     const bool screen_off = snapshot.power == APP_POWER_DOZE;
+    pet_clock_t clock;
+    if (screen_off && clock_mode(state, &clock)) {
+        /* Sleeping on USB power with the time known: a clock instead of black,
+         * redrawn once a second (the panel keeps the frame in between). */
+        if (clock.second == state->clock_drawn_second) {
+            return 0;
+        }
+        BeginDrawing();
+        if (!raylib_lite_raylib_frame_available()) {
+            EndDrawing();
+            return -1;
+        }
+        pet_view_draw_clock(&state->view, &snapshot, &clock);
+        EndDrawing();
+        state->clock_drawn_second = clock.second;
+        state->blanked = false;   /* Not black: pocket mode stays off. */
+        state->drawn_power = snapshot.power;
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+        ++s_frames_drawn;
+#endif
+        return 0;
+    }
+    state->clock_drawn_second = -1;
     /* Screen off: push one black frame (so nothing stale can stay visible even
      * if the panel ignores "off"), then submit nothing until it wakes. The
      * panel keeps the last frame, so a dimmed screen only needs every
@@ -753,6 +876,9 @@ static int render(void *value)
         pet_view_draw(&state->view, &snapshot);
     }
     EndDrawing();
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    ++s_frames_drawn;
+#endif
     return 0;
 }
 

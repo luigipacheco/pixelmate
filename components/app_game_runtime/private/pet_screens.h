@@ -34,6 +34,8 @@ void screens_icon_says(const draw_ctx_t *ctx, int x, int y, Color c);
 void screens_icon_stack(const draw_ctx_t *ctx, int x, int y, Color c);
 /** Bitsy Says pad color (shared with the eyes). */
 Color screens_says_color(int pad);
+/** Clock mode face (pet_clock.c). */
+void screens_draw_clock(const draw_ctx_t *ctx, const pet_clock_t *clock);
 /** Bit Flip game (pet_bits.c). */
 void screens_draw_bits(const draw_ctx_t *ctx, int ox);
 /** Spark Grid game (pet_grid.c). */

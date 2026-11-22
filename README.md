@@ -50,10 +50,15 @@ the `pixel_pal` name so existing pets carry over.)
   screen dims; at 30 s the screen turns off (12 s on low battery). SLEEP in
   the menu or a press of the AI button does it at once. Steps keep counting;
   tap the screen or press the AI button to wake.
+- **Clock mode (on USB power):** when the pet sleeps while plugged in and the
+  time is known (Wi-Fi), the screen shows a dim clock instead of going black:
+  big pixel digits with Bitsy's eyes as the blinking colon (they hop on the
+  hour and doze at night), the date and today's steps. It drifts a few pixels
+  each minute to protect the AMOLED. Tap to wake.
 - **Pocket mode (on battery):** 3 s after the screen goes dark, Wi-Fi stops
   and the chip light-sleeps; the BMI270 keeps counting steps. Wake it with the
   AI button (touch does not wake it in pocket mode). It wakes itself every 10
-  minutes to log steps and settle the day. On USB power it stays awake so
+  seconds to log steps and check the AI button. On USB power it stays awake so
   installs and logs keep working.
 - **Battery:** percentage in the pull-down menu; a top-bar icon appears while
   charging or when the battery is low.

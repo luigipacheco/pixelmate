@@ -23,6 +23,7 @@
     "components/app_game_runtime/pet_grid.c",
     "components/app_game_runtime/pet_bits.c",
     "components/app_game_runtime/pet_minis.c",
+    "components/app_game_runtime/pet_clock.c",
     "components/app_game_runtime/pet_booth.c",
     "components/app_game_runtime/booth_media.c",
     "components/app_game_runtime/pet_eyes.c",

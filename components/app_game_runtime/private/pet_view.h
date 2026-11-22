@@ -63,3 +63,11 @@ typedef struct {
 void pet_view_init(pet_view_t *view);
 void pet_view_update(pet_view_t *view, const app_game_snapshot_t *snapshot, uint32_t events);
 void pet_view_draw(const pet_view_t *view, const app_game_snapshot_t *snapshot);
+
+/** Local time for clock mode. */
+typedef struct {
+    int hour, minute, second, wday, mday, month;
+} pet_clock_t;
+
+/** Clock mode frame (sleeping on USB power with the time known). */
+void pet_view_draw_clock(const pet_view_t *view, const app_game_snapshot_t *snapshot, const pet_clock_t *clock);
