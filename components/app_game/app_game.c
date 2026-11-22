@@ -76,6 +76,10 @@ static const app_store_item_t s_store[] = {
     {APP_ITEM_GAME, APP_GAME_PHOTO, 300, "PHOTO BOOTH", "LO-RES PICS AND GIFS"},
     {APP_ITEM_GAME, APP_GAME_CARDS, 400, "HI-LO", "DOUBLE OR NOTHING CARDS"},
     {APP_ITEM_FILTER, APP_FILTER_DITHER, 50, "DITHER", "RETRO DOT SHADING"},
+    {APP_ITEM_FILTER, APP_FILTER_MIRROR, 60, "MIRROR", "SYMMETRIC SELFIES"},
+    {APP_ITEM_FILTER, APP_FILTER_POP, 80, "POP", "BOLD POSTER COLORS"},
+    {APP_ITEM_FILTER, APP_FILTER_CRT, 90, "CRT", "OLD TV STRIPES"},
+    {APP_ITEM_FILTER, APP_FILTER_EDGES, 120, "EDGES", "GLOWING OUTLINES"},
     {APP_ITEM_FILTER, APP_FILTER_SCANLINES, 60, "SCANLINES", "OLD TV LINES"},
     {APP_ITEM_LENS, APP_PHOTO_RES_MID, 80, "MID RES", "SHARPER 64X64 PHOTOS"},
     {APP_ITEM_FILTER, APP_FILTER_GREEN, 80, "GAME-GREEN", "FOUR POCKET GREENS"},
@@ -93,7 +97,7 @@ static const app_store_item_t s_store[] = {
 #define FREE_FILTERS APP_OWN_FILTER_BIT(APP_FILTER_NONE)
 #define FREE_LENSES APP_OWN_LENS_BIT(APP_PHOTO_RES_LOW)
 #define DANCE_EVERY_STEPS 100U
-_Static_assert(sizeof(app_game_record_t) == 76, "bump SAVE_VERSION and migrate when the record changes");
+_Static_assert(sizeof(app_game_record_t) == 80, "bump SAVE_VERSION and migrate when the record changes");
 
 struct app_game {
     app_game_config_t config;
@@ -111,7 +115,8 @@ struct app_game {
     bool reset_armed;                  /* Finger went down on RESET PET. */
     uint16_t reset_hold_ticks;
     uint32_t owned;
-    uint8_t filters_owned;
+    uint16_t filters_owned;
+    uint16_t grid_hold_ticks;     /* Long press on a Spark Grid tile. */
     uint8_t lenses_owned;
     uint8_t anims_on;
     app_sound_t sound;
@@ -597,7 +602,7 @@ static bool owns_item(const struct app_game *g, const app_store_item_t *item)
 static void grant_item(app_game_handle_t g, const app_store_item_t *item)
 {
     switch (item->kind) {
-    case APP_ITEM_FILTER: g->filters_owned |= (uint8_t)item_bit(item); break;
+    case APP_ITEM_FILTER: g->filters_owned |= (uint16_t)item_bit(item); break;
     case APP_ITEM_LENS:
     case APP_ITEM_FILM:
     case APP_ITEM_WEBCAM: g->lenses_owned |= (uint8_t)item_bit(item); break;
@@ -991,6 +996,36 @@ static app_minigame_t cabinet_game(app_arcade_t cabinet)
 static bool cabinet_owned(const struct app_game *g, app_arcade_t game)
 {
     return (g->owned & APP_OWN_GAME_BIT(cabinet_game(game))) != 0;
+}
+
+/* Long press (half a second, finger still) on a hidden Spark Grid tile
+ * cycles its memo mark; the release is swallowed so it does not flip. */
+enum { GRID_HOLD_TICKS = 15 };
+
+static void update_grid_hold(app_game_handle_t g)
+{
+    const bool live = g->screen == APP_SCREEN_ARCADE && g->arcade == APP_ARCADE_GRID
+                      && g->overlay == APP_OVERLAY_NONE && g->power == APP_POWER_AWAKE
+                      && g->grid.view.phase == APP_GRID_PLAYING && g->pointer_down && !g->swallow_touch
+                      && abs(g->pointer_x - g->press_x) <= APP_TAP_SLOP_PX
+                      && abs(g->pointer_y - g->press_y) <= APP_TAP_SLOP_PX;
+    if (!live) {
+        g->grid_hold_ticks = 0;
+        return;
+    }
+    if (++g->grid_hold_ticks != GRID_HOLD_TICKS) {
+        return;
+    }
+    for (int i = 0; i < APP_GRID_TILES; ++i) {
+        if (app_rect_hit(app_grid_tile_rect(i), g->press_x, g->press_y)) {
+            if (grid_mark(&g->grid, i)) {
+                g->swallow_touch = true;
+                g->events |= APP_EVENT_SETTINGS;   /* Click cue. */
+                changed(g);
+            }
+            return;
+        }
+    }
 }
 
 static bool booth_owned(const struct app_game *g)
@@ -1457,6 +1492,7 @@ void app_game_update(app_game_handle_t g)
     update_booth(g);
     update_power(g);
     update_reset(g);
+    update_grid_hold(g);
     const uint32_t won = cards_update(&g->cards, &g->events);
     if (won) {
         g->sparks += won;
@@ -1637,7 +1673,9 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->sleep_code = g->sleep_idx == DEFAULT_SLEEP_IDX ? 0 : (uint8_t)(g->sleep_idx + 1);
     r->bright_code = g->bright_idx == DEFAULT_BRIGHT_IDX ? 0 : (uint8_t)(g->bright_idx + 1);
     r->goal_k = (uint8_t)(g->step_goal / 1000U);
-    r->filters_owned = g->filters_owned;
+    r->filters_owned = (uint8_t)(g->filters_owned & 0xFFU);
+    r->filters_owned_hi = (uint8_t)(g->filters_owned >> 8);
+    r->grid_level = g->grid.view.level;
     r->filter = g->booth.view.filter;
     r->lenses_owned = g->lenses_owned;
     r->lens = (uint8_t)(g->booth.view.res | (g->booth.view.color ? APP_RECORD_LENS_COLOR : 0));
@@ -1676,7 +1714,9 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
                    ? (uint8_t)(r->sleep_code - 1) : DEFAULT_SLEEP_IDX;
     g->bright_idx = r->bright_code && r->bright_code <= APP_BRIGHT_OPTIONS
                     ? (uint8_t)(r->bright_code - 1) : DEFAULT_BRIGHT_IDX;
-    g->filters_owned = (uint8_t)(r->filters_owned | FREE_FILTERS);
+    g->filters_owned = (uint16_t)(r->filters_owned | ((uint16_t)r->filters_owned_hi << 8) | FREE_FILTERS);
+    g->filters_owned &= (uint16_t)((1U << APP_FILTER_COUNT) - 1U);
+    grid_set_level(&g->grid, r->grid_level);
     g->lenses_owned = (uint8_t)((r->lenses_owned & (((1U << APP_PHOTO_RES_COUNT) - 1U) | APP_OWN_FILM_BIT
                                                     | APP_OWN_WEBCAM_BIT))
                                 | FREE_LENSES);

@@ -196,6 +196,7 @@ enum {
     APP_GRID_N = 5,              /**< Tiles per row and column. */
     APP_GRID_TILES = 25,
     APP_GRID_COST = 10,          /**< Sparks per round. */
+    APP_GRID_LEVELS = 5,
     APP_GRID_DUD = 0,            /**< Tile value of a dud; others are 1..3. */
 };
 
@@ -222,7 +223,21 @@ typedef struct {
     uint16_t payout;                   /**< Sparks paid by the last round. */
     int8_t last_flip;                  /**< Tile flipped most recently, -1 if none. */
     app_grid_result_t result;
+    uint8_t level;                     /**< 1..APP_GRID_LEVELS: more x2/x3 and more duds. */
+    uint8_t flips;                     /**< Good tiles flipped this round (sets the level drop). */
+    uint8_t marks[APP_GRID_TILES];     /**< app_grid_mark_t memo on hidden tiles. */
 } app_grid_snapshot_t;
+
+/** Memo marks, cycled by a long press on a hidden tile. A DUD mark guards
+ * the tile against an accidental tap. */
+typedef enum {
+    APP_GRID_MARK_NONE = 0,
+    APP_GRID_MARK_DUD,
+    APP_GRID_MARK_1,
+    APP_GRID_MARK_2,
+    APP_GRID_MARK_3,
+    APP_GRID_MARK_COUNT,
+} app_grid_mark_t;
 
 typedef enum {
     APP_ITEM_COLOR = 0,
@@ -439,7 +454,7 @@ typedef struct {
     bool battery_charging;
     app_mood_t mood;
     uint32_t owned;             /**< APP_OWN_*_BIT flags. */
-    uint8_t filters_owned;      /**< APP_OWN_FILTER_BIT flags; NONE always set. */
+    uint16_t filters_owned;     /**< APP_OWN_FILTER_BIT flags; NONE always set. */
     uint8_t lenses_owned;       /**< APP_OWN_LENS_BIT flags; LOW always set. */
     uint8_t anims_on;           /**< Bit per app_anim_t; only owned ones can be on. */
     app_sound_t sound;
@@ -477,7 +492,7 @@ typedef struct {
     uint32_t save_seq;          /**< Increments whenever persistent data changes. */
 } app_game_snapshot_t;
 
-/** Persistent record: plain data, 76 bytes. Bump the save version on layout change;
+/** Persistent record: plain data, 80 bytes. Bump the save version on layout change;
  * fields are only ever appended so older records can be migrated by prefix. */
 typedef struct {
     uint32_t steps_total;
@@ -513,6 +528,10 @@ typedef struct {
     uint8_t filter;             /**< Selected photo look. */
     uint8_t lenses_owned;       /**< APP_OWN_LENS_BIT flags. */
     uint8_t lens;               /**< Selected photo resolution, | APP_RECORD_LENS_COLOR for color film. */
+    /* v7 */
+    uint8_t filters_owned_hi;   /**< Looks 8..15 (APP_OWN_FILTER_BIT >> 8). */
+    uint8_t grid_level;         /**< Spark Grid level 1..APP_GRID_LEVELS; 0 = 1. */
+    uint16_t reserved4;
 } app_game_record_t;
 
 /** Sizes of older records (prefixes of the current one), for save migration. */
@@ -520,6 +539,7 @@ typedef struct {
 #define APP_GAME_RECORD_V3_SIZE 36U
 #define APP_GAME_RECORD_V4_SIZE 68U
 #define APP_GAME_RECORD_V5_SIZE 72U
+#define APP_GAME_RECORD_V6_SIZE 76U
 #define APP_RECORD_LENS_COLOR 0x80U   /* app_game_record_t.lens: color film selected. */
 
 typedef struct {

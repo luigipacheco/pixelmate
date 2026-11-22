@@ -33,7 +33,7 @@
 static const char *TAG = "pixel_pal";
 enum {
     /* v1 builds could store an all-zero pet (ignored); v2..v5 migrate by prefix. */
-    SAVE_VERSION = 6,
+    SAVE_VERSION = 7,
     SAVE_SOON_MS = 2000,          /* After spending, settings or a goal. */
     SAVE_LATER_MS = 30000,        /* After step/stat drift; limits flash wear. */
     SENSOR_POLL_TICKS = GAME_TICK_HZ,          /* 1 s */
@@ -136,7 +136,8 @@ static raylib_lite_result_t migrate_save(uint16_t old_version, const void *old_d
     const bool v3 = old_version == 3 && old_size == APP_GAME_RECORD_V3_SIZE;
     const bool v4 = old_version == 4 && old_size == APP_GAME_RECORD_V4_SIZE;
     const bool v5 = old_version == 5 && old_size == APP_GAME_RECORD_V5_SIZE;
-    if ((!v2 && !v3 && !v4 && !v5) || new_size != sizeof(app_game_record_t)) {
+    const bool v6 = old_version == 6 && old_size == APP_GAME_RECORD_V6_SIZE;
+    if ((!v2 && !v3 && !v4 && !v5 && !v6) || new_size != sizeof(app_game_record_t)) {
         return RAYLIB_LITE_INVALID_VERSION;
     }
     app_game_record_t *record = new_data;
@@ -562,6 +563,7 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
             for (int i = 0; i < APP_ANIM_COUNT; ++i) r.owned |= APP_OWN_ANIM_BIT(i);
             for (int i = 0; i < APP_GAME_COUNT; ++i) r.owned |= APP_OWN_GAME_BIT(i);
             r.filters_owned = 0xFF;
+            r.filters_owned_hi = 0xFF;
             r.lenses_owned = 0xFF;
             r.sparks += 1000U;
             app_game_import(state->game, &r);
@@ -740,6 +742,12 @@ static int state_json(const void *value, char *output, size_t capacity)
         "fainted"
     };
     const app_game_snapshot_t s = app_game_read(((const host_state_t *)value)->game);
+    char grid_tiles[APP_GRID_TILES + 1], grid_marks[APP_GRID_TILES + 1];
+    for (int i = 0; i < APP_GRID_TILES; ++i) {
+        grid_tiles[i] = (char)('0' + s.grid.tiles[i]);
+        grid_marks[i] = (char)('0' + s.grid.marks[i]);
+    }
+    grid_tiles[APP_GRID_TILES] = grid_marks[APP_GRID_TILES] = 0;
     int size = snprintf(output, capacity,
                         "{\"phase\":\"%s\",\"tick\":%lu,\"screen\":\"%s\",\"overlay\":\"%s\","
                         "\"store_page\":%u,\"owned\":%lu,\"anims_on\":%u,\"mood\":\"%s\","
@@ -750,6 +758,8 @@ static int state_json(const void *value, char *output, size_t capacity)
                         "\"cards\":{\"phase\":%d,\"current\":%u,\"pot\":%u,\"streak\":%u,\"result\":%d},"
                         "\"slots\":{\"phase\":%d,\"payout\":%u,\"line\":[%u,%u,%u]},"
                         "\"bits\":{\"phase\":%d,\"target\":%u,\"switches\":%u,\"hits\":%u,\"payout\":%u,\"best\":%u},"
+                        "\"grid\":{\"phase\":%d,\"level\":%u,\"flips\":%u,\"score\":%u,\"payout\":%u,\"result\":%d,"
+                        "\"revealed\":%lu,\"tiles\":\"%s\",\"marks\":\"%s\"},"
                         "\"arcade\":%d,\"arcade_row\":%u,\"camera_present\":%s,\"filters_owned\":%u,"
                         "\"lenses_owned\":%u,\"booth\":{\"phase\":%d,\"filter\":%u,\"res\":%u,\"color\":%s,\"on_air\":%s,\"cam_code\":%u,\"unplugged\":%s,"
                         "\"camera\":%s,\"photos\":%u,\"gifs\":%u,\"index\":%u,\"result\":%d,"
@@ -772,6 +782,8 @@ static int state_json(const void *value, char *output, size_t capacity)
                         app_game_slot_symbol(s.slots.pos_q[0], 0), app_game_slot_symbol(s.slots.pos_q[1], 0),
                         app_game_slot_symbol(s.slots.pos_q[2], 0),
                         (int)s.bits.phase, s.bits.target, s.bits.switches, s.bits.hits, s.bits.payout, s.bits.best,
+                        (int)s.grid.phase, s.grid.level, s.grid.flips, s.grid.score, s.grid.payout, (int)s.grid.result,
+                        (unsigned long)s.grid.revealed, grid_tiles, grid_marks,
                         (int)s.arcade, s.arcade_row, s.camera_present ? "true" : "false", s.filters_owned,
                         s.lenses_owned, (int)s.booth.phase, s.booth.filter, s.booth.res, s.booth.color ? "true" : "false", s.booth.on_air ? "true" : "false", s.booth.cam_code,
                         s.booth.unplugged ? "true" : "false",
