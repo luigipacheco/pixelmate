@@ -48,7 +48,7 @@ enum {
 
 static const uint16_t s_sleep_s[APP_SLEEP_OPTIONS] = {15, 30, 60, 120};
 static const uint8_t s_bright_pct[APP_BRIGHT_OPTIONS] = {100, 80, 60};
-enum { DEFAULT_SLEEP_IDX = 1, DEFAULT_BRIGHT_IDX = 0, SETTINGS_PAGES = 2, RESET_ROW = 7 };
+enum { DEFAULT_SLEEP_IDX = 1, DEFAULT_BRIGHT_IDX = 0, SETTINGS_PAGES = 3, RESET_ROW = 8 };
 /* Volume order when tapping SOUND: off, low, mid, high. */
 static const app_sound_t s_sound_cycle[APP_SOUND_COUNT] = {
     APP_SOUND_OFF, APP_SOUND_LOW, APP_SOUND_MID, APP_SOUND_HIGH,
@@ -118,6 +118,7 @@ struct app_game {
     uint8_t settings_page;
     uint8_t sleep_idx, bright_idx;     /* Indexes into s_sleep_s / s_bright_pct. */
     bool tap_steps;                    /* TAP STEPS setting. */
+    bool lights_off;                   /* MODULE LIGHTS off. */
     uint32_t tap_steps_today;          /* Steps credited by pats today. */
     uint8_t tap_pats;                  /* Pats toward the next tap step. */
     /* DEV MODE sandbox: the real economy is parked here while it is on, and
@@ -396,10 +397,11 @@ static void reset_pet_keep_settings(app_game_handle_t g)
 {
     const app_sound_t sound = g->sound;
     const uint8_t sleep_idx = g->sleep_idx, bright_idx = g->bright_idx;
-    const bool tap_steps = g->tap_steps;
+    const bool tap_steps = g->tap_steps, lights_off = g->lights_off;
     const uint32_t goal = g->step_goal;
     fresh_pet(g);
     g->tap_steps = tap_steps;
+    g->lights_off = lights_off;
     g->sound = sound;
     g->sleep_idx = sleep_idx;
     g->bright_idx = bright_idx;
@@ -901,6 +903,7 @@ static void tap_settings(app_game_handle_t g, int32_t x, int32_t y)
         case 4: g->bright_idx = (uint8_t)((g->bright_idx + 1) % APP_BRIGHT_OPTIONS); break;
         case 5: g->tap_steps = !g->tap_steps; break;
         case 6: set_overlay(g, APP_OVERLAY_ABOUT); return;
+        case 7: g->lights_off = !g->lights_off; break;
         default: return;   /* RESET needs a hold. */
         }
         g->events |= APP_EVENT_SETTINGS;
@@ -2097,6 +2100,7 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .sleep_s = s_sleep_s[g->sleep_idx < APP_SLEEP_OPTIONS ? g->sleep_idx : DEFAULT_SLEEP_IDX],
         .brightness_pct = s_bright_pct[g->bright_idx < APP_BRIGHT_OPTIONS ? g->bright_idx : DEFAULT_BRIGHT_IDX],
         .tap_steps = g->tap_steps,
+        .module_lights = !g->lights_off,
         .tap_steps_today = g->tap_steps_today,
         .dev_mode = g->dev_mode,
         .konami_pos = g->konami_pos,
@@ -2228,7 +2232,8 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->stack_best = g->stack.view.best;
     r->sleep_code = g->sleep_idx == DEFAULT_SLEEP_IDX ? 0 : (uint8_t)(g->sleep_idx + 1);
     r->bright_code = g->bright_idx == DEFAULT_BRIGHT_IDX ? 0 : (uint8_t)(g->bright_idx + 1);
-    r->flags = g->tap_steps ? APP_RECORD_FLAG_TAP_STEPS : 0U;
+    r->flags = (uint8_t)((g->tap_steps ? APP_RECORD_FLAG_TAP_STEPS : 0U)
+                         | (g->lights_off ? APP_RECORD_FLAG_LIGHTS_OFF : 0U));
     r->pats_lo = (uint8_t)(g->pats & 0xFFU);
     r->pats_hi = (uint8_t)(g->pats >> 8);
     r->eggs = g->eggs;
@@ -2286,6 +2291,7 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
     g->bright_idx = r->bright_code && r->bright_code <= APP_BRIGHT_OPTIONS
                     ? (uint8_t)(r->bright_code - 1) : DEFAULT_BRIGHT_IDX;
     g->tap_steps = (r->flags & APP_RECORD_FLAG_TAP_STEPS) != 0;
+    g->lights_off = (r->flags & APP_RECORD_FLAG_LIGHTS_OFF) != 0;
     g->pats = (uint16_t)(r->pats_lo | (r->pats_hi << 8));
     g->pats = g->pats > APP_LOVE_PATS ? APP_LOVE_PATS : g->pats;
     g->eggs = r->eggs;

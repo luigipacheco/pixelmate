@@ -788,8 +788,8 @@ static void mood_leds(host_state_t *state, const app_game_snapshot_t *s, uint8_t
         }
         return;
     }
-    if (s->power == APP_POWER_DOZE || s->fainted) {
-        return;   /* Asleep: dark. */
+    if (s->power == APP_POWER_DOZE || s->fainted || !s->module_lights) {
+        return;   /* Asleep, or MODULE LIGHTS off: dark. */
     }
     const float breathe = 0.55f + 0.45f * sinf((float)tick * 0.07f);
     if (s->steps_today >= s->step_goal && s->step_goal) {

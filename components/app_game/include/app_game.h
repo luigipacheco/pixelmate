@@ -99,7 +99,7 @@ typedef enum {
 enum {
     APP_SLEEP_OPTIONS = 4,       /**< Screen sleep: 15 s, 30 s (default), 60 s, 120 s. */
     APP_BRIGHT_OPTIONS = 3,      /**< Drawn brightness: 100 % (default), 80 %, 60 %. */
-    APP_SETTINGS_ROWS = 8,
+    APP_SETTINGS_ROWS = 9,
     APP_TAPS_PER_STEP = 10,      /**< TAP STEPS: this many pats count as one step. */
     APP_DEV_SPARKS = 99999,      /**< DEV MODE: sparks shown (and topped up). */
     APP_KONAMI_LEN = 10,         /**< Up Up Down Down Left Right Left Right B A. */
@@ -599,6 +599,7 @@ typedef struct {
     uint16_t sleep_s;           /**< Seconds without a touch before the screen sleeps. */
     uint8_t brightness_pct;     /**< Drawn brightness when awake, 60..100. */
     bool tap_steps;             /**< TAP STEPS: tapping the pet counts as a step. */
+    bool module_lights;         /**< Interaction module mood LEDs on (Settings). */
     uint32_t tap_steps_today;   /**< Steps credited by pats today. */
     bool dev_mode;              /**< DEV MODE on (sandbox: infinite sparks, nothing kept). */
     uint8_t konami_pos;         /**< Konami inputs entered so far on the About page. */
@@ -697,6 +698,7 @@ typedef struct {
 #define APP_EGG_LOVE 0x01U    /* LOVE EYES unlocked. */
 
 #define APP_RECORD_FLAG_TAP_STEPS 0x01U   /* Tapping the pet counts as a step. */
+#define APP_RECORD_FLAG_LIGHTS_OFF 0x02U  /* Interaction module mood LEDs off. */
 
 /** Sizes of older records (prefixes of the current one), for save migration. */
 #define APP_GAME_RECORD_V2_SIZE 32U
