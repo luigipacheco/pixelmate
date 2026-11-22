@@ -663,6 +663,31 @@ static void pocket_arm_watch(void)
     esp_timer_start_once(s_pocket_watch, (uint64_t)POCKET_WATCH_MS * 1000ULL);
 }
 
+/* Light sleep normally switches every pin to a "slept" state (this IDF has
+ * the GPIO reset workaround on). That let the panel's reset and the 3.3 V
+ * rail's enable float, so the AMOLED reset itself while asleep and stayed
+ * black after waking (sound and touch still worked). Keep the pins as they
+ * are instead, and pin the display and power-control pads explicitly. */
+static void pocket_keep_pins(void)
+{
+    static bool done;
+    if (done) {
+        return;
+    }
+    done = true;
+    esp_sleep_enable_gpio_switch(false);
+    static const gpio_num_t keep[] = {
+        GPIO_NUM_42, GPIO_NUM_44,                           /* LCD reset / clock (v1.0 / v1.2) */
+        GPIO_NUM_43, GPIO_NUM_50,                           /* LCD TE, CS */
+        GPIO_NUM_36, GPIO_NUM_51, GPIO_NUM_35, GPIO_NUM_9,  /* LCD QSPI data */
+        GPIO_NUM_60, GPIO_NUM_57,                           /* VCC_3V3 enable, board shutdown */
+    };
+    for (size_t i = 0; i < sizeof(keep) / sizeof(keep[0]); ++i) {
+        gpio_sleep_sel_dis(keep[i]);
+    }
+    ESP_LOGI(TAG, "pocket: pins keep their state in light sleep");
+}
+
 static void pocket_resume_radio(host_state_t *state)
 {
     if (state->pocket_radio_off) {
@@ -702,6 +727,7 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
         ext1_failed = true;
         ESP_LOGW(TAG, "pocket: EXT1 wake unavailable; GPIO wake only");
     }
+    pocket_keep_pins();
     const int64_t slept_at = esp_timer_get_time();
     ++s_pocket_log.sleeps;
     esp_light_sleep_start();
