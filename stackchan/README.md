@@ -73,5 +73,15 @@ Flashing replaces M5Stack's factory firmware.
 
 ## Status
 
-Builds only. Nothing here has run on a Stack-chan yet: display, touch
-orientation, sound and Wi-Fi all still need a first test on the device.
+First run on a StackChan on 2026-11-21 (boot log over USB):
+
+- Boots into the game; 8 MB PSRAM found; the pet's save loads from NVS.
+- LCD and touch start; a tap on the dark screen woke the pet.
+- Speaker starts (AW88298, 24 kHz mono) and all 27 sounds load.
+- Wi-Fi starts and offers the `PIXELMATE-XXXX` setup hotspot.
+- Speed: about 35 ms to draw a frame plus 39 ms to send it to the LCD, so
+  roughly 13 pictures a second (the game logic still runs at 30). Drawing a
+  320x240 picture instead of 480x480 is the fix.
+
+Not checked yet: picture colours and orientation, how the sound actually
+sounds, and joining Wi-Fi.
