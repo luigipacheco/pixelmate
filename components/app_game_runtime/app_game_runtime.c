@@ -97,8 +97,6 @@ typedef struct {
     char stats_json[STATS_JSON_MAX];   /* Instance-owned buffer for /api/stats. */
     uint32_t pocket_ticks;        /* Ticks the screen has been dark (pocket mode countdown). */
     bool pocket_radio_off;        /* Pocket mode suspended Wi-Fi. */
-    bool pocket_touch_off;        /* Touch kept waking us falsely: AI button only. */
-    uint8_t pocket_quick_wakes;
 #endif
 } host_state_t;
 
@@ -586,16 +584,12 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
  * Once the screen has been dark a few seconds on battery, stop Wi-Fi and
  * light-sleep the chip. Nothing reboots, so the BMI270 keeps counting steps
  * on its own; the panel keeps its black frame (no panel commands: those
- * raced the board's frame task before). The AI button or a touch wakes the
- * pet; a timer wakes it briefly to read steps, settle the day and save. */
+ * raced the board's frame task before). The AI button wakes the pet; a timer wakes it briefly to read steps, settle the day and save. */
 enum {
     POCKET_AFTER_TICKS = 90,           /* 3 s of dark screen first. */
     POCKET_TIMER_S = 600,              /* Bookkeeping wake every 10 minutes. */
-    POCKET_QUICK_WAKE_US = 400000,     /* A "touch" wake this fast is probably noise. */
-    POCKET_QUICK_WAKES_MAX = 3,
 };
-#define POCKET_BUTTON_GPIO GPIO_NUM_7  /* AI button, active low (RTC IO). */
-#define POCKET_TOUCH_GPIO GPIO_NUM_6   /* Touch controller INT, active low. */
+#define POCKET_BUTTON_GPIO GPIO_NUM_7  /* AI button, active low: the only wake key. */
 
 static void pocket_resume_radio(host_state_t *state)
 {
@@ -618,8 +612,9 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
     if (++state->pocket_ticks < POCKET_AFTER_TICKS) {
         return;
     }
-    /* On USB power stay reachable: light sleep drops the USB link Iris uses. */
-    if (!state->battery_ok || state->battery.current_ma >= 0) {
+    /* On USB power stay reachable: light sleep drops the USB link Iris uses.
+     * A held button would wake us at once, so wait for its release. */
+    if (!state->battery_ok || state->battery.current_ma >= 0 || gpio_get_level(POCKET_BUTTON_GPIO) == 0) {
         return;
     }
     if (!state->pocket_radio_off && app_net_suspend(true) == ESP_OK) {
@@ -627,33 +622,17 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
     }
     esp_sleep_enable_timer_wakeup((uint64_t)POCKET_TIMER_S * 1000000ULL);
     gpio_wakeup_enable(POCKET_BUTTON_GPIO, GPIO_INTR_LOW_LEVEL);
-    const bool touch = !state->pocket_touch_off && gpio_get_level(POCKET_TOUCH_GPIO) == 1;
-    if (touch) {
-        gpio_wakeup_enable(POCKET_TOUCH_GPIO, GPIO_INTR_LOW_LEVEL);
-    }
     esp_sleep_enable_gpio_wakeup();
     const int64_t slept_at = esp_timer_get_time();
     esp_light_sleep_start();
-    const int64_t slept_us = esp_timer_get_time() - slept_at;
+    const int64_t slept_s = (esp_timer_get_time() - slept_at) / 1000000LL;
     const uint32_t causes = esp_sleep_get_wakeup_causes();
     gpio_wakeup_disable(POCKET_BUTTON_GPIO);
-    if (touch) {
-        gpio_wakeup_disable(POCKET_TOUCH_GPIO);
-    }
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
     if (!(causes & BIT(ESP_SLEEP_WAKEUP_GPIO))) {
         return;   /* Timer: this tick reads steps and the day; then back to sleep. */
     }
-    const bool button = gpio_get_level(POCKET_BUTTON_GPIO) == 0;
-    if (!button && slept_us < POCKET_QUICK_WAKE_US) {
-        if (++state->pocket_quick_wakes >= POCKET_QUICK_WAKES_MAX) {
-            state->pocket_touch_off = true;
-            ESP_LOGW(TAG, "pocket: touch wakes look like noise; AI button only from now");
-        }
-        return;   /* Probably not a real touch: stay dark and sleep again. */
-    }
-    state->pocket_quick_wakes = 0;
-    ESP_LOGI(TAG, "pocket: woke by %s after %lld s", button ? "AI button" : "touch", slept_us / 1000000LL);
+    ESP_LOGI(TAG, "pocket: AI button woke the pet after %lld s", slept_s);
     state->pocket_ticks = 0;
     app_game_wake(state->game);
     pocket_resume_radio(state);

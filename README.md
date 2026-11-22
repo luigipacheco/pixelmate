@@ -42,7 +42,7 @@ the `pixel_pal` name so existing pets carry over.)
   the menu does it at once. Steps keep counting; tap the screen to wake.
 - **Pocket mode (on battery):** 3 s after the screen goes dark, Wi-Fi stops
   and the chip light-sleeps; the BMI270 keeps counting steps. Wake it with the
-  AI button or a touch (the first tap only wakes it). It wakes itself every 10
+  AI button (touch does not wake it in pocket mode). It wakes itself every 10
   minutes to log steps and settle the day. On USB power it stays awake so
   installs and logs keep working.
 - **Battery:** percentage in the pull-down menu; a top-bar icon appears while
