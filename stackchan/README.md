@@ -112,7 +112,16 @@ First run on a StackChan on 2026-11-21 (boot log over USB):
   roughly 13 pictures a second (the game logic still runs at 30). Drawing a
   320x240 picture instead of 480x480 is the fix.
 
-Not checked yet: picture colours and orientation, how the sound actually
-sounds, and joining Wi-Fi. The camera, battery monitor, stay-awake, neck,
-clock mode and clock chip were added after that run and have only been built
-(clock mode was also checked in the simulator); none has run on the robot.
+Second run the same day, after adding the neck, clock and power code:
+
+- Neck: rail on, both servos answer, head found at its calibrated home
+  (514/743 ticks against 512/743), no stall or error; Luis confirmed it moves
+  smoothly.
+- Battery monitor reads about 70 %, 3.9 V, charging at ~250 mA on USB, so the
+  stay-awake rule is active.
+- Clock mode appears after 12 s untouched (confirmed on the robot). Drawing
+  takes about 37 ms a frame with the clock showing.
+
+Not checked yet: the camera and photo booth, whether the neck's left/right
+and up/down match what the code calls them, the clock chip after a power-off,
+joining Wi-Fi, and how the sound actually sounds.
