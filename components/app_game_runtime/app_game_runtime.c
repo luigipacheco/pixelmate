@@ -20,6 +20,8 @@
 #include "app_pedometer_hw.h"
 #include "app_power_hw.h"
 #include "app_sfx.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "driver/gpio.h"
 #include "esp_attr.h"
 #include "esp_system.h"
@@ -44,8 +46,6 @@ typedef struct {
 } pocket_log_t;
 static RTC_NOINIT_ATTR pocket_log_t s_pocket_log;
 static volatile uint32_t s_frames_drawn;     /* Frames submitted (render). */
-static uint32_t s_frames_at_wake;
-static esp_timer_handle_t s_pocket_watch;
 
 static void pocket_log_init(void)
 {
@@ -634,61 +634,15 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
  * raced the board's frame task before). The AI button wakes the pet; a timer wakes it briefly to read steps, settle the day and save. */
 enum {
     POCKET_AFTER_TICKS = 90,           /* 3 s of dark screen first. */
-    POCKET_TIMER_S = 2,                /* Wake briefly every 2 s: steps, the day, and a held AI button. */
+    POCKET_NAP_MS = 1000,              /* Deep doze: one game tick a second. */
+    POCKET_POLL_MS = 20,               /* AI button check while napping. */
     POCKET_WATCH_MS = 3000,            /* No new frame this long after waking: restart. */
     POCKET_SOON_TICKS = 30,            /* After the AI button: pocket mode in 1 s. */
 };
 #define POCKET_BUTTON_GPIO GPIO_NUM_7  /* AI button, active low: the only wake key. */
 
-/* esp_timer task: if the screen never drew a frame after waking (the
- * display pipeline did not survive light sleep), restart rather than
- * leave a black screen. Steps are saved before every sleep. */
-static void pocket_watch_fired(void *arg)
-{
-    (void)arg;
-    if (s_frames_drawn == s_frames_at_wake) {
-        ++s_pocket_log.stuck_restarts;
-        esp_restart();
-    }
-}
 
-static void pocket_arm_watch(void)
-{
-    if (!s_pocket_watch) {
-        const esp_timer_create_args_t args = {.callback = pocket_watch_fired, .name = "pocket_watch"};
-        if (esp_timer_create(&args, &s_pocket_watch) != ESP_OK) {
-            return;
-        }
-    }
-    s_frames_at_wake = s_frames_drawn;
-    esp_timer_stop(s_pocket_watch);
-    esp_timer_start_once(s_pocket_watch, (uint64_t)POCKET_WATCH_MS * 1000ULL);
-}
 
-/* Light sleep normally switches every pin to a "slept" state (this IDF has
- * the GPIO reset workaround on). That let the panel's reset and the 3.3 V
- * rail's enable float, so the AMOLED reset itself while asleep and stayed
- * black after waking (sound and touch still worked). Keep the pins as they
- * are instead, and pin the display and power-control pads explicitly. */
-static void pocket_keep_pins(void)
-{
-    static bool done;
-    if (done) {
-        return;
-    }
-    done = true;
-    esp_sleep_enable_gpio_switch(false);
-    static const gpio_num_t keep[] = {
-        GPIO_NUM_42, GPIO_NUM_44,                           /* LCD reset / clock (v1.0 / v1.2) */
-        GPIO_NUM_43, GPIO_NUM_50,                           /* LCD TE, CS */
-        GPIO_NUM_36, GPIO_NUM_51, GPIO_NUM_35, GPIO_NUM_9,  /* LCD QSPI data */
-        GPIO_NUM_60, GPIO_NUM_57,                           /* VCC_3V3 enable, board shutdown */
-    };
-    for (size_t i = 0; i < sizeof(keep) / sizeof(keep[0]); ++i) {
-        gpio_sleep_sel_dis(keep[i]);
-    }
-    ESP_LOGI(TAG, "pocket: pins keep their state in light sleep");
-}
 
 static void pocket_resume_radio(host_state_t *state)
 {
@@ -711,57 +665,34 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
     if (++state->pocket_ticks < (state->pocket_after ? state->pocket_after : POCKET_AFTER_TICKS)) {
         return;
     }
-    /* On USB power stay reachable: light sleep drops the USB link Iris uses.
-     * A held button would wake us at once, so wait for its release. */
+    /* On USB power stay reachable for installs and the stats page. A held
+     * button would wake us at once, so wait for its release. */
     if (!state->battery_ok || state->battery.current_ma >= 0 || gpio_get_level(POCKET_BUTTON_GPIO) == 0) {
         return;
     }
     if (!state->pocket_radio_off && app_net_suspend(true) == ESP_OK) {
         state->pocket_radio_off = true;
+        ++s_pocket_log.sleeps;
     }
-    esp_sleep_enable_timer_wakeup((uint64_t)POCKET_TIMER_S * 1000000ULL);
-    /* Two wake paths for the button: the digital GPIO wake and, since GPIO7 is
-     * an RTC IO, EXT1 as well (whichever this chip keeps alive in light sleep). */
-    gpio_wakeup_enable(POCKET_BUTTON_GPIO, GPIO_INTR_LOW_LEVEL);
-    esp_sleep_enable_gpio_wakeup();
-    static bool ext1_failed;
-    if (!ext1_failed && esp_sleep_enable_ext1_wakeup_io(1ULL << POCKET_BUTTON_GPIO, ESP_EXT1_WAKEUP_ANY_LOW) != ESP_OK) {
-        ext1_failed = true;
-        ESP_LOGW(TAG, "pocket: EXT1 wake unavailable; GPIO wake only");
+    /* Deep doze, not light sleep: on this ESP32-S31 IDF, esp_light_sleep_start
+     * aborted in the clock driver (rtc_clk_apb_freq_get) and rebooted the board.
+     * Instead the game loop naps here, so the CPU idles between ticks; the AI
+     * button is checked every few milliseconds. Steps, the day and saving still
+     * run on every (now rare) tick. */
+    for (int i = 0; i < POCKET_NAP_MS / POCKET_POLL_MS; ++i) {
+        vTaskDelay(pdMS_TO_TICKS(POCKET_POLL_MS));
+        if (gpio_get_level(POCKET_BUTTON_GPIO) == 0) {
+            ++s_pocket_log.button_wakes;
+            ESP_LOGI(TAG, "pocket: AI button woke the pet");
+            state->pocket_ticks = 0;
+            state->pocket_after = 0;
+            state->ai_swallow = true;   /* The press that woke us must not put it back to sleep. */
+            app_game_wake(state->game);
+            pocket_resume_radio(state);
+            return;
+        }
     }
-    pocket_keep_pins();
-    const int64_t slept_at = esp_timer_get_time();
-    ++s_pocket_log.sleeps;
-    esp_light_sleep_start();
-    const int64_t slept_s = (esp_timer_get_time() - slept_at) / 1000000LL;
-    const uint32_t causes = esp_sleep_get_wakeup_causes();
-    gpio_wakeup_disable(POCKET_BUTTON_GPIO);
-    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-    /* EXT1 hands the button pad to the RTC domain and leaves it there; give
-     * it back to the digital GPIO matrix, or the app can no longer read the
-     * AI button (it could not be put back to sleep after the first wake). */
-    if (!ext1_failed) {
-        rtc_gpio_deinit(POCKET_BUTTON_GPIO);
-    }
-    state->ai_ready = false;   /* Re-enable the input on the next poll. */
-    const bool by_button = causes & (BIT(ESP_SLEEP_WAKEUP_GPIO) | BIT(ESP_SLEEP_WAKEUP_EXT1));
-    const bool held = gpio_get_level(POCKET_BUTTON_GPIO) == 0;   /* Backup if the wake source failed. */
-    if (!by_button && !held) {
-        ++s_pocket_log.timer_wakes;
-        return;   /* Timer: this tick reads steps and the day; then back to sleep. */
-    }
-    if (by_button) {
-        ++s_pocket_log.button_wakes;
-    } else {
-        ++s_pocket_log.poll_wakes;
-    }
-    ESP_LOGI(TAG, "pocket: AI button (%s) woke the pet after %lld s", by_button ? "wake" : "poll", slept_s);
-    pocket_arm_watch();
-    state->pocket_ticks = 0;
-    state->pocket_after = 0;
-    state->ai_swallow = true;   /* The press that woke us must not put it back to sleep. */
-    app_game_wake(state->game);
-    pocket_resume_radio(state);
+    ++s_pocket_log.timer_wakes;
 }
 #endif
 
