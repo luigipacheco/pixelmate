@@ -96,7 +96,8 @@ static bool booth_open(const app_game_snapshot_t *s)
 static bool presence_wanted(const app_game_snapshot_t *s)
 {
     return s->power != APP_POWER_DOZE
-           && (s->screen == APP_SCREEN_ARCADE || s->screen == APP_SCREEN_BOOTH || s->overlay == APP_OVERLAY_STORE);
+           && (s->screen == APP_SCREEN_ARCADE || s->screen == APP_SCREEN_TOOLS || s->screen == APP_SCREEN_BOOTH
+               || s->overlay == APP_OVERLAY_STORE);
 }
 
 static void run_feed(booth_media_t *m, const app_game_snapshot_t *s)

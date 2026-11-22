@@ -344,6 +344,17 @@ static void on_events(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
         case APP_CUE_DEV_OFF:
             floater(v, "DEV OFF", 240, 200, c);
             break;
+        case APP_CUE_LEVEL_UP:
+            floater(v, "LEVEL UP!", 240, 160, acc);
+            burst(v, P_SQUARE, 240, 240, 30, 9.0f, 0.35f, acc, CONFETTI_WHITE);
+            break;
+        case APP_CUE_CAL_DONE:
+            floater(v, "CALIBRATED", 240, 160, acc);
+            break;
+        case APP_CUE_ALARM:
+            floater(v, "INTRUDER!", 240, 160, WARN);
+            pet_eyes_shake(&v->eyes);
+            break;
         case APP_CUE_LOVE:
             floater(v, "LOVE!", 240, 170, CONFETTI_PINK);
             burst(v, P_HEART, 240, 236, 30, 8.0f, 0.15f, CONFETTI_PINK, CONFETTI_WHITE);
@@ -665,6 +676,42 @@ static void draw_dots(const pet_view_t *v, const draw_ctx_t *d)
     const float e = screens_ease_out(v->trans);
     const float pos = v->prev_screen + ((float)v->screen - (float)v->prev_screen) * e;
     DrawRectangle(x0 + (int)(pos * spacing) - 2, APP_DOTS_Y - 2, size + 4, size + 4, d->color);
+}
+
+void pet_view_tool_sample(pet_view_t *v, const app_game_snapshot_t *s, const pet_tool_sample_t *sample,
+                          bool has_mag)
+{
+    pet_tools_view_t *t = &v->tools;
+    t->hist[t->head] = *sample;
+    t->head = (t->head + 1) % PET_TOOL_HIST;
+    if (t->count < PET_TOOL_HIST) {
+        ++t->count;
+    }
+    t->has_mag = has_mag;
+    if (has_mag) {
+        for (int k = 0; k < 3; ++k) {
+            if (t->count == 1 || sample->mag[k] < t->mag_min[k]) t->mag_min[k] = sample->mag[k];
+            if (t->count == 1 || sample->mag[k] > t->mag_max[k]) t->mag_max[k] = sample->mag[k];
+        }
+        const float m = sqrtf(sample->mag[0] * sample->mag[0] + sample->mag[1] * sample->mag[1]
+                              + sample->mag[2] * sample->mag[2]);
+        t->mag_base = t->mag_base == 0.0f ? m : t->mag_base + (m - t->mag_base) * 0.01f;
+        t->metal_dev = fabsf(m - t->mag_base);
+    }
+    if (s->tools.level_zero_seq != t->zero_seq_seen) {
+        t->zero_seq_seen = s->tools.level_zero_seq;
+        t->zero_x = sample->acc[0];
+        t->zero_y = sample->acc[1];
+    }
+}
+
+void pet_view_tool_aps(pet_view_t *v, const pet_tool_ap_t *aps, int count)
+{
+    pet_tools_view_t *t = &v->tools;
+    t->ap_count = count;
+    for (int i = 0; i < count && i < PET_TOOL_APS; ++i) {
+        t->aps[i] = aps[i];
+    }
 }
 
 void pet_view_draw_clock(const pet_view_t *v, const app_game_snapshot_t *s, const pet_clock_t *clock)

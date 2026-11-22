@@ -54,6 +54,21 @@ esp_err_t app_net_set_low_latency(bool on);
  * setup hotspot runs. Call from one task (the game loop). */
 esp_err_t app_net_suspend(bool suspend);
 
+/** One access point from a scan (TOOLS: WI-FI). */
+typedef struct {
+    char ssid[33];
+    int8_t rssi;
+    uint8_t channel;
+    bool open;
+} app_net_ap_t;
+
+/** Start a background scan (the station stays connected). */
+esp_err_t app_net_scan_start(void);
+
+/** Results of the last finished scan, strongest first; returns how many were
+ * written, or -1 while a scan is still running. */
+int app_net_scan_results(app_net_ap_t *out, int max);
+
 /** Take a timezone sent by the web page: minutes west of UTC, as returned by
  * JavaScript getTimezoneOffset(). Returns true once per new value. */
 bool app_net_take_timezone(int *minutes_west);

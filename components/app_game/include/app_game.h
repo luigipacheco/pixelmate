@@ -25,6 +25,7 @@ typedef enum {
     APP_SCREEN_STEPS,
     APP_SCREEN_FEED,
     APP_SCREEN_ARCADE,     /**< Row of game cabinets; a game opens inside it. */
+    APP_SCREEN_TOOLS,      /**< Flipper-style sensor tools; using them levels Bitsy up. */
     APP_SCREEN_BOOTH,      /**< Photo booth; a page only while a camera is detected. */
     APP_SCREEN_COUNT,
 } app_screen_t;
@@ -194,6 +195,12 @@ typedef enum {
     APP_CUE_MISSED,        /**< Back after 3+ days away. */
     APP_CUE_MARATHON,      /**< 10,000 steps today. */
     APP_CUE_NEW_YEAR,      /**< Midnight, January 1st, on the clock. */
+    APP_CUE_TOOL_OPEN,     /**< A tool opened from the TOOLS list. */
+    APP_CUE_LEVEL_UP,      /**< Bitsy reached a new tools level. */
+    APP_CUE_CAL_DONE,      /**< Step calibration saved. */
+    APP_CUE_METAL,         /**< Metal detector tick (rate follows the field). */
+    APP_CUE_TOOL_ACTION,   /**< A tool button (scan, send, arm...). */
+    APP_CUE_ALARM,         /**< GUARD MODE saw motion. */
 } app_cue_t;
 
 enum {
@@ -201,6 +208,49 @@ enum {
     APP_MARATHON_STEPS = 10000,  /**< Steps in a day for the MARATHON headband. */
     APP_CREDITS_TICKS = 600,     /**< Credits roll length (20 s). */
 };
+
+/* ---- TOOLS: Flipper-style sensor apps ---- */
+typedef enum {
+    APP_TOOL_LIST = 0,     /**< The grid of tools. */
+    APP_TOOL_SENSORS,      /**< Live graphs of every sensor. */
+    APP_TOOL_STEPCAL,      /**< Walk 50 counted steps to calibrate the step counter. */
+    APP_TOOL_COMPASS,      /**< Compass, or metal detector (tap to switch). */
+    APP_TOOL_LEVEL,        /**< Bubble level. */
+    APP_TOOL_SEISMO,       /**< Seismograph from the accelerometer. */
+    APP_TOOL_WIFI,         /**< Wi-Fi scanner. */
+    APP_TOOL_IR,           /**< IR remote (interaction module). */
+    APP_TOOL_GUARD,        /**< Motion guard (interaction module). */
+    APP_TOOL_LIGHT,        /**< Light meter / flashlight (interaction module). */
+    APP_TOOL_COUNT,
+} app_tool_t;
+
+typedef enum {
+    APP_CAL_IDLE = 0, APP_CAL_WALKING, APP_CAL_DONE,
+} app_cal_phase_t;
+
+enum {
+    APP_CAL_STEPS = 50,          /**< Steps the user walks (and counts) to calibrate. */
+    APP_TOOLS_XP_PER_LEVEL = 10,
+    APP_SENSOR_PAGES = 5,        /**< ACCEL, GYRO, MAGNET, POWER, STEPS. */
+    APP_IR_BUTTONS = 6,
+};
+
+typedef struct {
+    uint8_t tool;                /**< app_tool_t open now (LIST = the grid). */
+    uint8_t sensor_page;         /**< SENSORS: which graph. */
+    bool metal_mode;             /**< COMPASS: metal detector instead of the needle. */
+    uint8_t cal_phase;           /**< app_cal_phase_t. */
+    uint16_t cal_measured;       /**< Raw counter steps since START. */
+    uint8_t step_cal_pct;        /**< Step counter correction, 100 = none (saved). */
+    uint16_t xp;                 /**< Tools XP (saved); level = 1 + xp / APP_TOOLS_XP_PER_LEVEL. */
+    uint8_t scan_seq;            /**< WI-FI: bumped to ask the runtime for a scan. */
+    uint8_t level_zero_seq;      /**< LEVEL: bumped to zero the bubble here. */
+    uint8_t ir_seq, ir_button;   /**< IR: bumped with the button to send. */
+    bool guard_armed;            /**< GUARD: watching for motion. */
+    uint16_t guard_hits;         /**< GUARD: motion seen while armed. */
+    bool flashlight;             /**< LIGHT: LEDs on as a flashlight. */
+    bool module_present;         /**< Interaction module plugged in (runtime). */
+} app_tools_snapshot_t;
 
 /* ---- Bitsy Says: repeat a growing sequence of four colors ---- */
 enum {
@@ -557,6 +607,7 @@ typedef struct {
     uint16_t credits_ticks;     /**< About page credits roll: ticks left. */
     bool dizzy;                 /**< Shaken: spiral eyes. */
     bool upside_down;           /**< Flipped: panicking. */
+    app_tools_snapshot_t tools;
     uint8_t reset_hold;         /**< 0..100 progress of holding RESET PET. */
     uint32_t steps_total;
     uint32_t steps_today;
@@ -592,7 +643,7 @@ typedef struct {
     uint32_t save_seq;          /**< Increments whenever persistent data changes. */
 } app_game_snapshot_t;
 
-/** Persistent record: plain data, 84 bytes. Bump the save version on layout change;
+/** Persistent record: plain data, 88 bytes. Bump the save version on layout change;
  * fields are only ever appended so older records can be migrated by prefix. */
 typedef struct {
     uint32_t steps_total;
@@ -637,6 +688,10 @@ typedef struct {
     uint8_t flags;              /**< APP_RECORD_FLAG_*. */
     uint8_t pats_lo, pats_hi;   /**< Lifetime pats, up to APP_LOVE_PATS (was reserved). */
     uint8_t eggs;               /**< APP_EGG_* found (was reserved). */
+    /* v9 */
+    uint16_t tools_xp;          /**< TOOLS XP. */
+    uint8_t step_cal_pct;       /**< Step correction percent, 0 = 100. */
+    uint8_t reserved6;
 } app_game_record_t;
 
 #define APP_EGG_LOVE 0x01U    /* LOVE EYES unlocked. */
@@ -650,6 +705,7 @@ typedef struct {
 #define APP_GAME_RECORD_V5_SIZE 72U
 #define APP_GAME_RECORD_V6_SIZE 76U
 #define APP_GAME_RECORD_V7_SIZE 80U
+#define APP_GAME_RECORD_V8_SIZE 84U
 #define APP_RECORD_LENS_COLOR 0x80U   /* app_game_record_t.lens: color film selected. */
 
 typedef struct {
@@ -702,6 +758,12 @@ void app_game_wake(app_game_handle_t handle);
 void app_game_sleep(app_game_handle_t handle);
 /** Fire an app_cue_t from outside the model (the runtime's clock: New Year). */
 void app_game_cue(app_game_handle_t handle, uint8_t cue);
+/** Interaction module status from the runtime (TOOLS shows its tools when present). */
+void app_game_set_module(app_game_handle_t handle, bool present);
+/** GUARD MODE motion report from the runtime (counted while armed). */
+void app_game_guard_motion(app_game_handle_t handle);
+/** Interaction module key press (false = left, true = right): arcade controls. */
+void app_game_module_key(app_game_handle_t handle, bool right);
 /** Advance one 30 Hz tick unless paused. No rendering or hardware access. */
 void app_game_update(app_game_handle_t handle);
 

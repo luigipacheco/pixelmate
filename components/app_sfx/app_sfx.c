@@ -211,6 +211,12 @@ static sfx_t pick(uint32_t ev, const app_game_snapshot_t *s, sfx_t *follow, uint
         case APP_CUE_MISSED: return SFX_REVIVE;
         case APP_CUE_MARATHON: return SFX_GOAL;
         case APP_CUE_NEW_YEAR: return SFX_JACKPOT;
+        case APP_CUE_TOOL_OPEN: return SFX_OPEN;
+        case APP_CUE_LEVEL_UP: return SFX_GOAL;
+        case APP_CUE_CAL_DONE: return SFX_WIN;
+        case APP_CUE_METAL: return SFX_TAP;
+        case APP_CUE_TOOL_ACTION: return SFX_TAP;
+        case APP_CUE_ALARM: return SFX_BUZZ;
         default: break;
         }
     }

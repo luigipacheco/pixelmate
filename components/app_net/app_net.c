@@ -80,6 +80,7 @@ static creds_t s_pending;            /* Submitted network until saved or rejecte
 /* Game loop only. */
 static bool s_started;
 static volatile bool s_suspended;  /* Pocket mode stopped the radio on purpose. */
+static volatile bool s_scanning, s_scan_done;
 static char s_setup_name[SETUP_NAME_MAX];
 
 static void set_station(app_net_status_t status, uint32_t ipv4)
@@ -424,6 +425,9 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
             set_station(APP_NET_STATUS_CONNECTING, 0);
             esp_wifi_connect();
         }
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
+        s_scanning = false;
+        s_scan_done = true;
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         on_station_drop(data);
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
@@ -475,6 +479,47 @@ esp_err_t app_net_set_low_latency(bool on)
         return ESP_OK;   /* Applied when the station starts. */
     }
     return esp_event_post(APP_NET_EVENT, REQ_POWER, NULL, 0, pdMS_TO_TICKS(POST_WAIT_MS));
+}
+
+esp_err_t app_net_scan_start(void)
+{
+    if (!s_started || !s_wifi_running || s_suspended || s_scanning) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_scan_done = false;
+    s_scanning = true;
+    const esp_err_t err = esp_wifi_scan_start(NULL, false);
+    if (err != ESP_OK) {
+        s_scanning = false;
+    }
+    return err;
+}
+
+int app_net_scan_results(app_net_ap_t *out, int max)
+{
+    if (s_scanning) {
+        return -1;
+    }
+    if (!s_scan_done || !out || max <= 0) {
+        return 0;
+    }
+    uint16_t n = (uint16_t)max;
+    wifi_ap_record_t recs[16];
+    if (n > 16) {
+        n = 16;
+    }
+    if (esp_wifi_scan_get_ap_records(&n, recs) != ESP_OK) {
+        return 0;
+    }
+    for (int i = 0; i < n; ++i) {
+        memcpy(out[i].ssid, recs[i].ssid, sizeof(out[i].ssid) - 1);
+        out[i].ssid[sizeof(out[i].ssid) - 1] = 0;
+        out[i].rssi = recs[i].rssi;
+        out[i].channel = recs[i].primary;
+        out[i].open = recs[i].authmode == WIFI_AUTH_OPEN;
+    }
+    s_scan_done = false;
+    return n;
 }
 
 esp_err_t app_net_suspend(bool suspend)

@@ -47,7 +47,8 @@ static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay, int arcad
     switch (screen) {
     case 0: return (app_eye_anchor_t) {240, 236, 1.0f};    /* home */
     case 2: return (app_eye_anchor_t) {240, 150, 0.62f};   /* feed */
-    case 4: return (app_eye_anchor_t) {416, 92, 0.22f};    /* booth: peeking over the viewfinder */
+    case 4: return (app_eye_anchor_t) {420, 92, 0.22f};    /* tools: a lab assistant in the corner */
+    case 5: return (app_eye_anchor_t) {416, 92, 0.22f};    /* booth: peeking over the viewfinder */
     case 3:                                                 /* arcade */
         switch (arcade) {
         /* app_arcade_t order: slots, stack, grid, bit flip, says, HI-LO. */
@@ -196,6 +197,26 @@ enum { APP_STACK_CELL = 30, APP_STACK_X = 60, APP_STACK_BOTTOM = 438, APP_STACK_
 static inline app_rect_t app_stack_button_rect(void)
 {
     return (app_rect_t) {140, 250, 200, 64};
+}
+
+/* TOOLS: a 3x3 grid of tools under the level bar; inside a tool, BACK sits
+ * top-left and up to three buttons along the bottom. */
+static inline app_rect_t app_tools_cell_rect(int i)
+{
+    return (app_rect_t) {(int16_t)(20 + (i % 3) * 148), (int16_t)(126 + (i / 3) * 102), 140, 94};
+}
+static inline app_rect_t app_tools_back_rect(void)
+{
+    return (app_rect_t) {12, 64, 104, 42};
+}
+static inline app_rect_t app_tools_button_rect(int i)
+{
+    return (app_rect_t) {(int16_t)(16 + i * 152), 388, 144, 52};
+}
+/* IR remote: a 2x3 grid of buttons. */
+static inline app_rect_t app_tools_ir_rect(int i)
+{
+    return (app_rect_t) {(int16_t)(40 + (i % 2) * 210), (int16_t)(130 + (i / 2) * 84), 190, 70};
 }
 
 /* Pull-down menu entries (inside the APP_MENU_H panel). The top row holds the

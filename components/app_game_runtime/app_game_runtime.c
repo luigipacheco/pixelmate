@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 /* Engine module adapter: input translation, fixed-step update, drawing and, on
  * the device only, persistence, the hardware pedometer and the calendar day. */
+#include <math.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -19,6 +20,8 @@
 #include "app_net.h"
 #include "app_pedometer_hw.h"
 #include "app_power_hw.h"
+#include "app_sensors_hw.h"
+#include "app_interact_hw.h"
 #include "app_sfx.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -61,7 +64,7 @@ static void pocket_log_init(void)
 
 enum {
     /* v1 builds could store an all-zero pet (ignored); v2..v5 migrate by prefix. */
-    SAVE_VERSION = 8,
+    SAVE_VERSION = 9,
     SAVE_SOON_MS = 2000,          /* After spending, settings or a goal. */
     SAVE_LATER_MS = 30000,        /* After step/stat drift; limits flash wear. */
     SENSOR_POLL_TICKS = GAME_TICK_HZ,          /* 1 s */
@@ -105,6 +108,22 @@ typedef struct {
     bool host_usb;                /* Host: action 8 pretends USB power (clock mode). */
     int clock_drawn_second;       /* Clock mode: second last drawn, -1 none. */
     int8_t new_year_cued;         /* New Year chime already played (weekday + 1). */
+    uint32_t tool_ticks;          /* Ticks with a tool open. */
+    uint8_t scan_seen;            /* Last tools.scan_seq acted on. */
+    bool scan_pending;
+    int mag_found;                /* Magnetometers that answered (-1 = not tried). */
+    float mag_last[3];
+    uint16_t metal_timer;
+    /* Interaction module. */
+    bool module;                  /* Present and up. */
+    uint32_t module_timer;
+    bool key_l, key_r, pir;       /* Last levels, for edges. */
+    uint8_t light;
+    uint8_t ir_seen;
+    uint8_t ir_flash;
+    uint8_t leds[6][3];
+    bool leds_sent;
+    bool host_module;             /* Host: action 7 pretends a module is plugged in. */
     bool blanked;                 /* Black frame already submitted while the screen is off. */
     app_power_t drawn_power;      /* Power state of the last frame submitted. */
     uint32_t dim_ticks;           /* Render calls since the screen dimmed. */
@@ -174,7 +193,8 @@ static raylib_lite_result_t migrate_save(uint16_t old_version, const void *old_d
     const bool v5 = old_version == 5 && old_size == APP_GAME_RECORD_V5_SIZE;
     const bool v6 = old_version == 6 && old_size == APP_GAME_RECORD_V6_SIZE;
     const bool v7 = old_version == 7 && old_size == APP_GAME_RECORD_V7_SIZE;
-    if ((!v2 && !v3 && !v4 && !v5 && !v6 && !v7) || new_size != sizeof(app_game_record_t)) {
+    const bool v8 = old_version == 8 && old_size == APP_GAME_RECORD_V8_SIZE;
+    if ((!v2 && !v3 && !v4 && !v5 && !v6 && !v7 && !v8) || new_size != sizeof(app_game_record_t)) {
         return RAYLIB_LITE_INVALID_VERSION;
     }
     app_game_record_t *record = new_data;
@@ -514,6 +534,7 @@ static int initialize(void *value, const char *asset_root)
     seed = esp_random();
 #endif
     state->clock_drawn_second = -1;
+    state->mag_found = -1;
     const app_game_config_t config = {GAME_WIDTH, GAME_HEIGHT, seed};
     if (app_game_create(&config, &state->game) != APP_GAME_OK) {
         return -1;
@@ -597,6 +618,9 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
                 state->media.host_present = !state->media.host_present;
             }
             state->debug_camera_down = event->pressed;
+        }
+        if (event->code == 7 && event->pressed) {
+            state->host_module = !state->host_module;   /* Host: pretend module. */
         }
         if (event->code == GAME_ACTION_DEBUG_USB && event->pressed) {
             state->host_usb = !state->host_usb;
@@ -731,6 +755,232 @@ static void poll_ai_button(host_state_t *state)
 }
 #endif
 
+/* Interaction module readings for the TOOLS sample. */
+static void module_sample(host_state_t *state, pet_tool_sample_t *sample)
+{
+    if (state->module) {
+        sample->light = state->light;
+        sample->pir = state->pir;
+    }
+}
+
+/* ---- Interaction module: presence, keys, PIR, IR and mood LEDs ---------- */
+
+/* NEC codes: an LG-style TV remote, and a few common power codes for TV OFF. */
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+static const uint8_t s_ir_codes[5][2] = {{0x04, 0x08}, {0x04, 0x02}, {0x04, 0x03}, {0x04, 0x00}, {0x04, 0x01}};
+static const uint8_t s_ir_power[3][2] = {{0x04, 0x08}, {0x00, 0x45}, {0x40, 0x12}};
+#endif
+
+static void mood_leds(host_state_t *state, const app_game_snapshot_t *s, uint8_t out[6][3])
+{
+    memset(out, 0, 6 * 3);
+    const app_tools_snapshot_t *t = &s->tools;
+    const uint32_t tick = s->tick;
+    if (t->flashlight) {
+        memset(out, 255, 6 * 3);
+        return;
+    }
+    if (t->guard_armed) {
+        const bool alarm = state->pir && (tick / 4U) % 2U;
+        for (int i = 0; i < 6; ++i) {
+            out[i][0] = alarm ? 255 : (i == 0 ? 40 : 0);
+        }
+        return;
+    }
+    if (s->power == APP_POWER_DOZE || s->fainted) {
+        return;   /* Asleep: dark. */
+    }
+    const float breathe = 0.55f + 0.45f * sinf((float)tick * 0.07f);
+    if (s->steps_today >= s->step_goal && s->step_goal) {
+        for (int i = 0; i < 6; ++i) {   /* Goal reached: a rainbow chase. */
+            const Color c = px_color((int)((tick / 6U + (uint32_t)i) % APP_COLOR_COUNT));
+            out[i][0] = (uint8_t)(c.r / 3), out[i][1] = (uint8_t)(c.g / 3), out[i][2] = (uint8_t)(c.b / 3);
+        }
+        return;
+    }
+    Color c = px_color(s->color_index);
+    if (s->mood == APP_MOOD_HUNGRY || (!s->fed_today && s->hunger < 25)) {
+        c = (Color){255, 30, 30, 255};   /* Hungry: a red pulse. */
+    }
+    const float k = 0.25f * breathe;
+    for (int i = 0; i < 6; ++i) {
+        out[i][0] = (uint8_t)(c.r * k), out[i][1] = (uint8_t)(c.g * k), out[i][2] = (uint8_t)(c.b * k);
+    }
+}
+
+static void run_module(host_state_t *state, const app_game_snapshot_t *s)
+{
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    if (state->module_timer++ % 60U == 0U) {   /* Hot-plug check every 2 s. */
+        const bool present = app_interact_hw_poll();
+        if (present != state->module) {
+            state->module = present;
+            state->leds_sent = false;
+            app_game_set_module(state->game, present);
+        }
+    }
+    if (!state->module) {
+        return;
+    }
+    app_interact_inputs_t in;
+    if (app_interact_hw_read(&in) != ESP_OK) {
+        return;
+    }
+#else
+    if (state->module != state->host_module) {
+        state->module = state->host_module;
+        app_game_set_module(state->game, state->module);
+    }
+    if (!state->module) {
+        return;
+    }
+    struct { bool left, right, motion; uint8_t light; } in = {false, false, false, 60};
+#endif
+    if (in.left && !state->key_l) app_game_module_key(state->game, false);
+    if (in.right && !state->key_r) app_game_module_key(state->game, true);
+    if (in.motion && !state->pir) {
+        if (s->tools.guard_armed) {
+            app_game_guard_motion(state->game);
+        } else if (s->power == APP_POWER_DOZE) {
+            app_game_wake(state->game);   /* Someone walked by: say hi. */
+        }
+    }
+    state->key_l = in.left, state->key_r = in.right, state->pir = in.motion, state->light = in.light;
+
+    /* IR remote. */
+    if (s->tools.ir_seq != state->ir_seen) {
+        state->ir_seen = s->tools.ir_seq;
+        state->ir_flash = 8;
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+        const int b = s->tools.ir_button;
+        if (b == 1) {
+            for (int i = 0; i < 3; ++i) {   /* TV OFF: try a few common power codes. */
+                (void)app_interact_hw_ir_nec(s_ir_power[i][0], s_ir_power[i][1]);
+            }
+        } else {
+            const int k = b == 0 ? 0 : b - 1;
+            (void)app_interact_hw_ir_nec(s_ir_codes[k][0], s_ir_codes[k][1]);
+        }
+#endif
+    }
+    if (state->ir_flash) {
+        --state->ir_flash;
+    }
+    state->view.tools.ir_flash = state->ir_flash > 0;
+
+    /* Mood LEDs, ~10 updates a second, only when something changed. */
+    if (state->module_timer % 3U == 0U) {
+        uint8_t leds[6][3];
+        mood_leds(state, s, leds);
+        if (!state->leds_sent || memcmp(leds, state->leds, sizeof(leds)) != 0) {
+            memcpy(state->leds, leds, sizeof(leds));
+            state->leds_sent = true;
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+            (void)app_interact_hw_leds((const uint8_t (*)[3])leds);
+#endif
+        }
+    }
+#if !defined(RAYLIB_LITE_GAME_NATIVE)
+    ++state->module_timer;
+#endif
+}
+
+/* ---- TOOLS: sensor sampling (only while a tool is open) ---------------- */
+
+static void feed_tools(host_state_t *state, const app_game_snapshot_t *s)
+{
+    const app_tools_snapshot_t *t = &s->tools;
+    if (s->screen != APP_SCREEN_TOOLS || t->tool == APP_TOOL_LIST || s->power == APP_POWER_DOZE) {
+        state->tool_ticks = 0;
+        return;
+    }
+    const uint32_t tick = state->tool_ticks++;
+    pet_tool_sample_t sample = {0};
+    bool has_mag = false;
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    (void)app_pedometer_hw_motion(sample.acc, sample.gyr);
+    if (state->mag_found < 0 || (state->mag_found == 0 && tick % 150U == 0U)) {
+        state->mag_found = app_sensors_hw_mag_start();   /* Retry now and then. */
+    }
+    if (state->mag_found > 0 && tick % 3U == 0U) {
+        int16_t m[3];
+        if (app_sensors_hw_mag_read(0, m) == ESP_OK) {
+            state->mag_last[0] = m[0], state->mag_last[1] = m[1], state->mag_last[2] = m[2];
+        }
+    }
+    has_mag = state->mag_found > 0;
+    if (state->battery_ok) {
+        sample.mv = state->battery.voltage_mv;
+        sample.ma = state->battery.current_ma;
+    }
+#else
+    /* Host: gentle made-up signals so every tool has something to draw. */
+    const float ph = (float)tick / 30.0f;
+    sample.acc[0] = 0.05f * sinf(ph * 2.0f);
+    sample.acc[1] = 0.04f * cosf(ph * 1.3f);
+    sample.acc[2] = 1.0f + 0.03f * sinf(ph * 7.0f);
+    sample.gyr[0] = 40.0f * sinf(ph), sample.gyr[1] = 25.0f * cosf(ph * 0.7f), sample.gyr[2] = 10.0f;
+    state->mag_last[0] = 300.0f * cosf(ph * 0.4f);
+    state->mag_last[1] = 300.0f * sinf(ph * 0.4f);
+    state->mag_last[2] = -200.0f;
+    has_mag = true;
+    sample.mv = 3950.0f + 20.0f * sinf(ph * 0.2f);
+    sample.ma = -160.0f + 10.0f * sinf(ph);
+    sample.light = 50.0f + 30.0f * sinf(ph * 0.5f);
+#endif
+    sample.mag[0] = state->mag_last[0], sample.mag[1] = state->mag_last[1], sample.mag[2] = state->mag_last[2];
+    module_sample(state, &sample);
+    pet_view_tool_sample(&state->view, s, &sample, has_mag);
+
+    /* Metal detector: beep faster the stronger the field changes. */
+    if (t->tool == APP_TOOL_COMPASS && t->metal_mode && has_mag) {
+        const float dev = state->view.tools.metal_dev;
+        const uint16_t every = (uint16_t)(dev > 300.0f ? 3 : 30 - (int)(dev / 11.0f));
+        if (dev > 25.0f && ++state->metal_timer >= every) {
+            state->metal_timer = 0;
+            app_game_cue(state->game, APP_CUE_METAL);
+        }
+    }
+    /* Wi-Fi scanner. */
+    if (t->tool == APP_TOOL_WIFI && t->scan_seq != state->scan_seen) {
+        state->scan_seen = t->scan_seq;
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+        state->scan_pending = app_net_scan_start() == ESP_OK;
+        pet_view_tool_aps(&state->view, NULL, state->scan_pending ? -1 : 0);
+#else
+        state->scan_pending = true;
+        pet_view_tool_aps(&state->view, NULL, -1);
+#endif
+    }
+    if (state->scan_pending && tick % 15U == 0U) {
+        pet_tool_ap_t aps[PET_TOOL_APS];
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+        app_net_ap_t found[PET_TOOL_APS];
+        const int n = app_net_scan_results(found, PET_TOOL_APS);
+        if (n >= 0) {
+            for (int i = 0; i < n; ++i) {
+                snprintf(aps[i].ssid, sizeof(aps[i].ssid), "%.19s", found[i].ssid);
+                aps[i].rssi = found[i].rssi;
+                aps[i].open = found[i].open;
+            }
+            state->scan_pending = false;
+            pet_view_tool_aps(&state->view, aps, n);
+        }
+#else
+        static const char *const names[4] = {"Neonet", "Coffee Shop", "Bitsy Lab", ""};
+        static const int8_t rssi[4] = {-48, -63, -71, -84};
+        for (int i = 0; i < 4; ++i) {
+            snprintf(aps[i].ssid, sizeof(aps[i].ssid), "%s", names[i]);
+            aps[i].rssi = rssi[i];
+            aps[i].open = i == 1;
+        }
+        state->scan_pending = false;
+        pet_view_tool_aps(&state->view, aps, 4);
+#endif
+    }
+}
+
 static void update(void *value)
 {
     host_state_t *state = value;
@@ -748,6 +998,8 @@ static void update(void *value)
     handle_wifi_events(state, events);
     const app_game_snapshot_t snapshot = app_game_read(state->game);
     pet_view_update(&state->view, &snapshot, events);
+    run_module(state, &snapshot);
+    feed_tools(state, &snapshot);
 #if defined(RAYLIB_LITE_GAME_NATIVE)
     if ((int)snapshot.power != state->logged_power) {
         state->logged_power = (int)snapshot.power;
@@ -881,7 +1133,7 @@ static int state_json(const void *value, char *output, size_t capacity)
     if (!output || !capacity) {
         return -1;
     }
-    static const char *const screens[APP_SCREEN_COUNT] = {"home", "steps", "feed", "arcade", "booth"};
+    static const char *const screens[APP_SCREEN_COUNT] = {"home", "steps", "feed", "arcade", "tools", "booth"};
     static const char *const overlays[APP_OVERLAY_COUNT] = {"none", "menu", "style", "store", "goal", "wifi", "settings", "about"};
     static const char *const nets[] = {"off", "no_config", "connecting", "online", "failed", "setup"};
     static const char *const moods[APP_MOOD_COUNT] = {

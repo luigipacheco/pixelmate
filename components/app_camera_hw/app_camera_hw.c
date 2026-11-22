@@ -171,6 +171,14 @@ static esp_err_t slot_bus(void)
     return ESP_OK;
 }
 
+esp_err_t app_camera_hw_slot_bus(void **bus)
+{
+    ESP_RETURN_ON_FALSE(bus, ESP_ERR_INVALID_ARG, TAG, "bus");
+    ESP_RETURN_ON_ERROR(slot_bus(), TAG, "slot bus");
+    *bus = s_cam.bus;
+    return ESP_OK;
+}
+
 static esp_err_t output(gpio_num_t pin, int level, gpio_mode_t mode)
 {
     const gpio_config_t config = {
