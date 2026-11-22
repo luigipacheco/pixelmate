@@ -20,8 +20,11 @@
 #include "app_pedometer_hw.h"
 #include "app_power_hw.h"
 #include "app_sfx.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_sleep.h"
+#include "esp_timer.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "raylib_lite_clock.h"
@@ -92,6 +95,8 @@ typedef struct {
     uint32_t net_timer;
     bool net_started;
     char stats_json[STATS_JSON_MAX];   /* Instance-owned buffer for /api/stats. */
+    uint32_t pocket_ticks;        /* Ticks the screen has been dark (pocket mode countdown). */
+    bool pocket_radio_off;        /* Pocket mode suspended Wi-Fi. */
 #endif
 } host_state_t;
 
@@ -579,6 +584,66 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
     }
 }
 
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+/* ---- Pocket mode --------------------------------------------------------
+ * Once the screen has been dark a few seconds on battery, stop Wi-Fi and
+ * light-sleep the chip. Nothing reboots, so the BMI270 keeps counting steps
+ * on its own; the panel keeps its black frame (no panel commands: those
+ * raced the board's frame task before). The AI button wakes the pet; a timer wakes it briefly to read steps, settle the day and save. */
+enum {
+    POCKET_AFTER_TICKS = 90,           /* 3 s of dark screen first. */
+    POCKET_TIMER_S = 600,              /* Bookkeeping wake every 10 minutes. */
+};
+#define POCKET_BUTTON_GPIO GPIO_NUM_7  /* AI button, active low: the only wake key. */
+
+static void pocket_resume_radio(host_state_t *state)
+{
+    if (state->pocket_radio_off) {
+        state->pocket_radio_off = false;
+        const esp_err_t err = app_net_suspend(false);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "pocket: wifi resume: %s", esp_err_to_name(err));
+        }
+    }
+}
+
+static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s)
+{
+    if (s->power != APP_POWER_DOZE || !state->blanked) {
+        state->pocket_ticks = 0;
+        pocket_resume_radio(state);
+        return;
+    }
+    if (++state->pocket_ticks < POCKET_AFTER_TICKS) {
+        return;
+    }
+    /* On USB power stay reachable: light sleep drops the USB link Iris uses.
+     * A held button would wake us at once, so wait for its release. */
+    if (!state->battery_ok || state->battery.current_ma >= 0 || gpio_get_level(POCKET_BUTTON_GPIO) == 0) {
+        return;
+    }
+    if (!state->pocket_radio_off && app_net_suspend(true) == ESP_OK) {
+        state->pocket_radio_off = true;
+    }
+    esp_sleep_enable_timer_wakeup((uint64_t)POCKET_TIMER_S * 1000000ULL);
+    gpio_wakeup_enable(POCKET_BUTTON_GPIO, GPIO_INTR_LOW_LEVEL);
+    esp_sleep_enable_gpio_wakeup();
+    const int64_t slept_at = esp_timer_get_time();
+    esp_light_sleep_start();
+    const int64_t slept_s = (esp_timer_get_time() - slept_at) / 1000000LL;
+    const uint32_t causes = esp_sleep_get_wakeup_causes();
+    gpio_wakeup_disable(POCKET_BUTTON_GPIO);
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+    if (!(causes & BIT(ESP_SLEEP_WAKEUP_GPIO))) {
+        return;   /* Timer: this tick reads steps and the day; then back to sleep. */
+    }
+    ESP_LOGI(TAG, "pocket: AI button woke the pet after %lld s", slept_s);
+    state->pocket_ticks = 0;
+    app_game_wake(state->game);
+    pocket_resume_radio(state);
+}
+#endif
+
 static void update(void *value)
 {
     host_state_t *state = value;
@@ -603,6 +668,7 @@ static void update(void *value)
     }
     maybe_save(state, events);
     app_sfx_update(events, &snapshot);
+    pocket_maybe_sleep(state, &snapshot);
 #endif
 }
 

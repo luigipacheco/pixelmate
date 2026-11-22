@@ -49,6 +49,11 @@ esp_err_t app_net_publish(const char *json);
  * Any task; asynchronous; safe before app_net_start (applied when it starts). */
 esp_err_t app_net_set_low_latency(bool on);
 
+/** Pocket mode: stop the radio (true) before light sleep and start it again
+ * (false) on wake; the station then reconnects by itself. Refused while the
+ * setup hotspot runs. Call from one task (the game loop). */
+esp_err_t app_net_suspend(bool suspend);
+
 /** Take a timezone sent by the web page: minutes west of UTC, as returned by
  * JavaScript getTimezoneOffset(). Returns true once per new value. */
 bool app_net_take_timezone(int *minutes_west);

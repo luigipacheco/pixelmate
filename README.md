@@ -44,6 +44,11 @@ desk pet that earns sparks from pats instead of steps: see
 - **Low-energy mode:** after 20 s without a touch the pet dozes off and the
   screen dims; at 30 s the screen turns off (12 s on low battery). SLEEP in
   the menu does it at once. Steps keep counting; tap the screen to wake.
+- **Pocket mode (on battery):** 3 s after the screen goes dark, Wi-Fi stops
+  and the chip light-sleeps; the BMI270 keeps counting steps. Wake it with the
+  AI button (touch does not wake it in pocket mode). It wakes itself every 10
+  minutes to log steps and settle the day. On USB power it stays awake so
+  installs and logs keep working.
 - **Battery:** percentage in the pull-down menu; a top-bar icon appears while
   charging or when the battery is low.
 - **Wi-Fi setup:** first time, pull down the menu and tap **SET UP WIFI**. The

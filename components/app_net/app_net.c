@@ -81,6 +81,7 @@ static creds_t s_pending;            /* Submitted network until saved or rejecte
 
 /* Game loop only. */
 static bool s_started;
+static volatile bool s_suspended;  /* Pocket mode stopped the radio on purpose. */
 static char s_setup_name[SETUP_NAME_MAX];
 
 static void set_station(app_net_status_t status, uint32_t ipv4)
@@ -399,6 +400,11 @@ static void setup_timeout(void *arg)
 
 static void on_station_drop(const wifi_event_sta_disconnected_t *d)
 {
+    if (s_suspended) {
+        esp_timer_stop(s_retry);   /* Stopped on purpose: no reconnect storm. */
+        set_station(APP_NET_STATUS_CONNECTING, 0);
+        return;
+    }
     if (s_ap_running) {
         set_station(s_have_creds ? APP_NET_STATUS_CONNECTING : APP_NET_STATUS_NO_CONFIG, 0);
         join_disconnected(d ? d->reason : 0);
@@ -473,6 +479,22 @@ esp_err_t app_net_set_low_latency(bool on)
         return ESP_OK;   /* Applied when the station starts. */
     }
     return esp_event_post(APP_NET_EVENT, REQ_POWER, NULL, 0, pdMS_TO_TICKS(POST_WAIT_MS));
+}
+
+esp_err_t app_net_suspend(bool suspend)
+{
+    if (!s_started || !s_wifi_running || s_ap_running || s_suspended == suspend) {
+        return s_suspended == suspend ? ESP_OK : ESP_ERR_INVALID_STATE;
+    }
+    if (suspend) {
+        s_suspended = true;
+        esp_timer_stop(s_retry);
+        return esp_wifi_stop();
+    }
+    s_suspended = false;
+    s_retry_us = RETRY_FIRST_US;
+    s_fails = 0;
+    return esp_wifi_start();   /* STA_START reconnects. */
 }
 
 esp_err_t app_net_setup_stop(void)
