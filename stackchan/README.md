@@ -29,12 +29,6 @@ that is not the ESP-Mosaico):
   time comes from Wi-Fi (NTP) and is kept in the CoreS3's battery-backed clock
   chip, so it survives power-off. The timezone is set by opening the stats page
   once, as on the Mosaico.
-- **Looks at faces.** Awake on Home (clock mode too), the camera streams and
-  the face finder runs; the head turns toward the largest face and keeps
-  following it, and goes back to looking around 2 s after it is gone. Frames
-  stay in memory and are never stored or sent. If the head turns away from
-  faces, flip `MIRROR_X` / `FLIP_Y` in `app_face_hw_cores3.cpp` (or the neck's
-  `PAN_TICK_SIGN` / `TILT_TICK_SIGN`).
 - **Neck.** The head looks around when idle, sags when sleepy, nods, shakes
   and wiggles with the pet's events, and holds still while the screen is
   touched or a menu or game is open. Asleep, it goes home and the servos let go.
@@ -49,13 +43,12 @@ stand-ins (`*_none.c`):
 | `app_power_hw` | INA226 on the body (I2C 0x41): voltage, current, estimated percent, supply connected. |
 | `app_neck_hw` | Two SCS0009 bus servos on UART1 (TX 6 / RX 7), rail switched by the PY32 expander (I2C 0x6F). |
 | `app_rtc_hw` | BM8563 clock chip (I2C 0x51). |
-| `app_face_hw` | ESP-DL face detector (`espressif/human_face_detect`, MSR+MNP model in flash) on the camera's 128x128 feed, on CPU 0 about three times a second. |
 | `app_pedometer_hw` | Stand-in: no step counting on a desk robot. |
 
 Mosaico-only features that are switched off here:
 
-- **Pocket mode and the AI button** (GPIO7 on the Mosaico). On the Stack-chan
-  GPIO7 is the neck-servo line, so it is never read.
+- **Pocket mode** (light sleep on battery, woken by the Mosaico's AI button on
+  GPIO7). On the Stack-chan GPIO7 is the neck-servo line.
 - **Vibe Mode Wi-Fi**: Wi-Fi comes only from the app's own SET UP WIFI hotspot.
 
 ### Neck safety and calibration
@@ -74,6 +67,8 @@ robot needs its own values in NVS namespace `neck` (`home_pan`, `home_tilt`,
 
 Not done yet:
 
+- **Looking at faces.** `pet_head` already aims at a face when given one; the
+  on-device detector (`app_face_hw`, ESP-DL) is not wired in yet.
 - **Screen layout.** The game still draws its 480x480 picture; the adapter
   shrinks it to 240x240 in the middle of the 320x240 LCD with black bars left
   and right. Text and buttons are half size. A real 320x240 layout is the next

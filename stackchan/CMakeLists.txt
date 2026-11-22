@@ -29,7 +29,6 @@ list(APPEND EXTRA_COMPONENT_DIRS
     "${PIXELMATE_GAME_DIR}/components/app_photo_store"
     "${PIXELMATE_GAME_DIR}/components/app_camera_hw"
     "${PIXELMATE_GAME_DIR}/components/app_cam_stream"
-    "${PIXELMATE_GAME_DIR}/components/app_face_hw"
     "${PIXELMATE_GAME_DIR}/components/app_neck_hw"
     "${PIXELMATE_GAME_DIR}/components/app_net"
     "${PIXELMATE_GAME_DIR}/components/app_pedometer_hw"

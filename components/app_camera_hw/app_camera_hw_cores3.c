@@ -285,7 +285,10 @@ void app_camera_hw_set_mode(app_camera_mode_t mode)
     }
     if (!s_task && mode != APP_CAMERA_MODE_OFF) {
         s_frame_lock = xSemaphoreCreateMutex();
-        if (!s_frame_lock || xTaskCreate(worker, "camera", TASK_STACK, NULL, TASK_PRIORITY, &s_task) != pdPASS) {
+        /* CPU 0: the game loop draws on CPU 1, and each frame's reduction is
+         * real work at 16 frames a second. */
+        if (!s_frame_lock
+                || xTaskCreatePinnedToCore(worker, "camera", TASK_STACK, NULL, TASK_PRIORITY, &s_task, 0) != pdPASS) {
             ESP_LOGE(TAG, "no memory for the camera task");
             set_state(APP_CAMERA_ERROR);
             s_task = NULL;

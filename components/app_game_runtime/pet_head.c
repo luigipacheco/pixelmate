@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 /* Head pose for a pet with a neck. Layers, lowest first:
- *   1. a base pose: aiming at a face, a mood pose, or idle look-around;
+ *   1. a base pose: a mood pose or idle look-around;
  *   2. a short gesture on top (nod, shake, perk, wiggle) for the tick's events.
  * The screen is on the head, so while someone is touching it or using a menu
  * or a game the head holds still at home: a moving target cannot be tapped.
@@ -15,16 +15,10 @@ enum {
     LOOK_MIN_TICKS = 36,           /* A new look-around target every 1.2 .. 3.7 s. */
     LOOK_SPAN_TICKS = 75,
     STILL_AFTER_TOUCH_TICKS = 75,  /* Hold still 2.5 s after the last touch. */
-    FACE_LOST_TICKS = 60,          /* No detection for 2 s: stop tracking. */
 };
 
 /* Degrees. Kept inside the neck driver's aim limits (40 pan, 16 tilt). */
 static const float LOOK_PAN = 30.0f, LOOK_TILT = 6.0f;
-/* A face at the frame edge is about this far off the camera axis (the booth's
- * square crop of the GC0308's view), and each detection closes this share of
- * the error: the camera rides on the head, so a full step would overshoot. */
-static const float FACE_HALF_FOV_DEG = 24.0f, FACE_GAIN = 0.45f;
-static const float FACE_PAN_MAX = 36.0f, FACE_TILT_MAX = 14.0f;
 
 static uint32_t next_random(pet_head_t *h)
 {
@@ -36,11 +30,6 @@ static uint32_t next_random(pet_head_t *h)
 static float random_unit(pet_head_t *h)
 {
     return (float)(next_random(h) % 2001U) / 1000.0f - 1.0f;
-}
-
-static float clampf(float v, float lo, float hi)
-{
-    return v < lo ? lo : (v > hi ? hi : v);
 }
 
 static void start_gesture(pet_head_t *h, pet_head_gesture_t gesture, float seconds)
@@ -113,30 +102,7 @@ static void look_around(pet_head_t *h)
     h->look_tilt = LOOK_TILT * random_unit(h);
 }
 
-static void track_face(pet_head_t *h, const pet_head_face_t *face)
-{
-    if (face && face->seen && face->fresh) {
-        if (!h->tracking) {
-            h->face_pan = h->pan;      /* Start from where the head is looking. */
-            h->face_tilt = h->tilt;
-        }
-        /* Unmirrored image: a face right of center is to the pet's right
-         * (negative pan); below center is down (negative tilt). */
-        h->face_pan = clampf(h->face_pan - FACE_GAIN * FACE_HALF_FOV_DEG * clampf(face->x, -1.0f, 1.0f),
-                             -FACE_PAN_MAX, FACE_PAN_MAX);
-        h->face_tilt = clampf(h->face_tilt - FACE_GAIN * FACE_HALF_FOV_DEG * clampf(face->y, -1.0f, 1.0f),
-                              -FACE_TILT_MAX, FACE_TILT_MAX);
-        h->face_lost = 0;
-        h->tracking = true;
-    } else if (h->tracking && ++h->face_lost >= FACE_LOST_TICKS) {
-        h->tracking = false;
-        h->look_pan = h->face_pan;     /* Keep looking there until the next idle target. */
-        h->look_tilt = h->face_tilt;
-        h->look_timer = LOOK_MIN_TICKS;
-    }
-}
-
-void pet_head_update(pet_head_t *h, const app_game_snapshot_t *s, uint32_t events, const pet_head_face_t *face)
+void pet_head_update(pet_head_t *h, const app_game_snapshot_t *s, uint32_t events)
 {
     if (!h || !s) {
         return;
@@ -151,13 +117,11 @@ void pet_head_update(pet_head_t *h, const app_game_snapshot_t *s, uint32_t event
     /* Asleep, fainted, or being used: go home and hold still. */
     if (s->power == APP_POWER_DOZE || !home || s->pointer_down) {
         h->gesture = PET_HEAD_GESTURE_NONE;
-        h->tracking = false;
         h->pan = 0.0f;
         h->tilt = s->fainted && home ? -12.0f : 0.0f;
         return;
     }
     react(h, s, events);
-    track_face(h, face);
     /* Clock mode: a nod as the minute turns, a wiggle on the hour. */
     if (!s->clock) {
         h->clock_minute = -1;
@@ -172,9 +136,6 @@ void pet_head_update(pet_head_t *h, const app_game_snapshot_t *s, uint32_t event
     const float t = (float)h->t / TICK_HZ;
     if (s->fainted) {
         tilt = -12.0f;                               /* Head down, no motion. */
-    } else if (h->tracking) {
-        pan = h->face_pan;
-        tilt = h->face_tilt;
     } else if (s->clock) {
         tilt = 3.0f;                                 /* Clock mode: face forward so the time can be read. */
     } else if (s->mood == APP_MOOD_SLEEPY || s->power == APP_POWER_DIM) {

@@ -20,7 +20,6 @@ typedef struct {
     booth_camera_t camera;
     bool present;                       /* Camera module detected (last probe). */
     bool host_present;                  /* Host simulator's pretend camera. */
-    bool face_feed;                     /* Runtime: stream for the face finder too (set before update). */
     uint8_t yuv[3 * APP_PHOTO_MAX_PIXELS];   /* Latest feed frame: 128x128 Y, U, V planes. */
     uint32_t luma_seq;                  /* Changes with every new frame. */
     uint8_t live[APP_PHOTO_MAX_PIXELS]; /* Feed through lens, look and film: palette indices. */
