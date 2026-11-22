@@ -33,6 +33,7 @@ list(APPEND EXTRA_COMPONENT_DIRS
     "${PIXELMATE_GAME_DIR}/components/app_net"
     "${PIXELMATE_GAME_DIR}/components/app_pedometer_hw"
     "${PIXELMATE_GAME_DIR}/components/app_power_hw"
+    "${PIXELMATE_GAME_DIR}/components/app_rtc_hw"
     "${PIXELMATE_GAME_DIR}/components/app_sfx")
 
 # Board Manager's generated defaults enable the CoreS3 devices; ours come last

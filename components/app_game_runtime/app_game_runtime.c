@@ -20,6 +20,7 @@
 #include "app_net.h"
 #include "app_pedometer_hw.h"
 #include "app_power_hw.h"
+#include "app_rtc_hw.h"
 #include "app_sfx.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -451,6 +452,13 @@ static void poll_net(host_state_t *state)
         return;
     }
     int minutes_west = 0;
+    if (app_net_take_time_sync()) {
+        /* Internet time arrived: keep it in the battery-backed clock, where there is one. */
+        const esp_err_t stored = app_rtc_hw_store();
+        if (stored != ESP_ERR_NOT_SUPPORTED) {
+            ESP_LOGI(TAG, "time synced; real-time clock %s", stored == ESP_OK ? "updated" : "not updated");
+        }
+    }
     if (app_net_take_timezone(&minutes_west)) {
         apply_timezone(minutes_west);
         save_timezone(minutes_west);
@@ -509,6 +517,9 @@ static int initialize(void *value, const char *asset_root)
     state->logged_power = -1;
     load_save(state);
     load_timezone();
+    if (time(NULL) < VALID_EPOCH && app_rtc_hw_load() == ESP_OK) {
+        ESP_LOGI(TAG, "clock set from the board's real-time clock");
+    }
     pet_head_init(&state->head, seed);
     app_neck_hw_start();          /* Does nothing on boards without a neck. */
 #else

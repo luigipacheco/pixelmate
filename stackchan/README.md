@@ -21,12 +21,29 @@ that is not the ESP-Mosaico):
 - No step counting. Steps reported by any source are ignored.
 - Daily health is paused: no hearts lost, no fainting.
 - Every 3 pats on the face earn 1 spark (`APP_DESK_PETS_PER_SPARK`).
+- **Stays awake on USB power.** The body's battery monitor tells when a supply
+  is connected; the screen then neither dims nor sleeps, and plugging in wakes it.
+- **Clock mode.** Kept awake and left alone for 12 s on Home, Bitsy shrinks to
+  the top and shows the time (12-hour, date underneath). Digits bounce in when
+  the minute changes, the hour gets confetti; a tap brings the face back. The
+  time comes from Wi-Fi (NTP) and is kept in the CoreS3's battery-backed clock
+  chip, so it survives power-off. The timezone is set by opening the stats page
+  once, as on the Mosaico.
+- **Neck.** The head looks around when idle, sags when sleepy, nods, shakes
+  and wiggles with the pet's events, and holds still while the screen is
+  touched or a menu or game is open. Asleep, it goes home and the servos let go.
 
-Not ported yet, replaced by stand-ins (`*_none.c` in the shared components):
+Stack-chan drivers live next to the Mosaico ones in the shared components and
+are picked by chip (`esp32s3`); boards without the hardware get do-nothing
+stand-ins (`*_none.c`):
 
-- **Camera / photo booth** (GC0308): reported absent, so the booth is hidden.
-- **Battery** (INA226 on the body: voltage and current only): reported unknown.
-- **Step counter**: not wanted on a desk robot for now.
+| Component | Stack-chan (esp32s3) |
+|---|---|
+| `app_camera_hw` | Built-in GC0308 through the Board Manager camera device: photo booth. No Wi-Fi webcam yet (no hardware JPEG). |
+| `app_power_hw` | INA226 on the body (I2C 0x41): voltage, current, estimated percent, supply connected. |
+| `app_neck_hw` | Two SCS0009 bus servos on UART1 (TX 6 / RX 7), rail switched by the PY32 expander (I2C 0x6F). |
+| `app_rtc_hw` | BM8563 clock chip (I2C 0x51). |
+| `app_pedometer_hw` | Stand-in: no step counting on a desk robot. |
 
 Mosaico-only features that are switched off here:
 
@@ -34,19 +51,31 @@ Mosaico-only features that are switched off here:
   GPIO7). On the Stack-chan GPIO7 is the neck-servo line.
 - **Vibe Mode Wi-Fi**: Wi-Fi comes only from the app's own SET UP WIFI hotspot.
 
-Also not done:
+### Neck safety and calibration
 
+The tilt axis is easy to destroy by driving it into its stops, so the driver:
+
+- takes hold only at the position where it finds the head (nothing jumps);
+- refuses to move when the tilt is outside the calibrated band;
+- clamps every write to that band and to the aim limits (pan 40, tilt 16 degrees);
+- releases a servo that stops following its goal for 2 s.
+
+Home and the tilt band are per robot. The defaults in `app_neck_hw_cores3.c`
+were measured on Luis's unit (home 512/743 ticks, tilt band 592..894); another
+robot needs its own values in NVS namespace `neck` (`home_pan`, `home_tilt`,
+`tilt_lo`, `tilt_hi`, all u16). There is no calibration command yet.
+
+Not done yet:
+
+- **Looking at faces.** `pet_head` already aims at a face when given one; the
+  on-device detector (`app_face_hw`, ESP-DL) is not wired in yet.
 - **Screen layout.** The game still draws its 480x480 picture; the adapter
   shrinks it to 240x240 in the middle of the 320x240 LCD with black bars left
   and right. Text and buttons are half size. A real 320x240 layout is the next
-  big piece.
+  big piece and would also make it faster.
 - **Screen sleep.** The game "sleeps" by drawing black, which saves power on the
   Mosaico's AMOLED but not on this backlit LCD. The backlight needs real control.
-- **Body hardware**: neck servos, RGB LEDs, head touch, IR, NFC. Notes from the
-  earlier `fab-stackchan` firmware that apply here: the servo rail is switched
-  by a PY32 IO expander at I2C 0x6F (pin 0 = `VM_EN`: output, pull-up enabled,
-  then high); the two Feetech SCS0009 servos are on UART1 at 1 Mbps, TX 6 /
-  RX 7, id 1 = yaw, id 2 = pitch; home is per robot.
+- **Body extras**: RGB LEDs, head touch, IR, NFC.
 
 ## Build
 
@@ -84,4 +113,6 @@ First run on a StackChan on 2026-11-21 (boot log over USB):
   320x240 picture instead of 480x480 is the fix.
 
 Not checked yet: picture colours and orientation, how the sound actually
-sounds, and joining Wi-Fi.
+sounds, and joining Wi-Fi. The camera, battery monitor, stay-awake, neck,
+clock mode and clock chip were added after that run and have only been built
+(clock mode was also checked in the simulator); none has run on the robot.

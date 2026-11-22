@@ -17,6 +17,7 @@
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_netif_sntp.h"
+#include "esp_sntp.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
@@ -479,6 +480,12 @@ esp_err_t app_net_set_low_latency(bool on)
         return ESP_OK;   /* Applied when the station starts. */
     }
     return esp_event_post(APP_NET_EVENT, REQ_POWER, NULL, 0, pdMS_TO_TICKS(POST_WAIT_MS));
+}
+
+bool app_net_take_time_sync(void)
+{
+    /* Reading the status resets it, so each sync is reported once. */
+    return s_started && sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED;
 }
 
 esp_err_t app_net_suspend(bool suspend)
