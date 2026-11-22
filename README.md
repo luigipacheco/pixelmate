@@ -51,8 +51,13 @@ the `pixel_pal` name so existing pets carry over.)
   the menu or a press of the AI button does it at once. Steps keep counting;
   tap the screen or press the AI button to wake.
 - **TAP STEPS (Settings, off by default):** an accessibility mode for people who
-  can't walk (or boards without a step counter): each pat on Bitsy counts as 10
-  steps, with no daily cap, so about 400 pats feed Bitsy for the day.
+  can't walk (or boards without a step counter): every 10 pats on Bitsy count
+  as one step, with no daily cap.
+- **DEV MODE (secret):** on Settings > ABOUT enter the Konami code: swipe up,
+  up, down, down, left, right, left, right, then tap the left half (B) and the
+  right half (A). Each input lights a glyph; unlocking plays a jackpot. A
+  sandbox with infinite sparks: its Settings row (page 3) turns it off, and
+  turning it off or restarting restores the real sparks and items.
 - **Clock mode (on USB power):** when the pet sleeps while plugged in and the
   time is known (Wi-Fi), the screen shows a dim clock instead of going black:
   big pixel digits with Bitsy's eyes as the blinking colon (they hop on the

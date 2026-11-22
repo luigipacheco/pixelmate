@@ -324,6 +324,29 @@ static void on_events(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
             pet_eyes_shake(&v->eyes);
         }
     }
+    if (s->cue_seq != v->seen_cue_seq) {
+        v->seen_cue_seq = s->cue_seq;
+        switch ((app_cue_t)s->cue) {
+        case APP_CUE_KONAMI: {
+            const int cell = 40, x0 = 240 - APP_KONAMI_LEN * cell / 2;
+            burst(v, P_BOLT, (float)(x0 + (s->konami_pos - 1) * cell + cell / 2), 446, 5, 4.0f, 0.3f, acc, c);
+            break;
+        }
+        case APP_CUE_KONAMI_MISS:
+            pet_eyes_shake(&v->eyes);
+            break;
+        case APP_CUE_DEV_ON:
+            floater(v, "DEV MODE!", 240, 200, acc);
+            burst(v, P_SQUARE, 240, 240, 40, 10.0f, 0.35f, acc, CONFETTI_WHITE);
+            v->spark_pulse = SPARK_PULSE_TICKS;
+            break;
+        case APP_CUE_DEV_OFF:
+            floater(v, "DEV OFF", 240, 200, c);
+            break;
+        default:
+            break;
+        }
+    }
     if (ev & APP_EVENT_BLOCKED) {
         pet_eyes_shake(&v->eyes);
     }
@@ -592,6 +615,10 @@ static void draw_sparks_counter(const pet_view_t *v, const draw_ctx_t *d)
     const int bolt_x = APP_VIEW_W - 18 - 6 * scale;
     px_icon(PX_ICON_BOLT, bolt_x, 18 - (scale - 3) * 3, scale, flash ? WARN : d->accent, c, d->gap);
     px_text(text, bolt_x - 8 - px_text_width(text, scale), 18 - (scale - 3) * 3, scale, c, d->gap);
+    if (d->snap->dev_mode) {
+        /* Under the counter, clear of panel titles. */
+        px_text("DEV", APP_VIEW_W - 18 - px_text_width("DEV", 2), 48, 2, (v->t / 15U) % 2U ? WARN : d->accent, false);
+    }
 }
 
 static int s_pages(const app_game_snapshot_t *s)

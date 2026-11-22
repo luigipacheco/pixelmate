@@ -199,6 +199,10 @@ static sfx_t pick(uint32_t ev, const app_game_snapshot_t *s, sfx_t *follow, uint
         case APP_CUE_WIN: return SFX_WIN;
         case APP_CUE_COINS: return SFX_COINS;
         case APP_CUE_LOSE: return SFX_LOSE;
+        case APP_CUE_KONAMI: return SFX_TILE_BONUS;
+        case APP_CUE_KONAMI_MISS: return SFX_BUZZ;
+        case APP_CUE_DEV_ON: return SFX_JACKPOT;
+        case APP_CUE_DEV_OFF: return SFX_CLOSE;
         default: break;
         }
     }

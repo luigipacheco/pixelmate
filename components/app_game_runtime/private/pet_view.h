@@ -44,6 +44,7 @@ typedef struct {
     uint8_t prev_bits_switches;
     float bits_pop_t;         /* 0..1 pop of a new Bit Flip target. */
     float arcade_scroll;      /* Eased arcade row (0 = first row). */
+    uint8_t seen_cue_seq;     /* Last arcade/dev cue animated. */
     float crt_t;              /* 0..1 CRT power-on when a cabinet opens, >= 1 idle. */
     uint8_t prev_slot_stopped;  /* Reel-stop bits seen last tick. */
     uint8_t prev_hp;            /* Health seen last tick, for day-change floaters. */

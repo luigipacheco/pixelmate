@@ -118,6 +118,14 @@ struct app_game {
     uint8_t sleep_idx, bright_idx;     /* Indexes into s_sleep_s / s_bright_pct. */
     bool tap_steps;                    /* TAP STEPS setting. */
     uint32_t tap_steps_today;          /* Steps credited by pats today. */
+    uint8_t tap_pats;                  /* Pats toward the next tap step. */
+    /* DEV MODE sandbox: the real economy is parked here while it is on, and
+     * always saved instead of the dev values (dev mode is RAM-only). */
+    bool dev_mode;
+    uint8_t konami_pos;
+    uint32_t real_sparks, real_owned;
+    uint16_t real_filters;
+    uint8_t real_lenses;
     bool reset_armed;                  /* Finger went down on RESET PET. */
     uint16_t reset_hold_ticks;
     uint32_t owned;
@@ -241,7 +249,7 @@ static void credit_steps(app_game_handle_t g, uint32_t steps)
     g->steps_today += steps;
     uint32_t progress = g->spark_progress + steps;
     if (progress >= STEPS_PER_SPARK) {
-        g->sparks += progress / STEPS_PER_SPARK;
+        *(g->dev_mode ? &g->real_sparks : &g->sparks) += progress / STEPS_PER_SPARK;
         progress %= STEPS_PER_SPARK;
         g->events |= APP_EVENT_SPARK;
     }
@@ -425,11 +433,11 @@ static void tap_home(app_game_handle_t g, int32_t x, int32_t y)
     add_friendship(g, 1);
     react(g, APP_MOOD_HAPPY, REACT_PET_TICKS);
     g->events |= APP_EVENT_PETTED;
-    /* TAP STEPS (Settings): each pat counts as APP_TAP_STEP_SIZE steps, with no
-     * daily cap, so people who can't walk can still feed and play with Bitsy. */
-    if (g->tap_steps) {
-        g->tap_steps_today += APP_TAP_STEP_SIZE;
-        credit_steps(g, APP_TAP_STEP_SIZE);
+    /* TAP STEPS (Settings): every APP_TAPS_PER_STEP pats count as one step. */
+    if (g->tap_steps && ++g->tap_pats >= APP_TAPS_PER_STEP) {
+        g->tap_pats = 0;
+        ++g->tap_steps_today;
+        credit_steps(g, 1);
     }
     changed(g);
 }
@@ -528,6 +536,9 @@ static void set_overlay(app_game_handle_t g, app_overlay_t overlay)
 }
 
 static app_minigame_t cabinet_game(app_arcade_t cabinet);
+
+static void dev_mode_off(app_game_handle_t g);
+static int settings_rows(const struct app_game *g);
 
 static void set_arcade(app_game_handle_t g, app_arcade_t arcade)
 {
@@ -843,10 +854,11 @@ static void tap_settings(app_game_handle_t g, int32_t x, int32_t y)
     }
     for (int row = 0; row < APP_SETTINGS_PER_PAGE; ++row) {
         const int index = g->settings_page * APP_SETTINGS_PER_PAGE + row;
-        if (index >= APP_SETTINGS_ROWS || !app_rect_hit(app_settings_row_rect(row), x, y)) {
+        if (index >= settings_rows(g) || !app_rect_hit(app_settings_row_rect(row), x, y)) {
             continue;
         }
         switch (index) {
+        case APP_SETTINGS_ROWS: dev_mode_off(g); return;
         case 0: {
             int at = 0;
             while (at < APP_SOUND_COUNT && s_sound_cycle[at] != g->sound) {
@@ -1132,6 +1144,74 @@ static void update_grid_hold(app_game_handle_t g)
     }
 }
 
+/* ---- DEV MODE ------------------------------------------------------
+ * Unlocked with the Konami code on Settings > ABOUT: swipe up, up, down,
+ * down, left, right, left, right, then tap the left half (B) and the right
+ * half (A). A sandbox: sparks never run out, and turning it off (or a
+ * restart) restores the real sparks and items. Its Settings row exists only
+ * while it is on. */
+typedef enum { KONAMI_UP, KONAMI_DOWN, KONAMI_LEFT, KONAMI_RIGHT, KONAMI_B, KONAMI_A } konami_t;
+static const uint8_t s_konami[APP_KONAMI_LEN] = {
+    KONAMI_UP, KONAMI_UP, KONAMI_DOWN, KONAMI_DOWN, KONAMI_LEFT,
+    KONAMI_RIGHT, KONAMI_LEFT, KONAMI_RIGHT, KONAMI_B, KONAMI_A,
+};
+
+static void dev_mode_on(app_game_handle_t g)
+{
+    g->real_sparks = g->sparks;
+    g->real_owned = g->owned;
+    g->real_filters = g->filters_owned;
+    g->real_lenses = g->lenses_owned;
+    g->dev_mode = true;
+    g->sparks = APP_DEV_SPARKS;
+    fire_cue(g, APP_CUE_DEV_ON);
+    react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS);
+    g->settings_page = (uint8_t)(APP_SETTINGS_ROWS / APP_SETTINGS_PER_PAGE);   /* Show its row. */
+    set_overlay(g, APP_OVERLAY_SETTINGS);
+    g->events |= APP_EVENT_SETTINGS;
+}
+
+static void dev_mode_off(app_game_handle_t g)
+{
+    if (!g->dev_mode) {
+        return;
+    }
+    g->dev_mode = false;
+    g->sparks = g->real_sparks;
+    g->owned = g->real_owned;
+    g->filters_owned = g->real_filters;
+    g->lenses_owned = g->real_lenses;
+    g->settings_page = 0;
+    fire_cue(g, APP_CUE_DEV_OFF);
+    g->events |= APP_EVENT_SETTINGS;
+    changed(g);
+}
+
+static void konami_input(app_game_handle_t g, konami_t input)
+{
+    if (g->dev_mode) {
+        return;
+    }
+    if (s_konami[g->konami_pos] == input) {
+        if (++g->konami_pos == APP_KONAMI_LEN) {
+            g->konami_pos = 0;
+            dev_mode_on(g);
+        } else {
+            fire_cue(g, APP_CUE_KONAMI);
+        }
+        return;
+    }
+    if (g->konami_pos) {
+        fire_cue(g, APP_CUE_KONAMI_MISS);
+    }
+    g->konami_pos = s_konami[0] == input ? 1 : 0;   /* A fresh start counts. */
+}
+
+static int settings_rows(const struct app_game *g)
+{
+    return APP_SETTINGS_ROWS + (g->dev_mode ? 1 : 0);
+}
+
 static bool booth_owned(const struct app_game *g)
 {
     return (g->owned & APP_OWN_GAME_BIT(APP_GAME_PHOTO)) != 0;
@@ -1214,7 +1294,10 @@ static void handle_tap(app_game_handle_t g, int32_t x, int32_t y)
     case APP_OVERLAY_SETTINGS: tap_settings(g, x, y); return;
     case APP_OVERLAY_ABOUT:
         if (app_rect_hit(app_panel_back_rect(), x, y)) {
+            g->konami_pos = 0;
             set_overlay(g, APP_OVERLAY_SETTINGS);
+        } else if (y > 60) {   /* Below BACK. */
+            konami_input(g, x < APP_VIEW_W / 2 ? KONAMI_B : KONAMI_A);
         }
         return;
     default: break;
@@ -1231,6 +1314,14 @@ static void handle_tap(app_game_handle_t g, int32_t x, int32_t y)
 static void handle_swipe(app_game_handle_t g, int32_t dx, int32_t dy)
 {
     const int32_t adx = abs(dx), ady = abs(dy);
+    if (g->overlay == APP_OVERLAY_ABOUT) {
+        if (ady >= APP_SWIPE_MIN_PX && ady > adx) {
+            konami_input(g, dy < 0 ? KONAMI_UP : KONAMI_DOWN);
+        } else if (adx >= APP_SWIPE_MIN_PX && adx > ady) {
+            konami_input(g, dx < 0 ? KONAMI_LEFT : KONAMI_RIGHT);
+        }
+        return;
+    }
     if (ady >= APP_PULL_MIN_PX && ady > adx) {
         if (g->overlay == APP_OVERLAY_NONE && dy > 0 && g->press_y < APP_PULL_ZONE_H) {
             set_overlay(g, APP_OVERLAY_MENU);
@@ -1258,7 +1349,7 @@ static void handle_swipe(app_game_handle_t g, int32_t dx, int32_t dy)
         }
     } else if (g->overlay == APP_OVERLAY_SETTINGS) {
         const int page = (int)g->settings_page + (dx < 0 ? 1 : -1);
-        if (page >= 0 && page < SETTINGS_PAGES) {
+        if (page >= 0 && page < (settings_rows(g) + APP_SETTINGS_PER_PAGE - 1) / APP_SETTINGS_PER_PAGE) {
             g->settings_page = (uint8_t)page;
             g->events |= APP_EVENT_STORE_PAGE;
         }
@@ -1612,6 +1703,9 @@ void app_game_update(app_game_handle_t g)
     update_power(g);
     update_reset(g);
     update_grid_hold(g);
+    if (g->dev_mode && g->sparks < APP_DEV_SPARKS) {
+        g->sparks = APP_DEV_SPARKS;   /* Infinite sparks. */
+    }
     const uint32_t won = cards_update(&g->cards, &g->events);
     if (won) {
         g->sparks += won;
@@ -1692,6 +1786,8 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .brightness_pct = s_bright_pct[g->bright_idx < APP_BRIGHT_OPTIONS ? g->bright_idx : DEFAULT_BRIGHT_IDX],
         .tap_steps = g->tap_steps,
         .tap_steps_today = g->tap_steps_today,
+        .dev_mode = g->dev_mode,
+        .konami_pos = g->konami_pos,
         .reset_hold = (uint8_t)(g->reset_hold_ticks * 100U / (APP_RESET_HOLD_S * TICKS_PER_SECOND)),
         .steps_total = g->steps_total,
         .steps_today = g->steps_today,
@@ -1815,6 +1911,13 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->sleep_code = g->sleep_idx == DEFAULT_SLEEP_IDX ? 0 : (uint8_t)(g->sleep_idx + 1);
     r->bright_code = g->bright_idx == DEFAULT_BRIGHT_IDX ? 0 : (uint8_t)(g->bright_idx + 1);
     r->flags = g->tap_steps ? APP_RECORD_FLAG_TAP_STEPS : 0U;
+    if (g->dev_mode) {   /* The sandbox is never saved. */
+        r->sparks = g->real_sparks;
+        r->owned = g->real_owned;
+        r->filters_owned = (uint8_t)(g->real_filters & 0xFFU);
+        r->filters_owned_hi = (uint8_t)(g->real_filters >> 8);
+        r->lenses_owned = g->real_lenses;
+    }
     r->goal_k = (uint8_t)(g->step_goal / 1000U);
     r->filters_owned = (uint8_t)(g->filters_owned & 0xFFU);
     r->filters_owned_hi = (uint8_t)(g->filters_owned >> 8);

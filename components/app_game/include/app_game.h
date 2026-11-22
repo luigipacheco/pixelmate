@@ -99,7 +99,9 @@ enum {
     APP_SLEEP_OPTIONS = 4,       /**< Screen sleep: 15 s, 30 s (default), 60 s, 120 s. */
     APP_BRIGHT_OPTIONS = 3,      /**< Drawn brightness: 100 % (default), 80 %, 60 %. */
     APP_SETTINGS_ROWS = 8,
-    APP_TAP_STEP_SIZE = 10,      /**< TAP STEPS: steps per pat (no daily cap: an accessibility mode). */
+    APP_TAPS_PER_STEP = 10,      /**< TAP STEPS: this many pats count as one step. */
+    APP_DEV_SPARKS = 99999,      /**< DEV MODE: sparks shown (and topped up). */
+    APP_KONAMI_LEN = 10,         /**< Up Up Down Down Left Right Left Right B A. */
     APP_RESET_HOLD_S = 3,        /**< Hold RESET PET this long to start over. */
 };
 
@@ -180,6 +182,9 @@ typedef enum {
     APP_CUE_DROP,          /**< Spark Stack: bar placed (overhang cut). */
     APP_CUE_PERFECT,       /**< Spark Stack: exact drop. */
     APP_CUE_WIN, APP_CUE_COINS, APP_CUE_LOSE,
+    APP_CUE_KONAMI,        /**< A correct Konami input. */
+    APP_CUE_KONAMI_MISS,   /**< A wrong one: the code starts over. */
+    APP_CUE_DEV_ON, APP_CUE_DEV_OFF,
 } app_cue_t;
 
 /* ---- Bitsy Says: repeat a growing sequence of four colors ---- */
@@ -530,6 +535,8 @@ typedef struct {
     uint8_t brightness_pct;     /**< Drawn brightness when awake, 60..100. */
     bool tap_steps;             /**< TAP STEPS: tapping the pet counts as a step. */
     uint32_t tap_steps_today;   /**< Steps credited by pats today. */
+    bool dev_mode;              /**< DEV MODE on (sandbox: infinite sparks, nothing kept). */
+    uint8_t konami_pos;         /**< Konami inputs entered so far on the About page. */
     uint8_t reset_hold;         /**< 0..100 progress of holding RESET PET. */
     uint32_t steps_total;
     uint32_t steps_today;
