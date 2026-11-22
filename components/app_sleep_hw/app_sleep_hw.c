@@ -44,6 +44,7 @@ const int app_sleep_probe_count = sizeof(app_sleep_probe_addrs) / sizeof(app_sle
 
 #define RECORD_ARMED 0x534C5031U       /* "SLP1": a sleep was started. */
 #define RECORD_REPORT 0x534C5032U      /* "SLP2": its result is in `report`. */
+#define RECORD_CAPTURING 0x534C5033U   /* "SLP3": the capture started and never finished. */
 
 typedef struct {
     uint32_t magic;
@@ -297,6 +298,9 @@ ESP_SYSTEM_INIT_FN(app_sleep_capture, SECONDARY, BIT(0), 250)
         return ESP_OK;
     }
     const sleep_record_t armed = s_record;
+    /* One try only: if anything below hangs or crashes, the next boot must
+     * start normally and not come back here. */
+    s_record.magic = RECORD_CAPTURING;
     app_sleep_report_t report = {
         .valid = true,
         .reset_reason = (uint8_t)esp_reset_reason(),
