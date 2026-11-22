@@ -185,7 +185,22 @@ typedef enum {
     APP_CUE_KONAMI,        /**< A correct Konami input. */
     APP_CUE_KONAMI_MISS,   /**< A wrong one: the code starts over. */
     APP_CUE_DEV_ON, APP_CUE_DEV_OFF,
+    /* Easter eggs. */
+    APP_CUE_LOVE,          /**< 1000th pat: LOVE EYES unlocked. */
+    APP_CUE_COIN_RAIN,     /**< Spark counter tapped 10 times fast. */
+    APP_CUE_CREDITS,       /**< Version tapped 7 times on About. */
+    APP_CUE_DIZZY,         /**< Shaken hard. */
+    APP_CUE_PANIC,         /**< Turned upside down. */
+    APP_CUE_MISSED,        /**< Back after 3+ days away. */
+    APP_CUE_MARATHON,      /**< 10,000 steps today. */
+    APP_CUE_NEW_YEAR,      /**< Midnight, January 1st, on the clock. */
 } app_cue_t;
+
+enum {
+    APP_LOVE_PATS = 1000,        /**< Pats that unlock LOVE EYES. */
+    APP_MARATHON_STEPS = 10000,  /**< Steps in a day for the MARATHON headband. */
+    APP_CREDITS_TICKS = 600,     /**< Credits roll length (20 s). */
+};
 
 /* ---- Bitsy Says: repeat a growing sequence of four colors ---- */
 enum {
@@ -539,6 +554,11 @@ typedef struct {
     uint32_t tap_steps_today;   /**< Steps credited by pats today. */
     bool dev_mode;              /**< DEV MODE on (sandbox: infinite sparks, nothing kept). */
     uint8_t konami_pos;         /**< Konami inputs entered so far on the About page. */
+    uint16_t pats;              /**< Lifetime pats (stops at APP_LOVE_PATS). */
+    bool love_eyes;             /**< LOVE EYES unlocked: hearts when happy. */
+    uint16_t credits_ticks;     /**< About page credits roll: ticks left. */
+    bool dizzy;                 /**< Shaken: spiral eyes. */
+    bool upside_down;           /**< Flipped: panicking. */
     uint8_t reset_hold;         /**< 0..100 progress of holding RESET PET. */
     uint32_t steps_total;
     uint32_t steps_today;
@@ -617,8 +637,11 @@ typedef struct {
     uint8_t stack_best;         /**< Spark Stack best rows (was reserved, 0). */
     /* v8 */
     uint8_t flags;              /**< APP_RECORD_FLAG_*. */
-    uint8_t reserved5[3];
+    uint8_t pats_lo, pats_hi;   /**< Lifetime pats, up to APP_LOVE_PATS (was reserved). */
+    uint8_t eggs;               /**< APP_EGG_* found (was reserved). */
 } app_game_record_t;
+
+#define APP_EGG_LOVE 0x01U    /* LOVE EYES unlocked. */
 
 #define APP_RECORD_FLAG_TAP_STEPS 0x01U   /* Tapping the pet counts as a step. */
 
@@ -695,6 +718,8 @@ void app_game_set_clock(app_game_handle_t handle, int minute_of_day);
 void app_game_wake(app_game_handle_t handle);
 /** Put the pet to sleep now (screen off), like the menu's SLEEP. */
 void app_game_sleep(app_game_handle_t handle);
+/** Fire an app_cue_t from outside the model (the runtime's clock: New Year). */
+void app_game_cue(app_game_handle_t handle, uint8_t cue);
 /** Advance one 30 Hz tick unless paused. No rendering or hardware access. */
 void app_game_update(app_game_handle_t handle);
 

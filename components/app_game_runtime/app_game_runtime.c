@@ -110,6 +110,7 @@ typedef struct {
     int host_clock;               /* Host: pretend minute of the day, 0 = not started. */
     bool host_usb;                /* Host: action 8 pretends USB power (clock mode). */
     int clock_drawn_second;       /* Clock mode: second last drawn, -1 none. */
+    int8_t new_year_cued;         /* New Year chime already played (weekday + 1). */
     bool blanked;                 /* Black frame already submitted while the screen is off. */
     app_power_t drawn_power;      /* Power state of the last frame submitted. */
     uint32_t dim_ticks;           /* Render calls since the screen dimmed. */
@@ -867,6 +868,11 @@ static int render(void *value)
         if (!raylib_lite_raylib_frame_available()) {
             EndDrawing();
             return -1;
+        }
+        if (clock.month == 0 && clock.mday == 1 && clock.hour == 0 && clock.minute < 10
+                && state->new_year_cued != clock.wday + 1) {
+            state->new_year_cued = (int8_t)(clock.wday + 1);   /* Once per New Year. */
+            app_game_cue(state->game, APP_CUE_NEW_YEAR);
         }
         pet_view_draw_clock(&state->view, &snapshot, &clock);
         EndDrawing();

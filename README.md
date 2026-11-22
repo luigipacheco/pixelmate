@@ -58,6 +58,12 @@ desk pet that earns sparks from pats instead of steps: see
 - **TAP STEPS (Settings, off by default):** an accessibility mode for people who
   can't walk (or boards without a step counter): every 10 pats on Bitsy count
   as one step, with no daily cap.
+- **Easter eggs (spoilers):** 1000 lifetime pats unlock LOVE EYES (hearts when
+  happy); ten quick taps on the spark counter make it rain sparks (just for
+  show); tapping the version on About 7 times rolls the credits; three hard
+  shakes make Bitsy dizzy (spiral eyes); holding it upside down makes it panic;
+  coming back after 3+ days gets an "I MISSED YOU"; 10,000 steps in a day earn a
+  MARATHON headband; the clock throws New Year fireworks at midnight on Jan 1.
 - **DEV MODE (secret):** on Settings > ABOUT enter the Konami code: swipe up,
   up, down, down, left, right, left, right, then tap the left half (B) and the
   right half (A). Each input lights a glyph; unlocking plays a jackpot. A

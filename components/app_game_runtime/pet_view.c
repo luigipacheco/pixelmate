@@ -32,6 +32,7 @@ enum {
 #define ARCADE_SCROLL_EASE 0.3f
 static const Color WARN = {255, 48, 48, 255};
 static const Color CONFETTI_WHITE = {240, 240, 232, 255};
+static const Color CONFETTI_PINK = {255, 112, 170, 255};
 
 static uint32_t rand_next(pet_view_t *v)
 {
@@ -457,6 +458,32 @@ static void on_events(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
         case APP_CUE_DEV_OFF:
             floater(v, "DEV OFF", 240, 200, c);
             break;
+        case APP_CUE_LOVE:
+            floater(v, "LOVE!", 240, 170, CONFETTI_PINK);
+            burst(v, P_HEART, 240, 236, 30, 8.0f, 0.15f, CONFETTI_PINK, CONFETTI_WHITE);
+            break;
+        case APP_CUE_COIN_RAIN:
+            for (int i = 0; i < 36; ++i) {   /* Sparks rain from the top edge. */
+                const float x = (float)((i * 97 + (int)v->t * 13) % 460) + 10.0f;
+                burst(v, P_BOLT, x, (float)(-(i % 6) * 30), 1, 1.0f, 0.45f, acc, c);
+            }
+            break;
+        case APP_CUE_DIZZY:
+            floater(v, "DIZZY", 240, 160, acc);
+            pet_eyes_shake(&v->eyes);
+            break;
+        case APP_CUE_PANIC:
+            floater(v, "PUT ME DOWN!", 240, 150, WARN);
+            pet_eyes_shake(&v->eyes);
+            break;
+        case APP_CUE_MISSED:
+            floater(v, "I MISSED YOU", 240, 160, CONFETTI_PINK);
+            burst(v, P_HEART, 240, 236, 18, 6.0f, 0.15f, CONFETTI_PINK, c);
+            break;
+        case APP_CUE_MARATHON:
+            floater(v, "10K! MARATHON", 240, 160, acc);
+            burst(v, P_SQUARE, 240, 240, 34, 9.0f, 0.35f, acc, CONFETTI_WHITE);
+            break;
         default:
             break;
         }
@@ -814,7 +841,13 @@ void pet_view_draw(const pet_view_t *v, const app_game_snapshot_t *s)
             && s->overlay == APP_OVERLAY_NONE) {
         eye = px_scale(screens_says_color(s->says.lit), level);   /* Bitsy says this color. */
     }
-    pet_eyes_draw(&v->eyes, current_anchor(v), grid, eye, stars, fainted);
+    pet_eye_shape_t shape = fainted ? PET_EYES_CROSS : (stars ? PET_EYES_STARS : PET_EYES_ROUND);
+    if (!fainted && s->dizzy) {
+        shape = PET_EYES_SPIRALS;
+    } else if (!fainted && s->love_eyes && s->mood == APP_MOOD_HAPPY) {
+        shape = PET_EYES_HEARTS;   /* LOVE EYES replace stars once unlocked. */
+    }
+    pet_eyes_draw(&v->eyes, current_anchor(v), grid, eye, shape, s->steps_today >= APP_MARATHON_STEPS);
     draw_food_toss(v, &d);
     draw_particles(v, &d);
     draw_crt(v, &d);

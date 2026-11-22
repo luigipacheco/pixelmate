@@ -3,6 +3,7 @@
  * power with the time known. Big pixel digits whose colon is a pair of tiny
  * Bitsy eyes that blink, glance and hop on the hour. Drawn once a second;
  * the panel keeps the frame in between. */
+#include <math.h>
 #include <stdio.h>
 #include "private/pet_screens.h"
 
@@ -64,4 +65,20 @@ void screens_draw_clock(const draw_ctx_t *d, const pet_clock_t *t)
         px_text_center(text, 240 + ox, 380 + oy, 2, d->dim, false);
     }
     px_text_center("TAP TO WAKE", 240 + ox, 420 + oy, 2, px_scale(d->dim, 0.7f), false);
+    if (t->month == 0 && t->mday == 1 && t->hour == 0 && t->minute < 10) {
+        /* Easter egg: New Year fireworks for the first ten minutes. */
+        static const Color sparks[4] = {
+            {255, 96, 96, 255}, {255, 220, 90, 255}, {120, 200, 255, 255}, {180, 255, 120, 255},
+        };
+        px_text_center("HAPPY NEW YEAR!", 240, 132, 3, d->accent, false);
+        for (int b = 0; b < 3; ++b) {
+            const unsigned h = (unsigned)(t->second * 7919 + b * 104729);
+            const int cx = 60 + (int)(h % 360U), cy = 40 + (int)((h / 360U) % 90U);
+            const int rad = 10 + (t->second + b * 3) % 5 * 8;
+            for (int k = 0; k < 12; ++k) {
+                const float a = (float)k * 0.5236f;
+                DrawRectangle(cx + (int)(cosf(a) * rad), cy + (int)(sinf(a) * rad), 4, 4, sparks[(b + k) % 4]);
+            }
+        }
+    }
 }
