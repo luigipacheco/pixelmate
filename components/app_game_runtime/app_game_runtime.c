@@ -319,6 +319,12 @@ static void poll_sensor(host_state_t *state)
     }
 }
 
+static const char *gauge_profile_name(app_gauge_profile_t p)
+{
+    static const char *const names[] = {"unchecked", "busy", "ok", "loaded", "failed"};
+    return (unsigned)p < sizeof(names) / sizeof(names[0]) ? names[p] : "?";
+}
+
 /* Mean discharge in mA while in `power`, or -1 before any sample. */
 static long mean_drain(const host_state_t *state, app_power_t power)
 {
@@ -449,11 +455,14 @@ static int build_stats_json(const host_state_t *state, const app_game_snapshot_t
     if (n > 0 && (size_t)n < cap) {
         n += snprintf(out + n, cap - (size_t)n,
                       "],\"power_mv\":%u,\"power_ma\":%d,\"power_avg_ma\":%d,\"power_mah\":%u,"
-                      "\"power_full_mah\":%u,\"power_tte_min\":%u,\"drain_ma\":[%ld,%ld,%ld],"
+                      "\"power_full_mah\":%u,\"power_design_mah\":%u,\"gauge_profile\":\"%s\","
+                      "\"power_tte_min\":%u,\"drain_ma\":[%ld,%ld,%ld],"
                       "\"pocket\":[%lu,%lu,%lu,%lu,%lu]}",
                       state->battery_ok ? b->voltage_mv : 0U, state->battery_ok ? b->current_ma : 0,
                       state->battery_ok ? b->avg_current_ma : 0, state->battery_ok ? b->remaining_mah : 0U,
-                      state->battery_ok ? b->full_mah : 0U, state->battery_ok ? b->time_to_empty_min : 0xFFFFU,
+                      state->battery_ok ? b->full_mah : 0U, state->battery_ok ? b->design_mah : 0U,
+                      gauge_profile_name(app_power_hw_profile()),
+                      state->battery_ok ? b->time_to_empty_min : 0xFFFFU,
                       mean_drain(state, APP_POWER_AWAKE), mean_drain(state, APP_POWER_DIM),
                       mean_drain(state, APP_POWER_DOZE),
                       (unsigned long)s_pocket_log.sleeps, (unsigned long)s_pocket_log.timer_wakes,
