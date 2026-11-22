@@ -117,7 +117,7 @@ struct app_game {
     uint8_t settings_page;
     uint8_t sleep_idx, bright_idx;     /* Indexes into s_sleep_s / s_bright_pct. */
     bool tap_steps;                    /* TAP STEPS setting. */
-    uint16_t tap_steps_today;          /* Tap steps credited today. */
+    uint32_t tap_steps_today;          /* Steps credited by pats today. */
     bool reset_armed;                  /* Finger went down on RESET PET. */
     uint16_t reset_hold_ticks;
     uint32_t owned;
@@ -425,10 +425,11 @@ static void tap_home(app_game_handle_t g, int32_t x, int32_t y)
     add_friendship(g, 1);
     react(g, APP_MOOD_HAPPY, REACT_PET_TICKS);
     g->events |= APP_EVENT_PETTED;
-    /* TAP STEPS (Settings): each pat also counts as a step, up to a daily cap. */
-    if (g->tap_steps && g->tap_steps_today < APP_TAP_STEPS_MAX) {
-        ++g->tap_steps_today;
-        credit_steps(g, 1);
+    /* TAP STEPS (Settings): each pat counts as APP_TAP_STEP_SIZE steps, with no
+     * daily cap, so people who can't walk can still feed and play with Bitsy. */
+    if (g->tap_steps) {
+        g->tap_steps_today += APP_TAP_STEP_SIZE;
+        credit_steps(g, APP_TAP_STEP_SIZE);
     }
     changed(g);
 }

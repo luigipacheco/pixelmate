@@ -50,8 +50,9 @@ the `pixel_pal` name so existing pets carry over.)
   screen dims; at 30 s the screen turns off (12 s on low battery). SLEEP in
   the menu or a press of the AI button does it at once. Steps keep counting;
   tap the screen or press the AI button to wake.
-- **TAP STEPS (Settings, off by default):** each pat on Bitsy counts as one
-  step, up to 1000 a day; handy at a desk or on boards without a step counter.
+- **TAP STEPS (Settings, off by default):** an accessibility mode for people who
+  can't walk (or boards without a step counter): each pat on Bitsy counts as 10
+  steps, with no daily cap, so about 400 pats feed Bitsy for the day.
 - **Clock mode (on USB power):** when the pet sleeps while plugged in and the
   time is known (Wi-Fi), the screen shows a dim clock instead of going black:
   big pixel digits with Bitsy's eyes as the blinking colon (they hop on the

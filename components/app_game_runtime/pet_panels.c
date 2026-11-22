@@ -525,9 +525,10 @@ static void draw_setting_row(const draw_ctx_t *d, int row, int index, int oy)
     case 5:
         snprintf(value, sizeof(value), "%s", s->tap_steps ? "ON" : "OFF");
         if (s->tap_steps) {
-            snprintf(hint, sizeof(hint), "PATS COUNT AS STEPS %u/%d", s->tap_steps_today, APP_TAP_STEPS_MAX);
+            snprintf(hint, sizeof(hint), "PAT = %d STEPS  %lu TODAY", APP_TAP_STEP_SIZE,
+                     (unsigned long)s->tap_steps_today);
         } else {
-            snprintf(hint, sizeof(hint), "PAT BITSY TO COUNT STEPS");
+            snprintf(hint, sizeof(hint), "NO WALKING NEEDED: PAT BITSY");
         }
         break;
     case 6:

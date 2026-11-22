@@ -99,7 +99,7 @@ enum {
     APP_SLEEP_OPTIONS = 4,       /**< Screen sleep: 15 s, 30 s (default), 60 s, 120 s. */
     APP_BRIGHT_OPTIONS = 3,      /**< Drawn brightness: 100 % (default), 80 %, 60 %. */
     APP_SETTINGS_ROWS = 8,
-    APP_TAP_STEPS_MAX = 1000,    /**< TAP STEPS: at most this many tap steps a day. */
+    APP_TAP_STEP_SIZE = 10,      /**< TAP STEPS: steps per pat (no daily cap: an accessibility mode). */
     APP_RESET_HOLD_S = 3,        /**< Hold RESET PET this long to start over. */
 };
 
@@ -529,7 +529,7 @@ typedef struct {
     uint16_t sleep_s;           /**< Seconds without a touch before the screen sleeps. */
     uint8_t brightness_pct;     /**< Drawn brightness when awake, 60..100. */
     bool tap_steps;             /**< TAP STEPS: tapping the pet counts as a step. */
-    uint16_t tap_steps_today;   /**< Tap steps credited today (capped). */
+    uint32_t tap_steps_today;   /**< Steps credited by pats today. */
     uint8_t reset_hold;         /**< 0..100 progress of holding RESET PET. */
     uint32_t steps_total;
     uint32_t steps_today;
