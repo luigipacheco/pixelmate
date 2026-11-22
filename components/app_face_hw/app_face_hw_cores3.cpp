@@ -10,6 +10,7 @@
 #include "app_face_hw.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "human_face_detect.hpp"
@@ -25,6 +26,8 @@ constexpr int TASK_STACK = 8192;
 constexpr UBaseType_t TASK_PRIORITY = 1;
 constexpr BaseType_t TASK_CORE = 0;              /* The game loop runs on CPU 1. */
 constexpr float MIN_SCORE = 0.5f;
+constexpr int REPORT_MS = 10000;                 /* Detection statistics in the log. */
+constexpr int PICTURE_MS = 60000;                /* Text picture of the camera view in the log. */
 /* How the feed maps to the world. With both false: +x in the result is the
  * image's right, +y is down. Flip here if the head turns away from faces. */
 constexpr bool MIRROR_X = false;
@@ -65,6 +68,24 @@ void publish(bool seen, float x, float y)
     taskEXIT_CRITICAL(&s_lock);
 }
 
+/* Diagnostics: a coarse picture of what the camera sees, as text in the log
+ * (brighter = denser character), to check exposure and orientation. */
+void log_thumbnail(const uint8_t *luma)
+{
+    static const char RAMP[] = " .:-=+*#%@";
+    constexpr int COLS = 32, ROWS = 16;
+    char line[COLS + 1];
+    ESP_LOGI(TAG, "camera view (top of the image first):");
+    for (int r = 0; r < ROWS; ++r) {
+        for (int c = 0; c < COLS; ++c) {
+            const int v = luma[(r * SIDE / ROWS + SIDE / ROWS / 2) * SIDE + c * SIDE / COLS + SIDE / COLS / 2];
+            line[c] = RAMP[v * (int)(sizeof(RAMP) - 2) / 255];
+        }
+        line[COLS] = 0;
+        ESP_LOGI(TAG, "|%s|", line);
+    }
+}
+
 void worker(void *)
 {
     uint8_t *yuv = static_cast<uint8_t *>(heap_caps_malloc(APP_CAMERA_FRAME_BYTES, MALLOC_CAP_SPIRAM));
@@ -77,6 +98,9 @@ void worker(void *)
     HumanFaceDetect *detect = nullptr;
     uint32_t frame_seq = 0;
     bool was_seen = false;
+    uint32_t runs = 0, hits = 0, luma_sum = 0, run_us = 0;
+    TickType_t report_at = xTaskGetTickCount() + pdMS_TO_TICKS(REPORT_MS);
+    TickType_t picture_at = xTaskGetTickCount() + pdMS_TO_TICKS(3000);
     for (;;) {
         if (!s_on.load()) {
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -92,7 +116,16 @@ void worker(void *)
         }
         to_rgb(yuv, rgb);
         const dl::image::img_t img = {rgb, SIDE, SIDE, dl::image::DL_IMAGE_PIX_TYPE_RGB888};
+        const int64_t started = esp_timer_get_time();
         std::list<dl::detect::result_t> &found = detect->run(img);
+        run_us += (uint32_t)(esp_timer_get_time() - started);
+        ++runs;
+        luma_sum += yuv[(SIDE / 2) * SIDE + SIDE / 2] + yuv[(SIDE / 4) * SIDE + SIDE / 4] + yuv[(3 * SIDE / 4) * SIDE + 3 * SIDE / 4];
+        const TickType_t now = xTaskGetTickCount();
+        if ((int32_t)(now - picture_at) >= 0) {
+            log_thumbnail(yuv);
+            picture_at = now + pdMS_TO_TICKS(PICTURE_MS);
+        }
         const dl::detect::result_t *best = nullptr;
         for (const auto &r : found) {
             if (r.score >= MIN_SCORE && r.box.size() >= 4 && (!best || r.box_area() > best->box_area())) {
@@ -116,6 +149,14 @@ void worker(void *)
             }
         }
         was_seen = best != nullptr;
+        hits += best != nullptr;
+        if ((int32_t)(now - report_at) >= 0) {
+            ESP_LOGI(TAG, "%lu runs (%lu ms each), %lu with a face, brightness %lu", (unsigned long)runs,
+                     (unsigned long)(runs ? run_us / runs / 1000 : 0), (unsigned long)hits,
+                     (unsigned long)(runs ? luma_sum / runs / 3 : 0));
+            runs = hits = luma_sum = run_us = 0;
+            report_at = now + pdMS_TO_TICKS(REPORT_MS);
+        }
         vTaskDelay(pdMS_TO_TICKS(PERIOD_MS));
     }
 }
