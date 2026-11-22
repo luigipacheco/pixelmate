@@ -596,6 +596,7 @@ enum {
 };
 #define POCKET_BUTTON_GPIO GPIO_NUM_7  /* AI button, active low: the only wake key. */
 
+#if defined(APP_POCKET_MODE)
 static void pocket_resume_radio(host_state_t *state)
 {
     if (state->pocket_radio_off) {
@@ -606,9 +607,17 @@ static void pocket_resume_radio(host_state_t *state)
         }
     }
 }
+#endif
 
 static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s)
 {
+#if !defined(APP_POCKET_MODE)
+    /* Only the ESP-Mosaico build has pocket mode: its wake button and battery
+     * rule are that board's (see CMakeLists.txt). */
+    (void)state;
+    (void)s;
+    return;
+#else
     if (s->power != APP_POWER_DOZE || !state->blanked) {
         state->pocket_ticks = 0;
         pocket_resume_radio(state);
@@ -641,6 +650,7 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
     state->pocket_ticks = 0;
     app_game_wake(state->game);
     pocket_resume_radio(state);
+#endif
 }
 #endif
 

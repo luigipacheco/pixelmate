@@ -28,6 +28,12 @@ Not ported yet, replaced by stand-ins (`*_none.c` in the shared components):
 - **Battery** (INA226 on the body: voltage and current only): reported unknown.
 - **Step counter**: not wanted on a desk robot for now.
 
+Mosaico-only features that are switched off here:
+
+- **Pocket mode** (light sleep on battery, woken by the Mosaico's AI button on
+  GPIO7). On the Stack-chan GPIO7 is the neck-servo line.
+- **Vibe Mode Wi-Fi**: Wi-Fi comes only from the app's own SET UP WIFI hotspot.
+
 Also not done:
 
 - **Screen layout.** The game still draws its 480x480 picture; the adapter
