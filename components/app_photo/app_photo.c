@@ -226,6 +226,23 @@ static rgb_t cell_color(const uint8_t *yuv, int side, int x0, int y0, int c, int
     return yuv_to_rgb(color_luma(sy / k, lo, span), su / k, sv / k);
 }
 
+/* Lift a cell's color toward full brightness without changing its hue:
+ * scale every channel by the same factor, at most 2x, so the brightest
+ * channel stays within 255. (Scaling by 255/luma blew grays out to white
+ * and soft colors into neon.) */
+static rgb_t lift(rgb_t c)
+{
+    c.r = c.r < 0 ? 0 : c.r;
+    c.g = c.g < 0 ? 0 : c.g;
+    c.b = c.b < 0 ? 0 : c.b;
+    const int hi = c.r > c.g ? (c.r > c.b ? c.r : c.b) : (c.g > c.b ? c.g : c.b);
+    if (hi <= 0) {
+        return c;
+    }
+    const int k = hi * 2 > 255 ? 255 * 256 / hi : 512;   /* Factor in 1/256ths. */
+    return (rgb_t) {c.r * k / 256, c.g * k / 256, c.b * k / 256};
+}
+
 /* Cell looks in color: ASCII glyphs and halftone dots take their cell's
  * color (at full brightness) on black. */
 static void color_cells(const uint8_t *yuv, int side, app_photo_filter_t filter, int lo, int span, uint8_t *out)
@@ -240,9 +257,7 @@ static void color_cells(const uint8_t *yuv, int side, app_photo_filter_t filter,
             rgb_t m = cell_color(yuv, side, x0, y0, c, lo, span);
             const int lum = (m.r * 3 + m.g * 6 + m.b) / 10;
             const int v = lum < 0 ? 0 : (lum > 255 ? 255 : lum);
-            if (lum > 8) {   /* Paint the hue at full brightness; size carries the luma. */
-                m = (rgb_t) {m.r * 255 / lum, m.g * 255 / lum, m.b * 255 / lum};
-            }
+            m = lift(m);   /* Brighter ink (size carries the luma), same hue. */
             const uint8_t ink = v ? nearest_color(m) : 0;
             const float r = (float)c * 0.72f * sqrtf((float)v / 255.0f);
             const int level = v * ASCII_LEVELS / 256;
