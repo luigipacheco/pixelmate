@@ -80,6 +80,7 @@ typedef struct {
     bool rail_off;        /**< rail=0: cut the switched 3.3 V rail. */
     bool touch_wake;      /**< touch=1: also wake on a touch (rail on only). */
     bool imu_low_power;   /**< lp=1: gyroscope off, accelerometer low power. */
+    bool plain;           /**< plain=1: timer wake only; no panel standby, pin holds or rail. */
 } app_net_sleep_test_t;
 
 /** Take a pending sleep test. Returns true once per request. */

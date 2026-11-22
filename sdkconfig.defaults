@@ -86,3 +86,8 @@ CONFIG_CAMERA_SC101IOT=y
 CONFIG_CAMERA_SC101IOT_AUTO_DETECT_DVP_INTERFACE_SENSOR=y
 CONFIG_CAMERA_SC101IOT_DVP_YUV422_1280X720_25FPS=y
 CONFIG_CAMERA_SC101IOT_DVP_DEFAULT_FMT_YUV422_1280X720_25FPS=y
+
+# Deep-sleep experiment: keep the RTC watchdog armed through a timer-woken deep
+# sleep, so a sleep that never wakes restarts the chip instead of needing a
+# power cycle (experimental; timer wake only, sleeps up to ~5 min).
+CONFIG_ESP_SLEEP_ENABLE_RTC_WDT_IN_SLEEP=y

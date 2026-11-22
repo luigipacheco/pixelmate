@@ -189,12 +189,14 @@ static esp_err_t post_sleeptest(httpd_req_t *req)
         .rail_off = query_number(query, "rail", 1) == 0,
         .touch_wake = query_number(query, "touch", 0) != 0,
         .imu_low_power = query_number(query, "lp", 0) != 0,
+        .plain = query_number(query, "plain", 0) != 0,
     };
     portENTER_CRITICAL(&s_tz_lock);
     s_sleep_test = test;
     s_sleep_pending = true;
     portEXIT_CRITICAL(&s_tz_lock);
-    ESP_LOGW(TAG, "sleep test asked: %ld s, rail %s", seconds, test.rail_off ? "off" : "on");
+    ESP_LOGW(TAG, "sleep test asked: %ld s, rail %s%s", seconds, test.rail_off ? "off" : "on",
+             test.plain ? ", plain" : "");
     return httpd_resp_sendstr(req, "sleeping");
 }
 

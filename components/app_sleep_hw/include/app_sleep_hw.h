@@ -20,6 +20,7 @@ typedef struct {
     uint32_t seconds;         /* Timer wake after this long. */
     bool rail_off;            /* Cut the switched 3.3 V rail (display, codec, ...). */
     bool touch_wake;          /* Also wake on the touch interrupt (rail on only). */
+    bool plain;               /* Timer only: no panel standby, no pin holds, no rail. */
     uint32_t steps;           /* Hardware step counter just before sleeping. */
     uint16_t remaining_mah;   /* Fuel gauge just before sleeping. */
     uint16_t voltage_mv;
@@ -40,6 +41,8 @@ typedef struct {
     uint8_t imu_status;       /* INTERNAL_STATUS: low nibble 1 = still configured (kept power). */
     uint16_t alive_rail_off;  /* Bit i set: app_sleep_probe_addrs[i] answered right after the rail was cut. */
     uint16_t mah_before, mv_before;
+    bool plain;
+    bool from_crumb;          /* RTC record lost (power cycle): rebuilt from the flash breadcrumb. */
 } app_sleep_report_t;
 
 /** I2C addresses behind `alive_rail_off`, in bit order. */
@@ -51,7 +54,10 @@ extern const int app_sleep_probe_count;
 esp_err_t app_sleep_hw_enter(const app_sleep_request_t *request);
 
 /** The result of the last sleep attempt, captured early in this boot (kept
- * across software restarts, lost on power-off). False when there is none. */
+ * across software restarts, lost on power-off). When that record is gone, a
+ * breadcrumb written to flash before sleeping still reports the attempt (as
+ * not woken, with this boot's reset reason). False when there is none.
+ * Call once NVS is up; the breadcrumb is cleared after the first call. */
 bool app_sleep_hw_report(app_sleep_report_t *out);
 
 #ifdef __cplusplus
