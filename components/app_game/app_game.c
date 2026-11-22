@@ -48,7 +48,7 @@ enum {
 
 static const uint16_t s_sleep_s[APP_SLEEP_OPTIONS] = {15, 30, 60, 120};
 static const uint8_t s_bright_pct[APP_BRIGHT_OPTIONS] = {100, 80, 60};
-enum { DEFAULT_SLEEP_IDX = 1, DEFAULT_BRIGHT_IDX = 0, SETTINGS_PAGES = 2, RESET_ROW = 7 };
+enum { DEFAULT_SLEEP_IDX = 1, DEFAULT_BRIGHT_IDX = 0, SETTINGS_PAGES = 2 };
 /* Volume order when tapping SOUND: off, low, mid, high. */
 static const app_sound_t s_sound_cycle[APP_SOUND_COUNT] = {
     APP_SOUND_OFF, APP_SOUND_LOW, APP_SOUND_MID, APP_SOUND_HIGH,
@@ -440,6 +440,9 @@ static void set_screen(app_game_handle_t g, app_screen_t screen)
 static void go_screen(app_game_handle_t g, int delta)
 {
     int next = (int)g->screen + delta;
+    if (g->config.desk && next == APP_SCREEN_STEPS) {
+        next += delta;   /* A desk pet has no Steps page. */
+    }
     if (next < 0 || next > last_screen(g)) {
         return;
     }
@@ -912,11 +915,11 @@ static void tap_settings(app_game_handle_t g, int32_t x, int32_t y)
         return;
     }
     for (int row = 0; row < APP_SETTINGS_PER_PAGE; ++row) {
-        const int index = g->settings_page * APP_SETTINGS_PER_PAGE + row;
-        if (index >= settings_rows(g) || !app_rect_hit(app_settings_row_rect(row), x, y)) {
+        const int slot = g->settings_page * APP_SETTINGS_PER_PAGE + row;
+        if (slot >= settings_rows(g) || !app_rect_hit(app_settings_row_rect(row), x, y)) {
             continue;
         }
-        switch (index) {
+        switch (app_settings_row_index(g->config.desk, slot)) {
         case APP_SETTINGS_ROWS: dev_mode_off(g); return;
         case 0: {
             int at = 0;
@@ -942,9 +945,10 @@ static void tap_settings(app_game_handle_t g, int32_t x, int32_t y)
 
 static bool on_reset_row(const struct app_game *g, int32_t x, int32_t y)
 {
+    const int slot = app_settings_row_count(g->config.desk, false) - 1;   /* RESET PET is last. */
     return g->overlay == APP_OVERLAY_SETTINGS
-           && g->settings_page == RESET_ROW / APP_SETTINGS_PER_PAGE
-           && app_rect_hit(app_settings_row_rect(RESET_ROW % APP_SETTINGS_PER_PAGE), x, y);
+           && g->settings_page == slot / APP_SETTINGS_PER_PAGE
+           && app_rect_hit(app_settings_row_rect(slot % APP_SETTINGS_PER_PAGE), x, y);
 }
 
 static void update_reset(app_game_handle_t g)
@@ -1225,7 +1229,8 @@ static void dev_mode_on(app_game_handle_t g)
     g->sparks = APP_DEV_SPARKS;
     fire_cue(g, APP_CUE_DEV_ON);
     react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS);
-    g->settings_page = (uint8_t)(APP_SETTINGS_ROWS / APP_SETTINGS_PER_PAGE);   /* Show its row. */
+    g->settings_page = (uint8_t)(app_settings_row_count(g->config.desk, false)
+                                 / APP_SETTINGS_PER_PAGE);   /* Show its row. */
     set_overlay(g, APP_OVERLAY_SETTINGS);
     g->events |= APP_EVENT_SETTINGS;
 }
@@ -1268,7 +1273,7 @@ static void konami_input(app_game_handle_t g, konami_t input)
 
 static int settings_rows(const struct app_game *g)
 {
-    return APP_SETTINGS_ROWS + (g->dev_mode ? 1 : 0);
+    return app_settings_row_count(g->config.desk, g->dev_mode);
 }
 
 static bool booth_owned(const struct app_game *g)
@@ -1970,6 +1975,7 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .tap_steps = g->tap_steps,
         .tap_steps_today = g->tap_steps_today,
         .dev_mode = g->dev_mode,
+        .desk = g->config.desk,
         .konami_pos = g->konami_pos,
         .pats = g->pats,
         .love_eyes = (g->eggs & APP_EGG_LOVE) != 0,

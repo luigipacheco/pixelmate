@@ -440,14 +440,15 @@ static int build_stats_json(const host_state_t *state, const app_game_snapshot_t
                      "{\"steps_today\":%lu,\"goal\":%lu,\"food_need\":%lu,\"fed_today\":%s,"
                      "\"fullness\":%u,\"hp\":%u,\"hp_max\":%d,\"fainted\":%s,\"streak\":%u,"
                      "\"steps_total\":%lu,\"sparks\":%lu,\"friendship\":%u,\"mood\":\"%s\","
-                     "\"battery\":%d,\"charging\":%s,\"clock\":%s,\"tick\":%lu,\"power\":%d,\"history\":[",
+                     "\"battery\":%d,\"charging\":%s,\"clock\":%s,\"tick\":%lu,\"power\":%d,\"desk\":%s,"
+                     "\"pats\":%u,\"history\":[",
                      (unsigned long)s->steps_today, (unsigned long)s->step_goal,
                      (unsigned long)s->food_need, s->fed_today ? "true" : "false", s->hunger, s->hp,
                      APP_HP_MAX, s->fainted ? "true" : "false", s->fed_streak,
                      (unsigned long)s->steps_total, (unsigned long)s->sparks, s->friendship,
                      moods[s->mood < APP_MOOD_COUNT ? s->mood : 0], s->battery_pct,
                      s->battery_charging ? "true" : "false", s->day > 0 ? "true" : "false",
-                     (unsigned long)s->tick, (int)s->power);
+                     (unsigned long)s->tick, (int)s->power, s->desk ? "true" : "false", s->pats);
     for (int i = 0; i < APP_HISTORY_DAYS && n > 0 && (size_t)n < cap; ++i) {
         n += snprintf(out + n, cap - (size_t)n, "%s%lu", i ? "," : "", (unsigned long)s->history[i]);
     }

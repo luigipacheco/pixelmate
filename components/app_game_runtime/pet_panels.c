@@ -111,6 +111,9 @@ static void draw_menu(const draw_ctx_t *d, int oy)
         snprintf(text, sizeof(text), "YOU OWN EVERYTHING");
     } else if (s->sparks >= next->cost) {
         snprintf(text, sizeof(text), "%s IS READY TO BUY", next->name);
+    } else if (s->desk) {
+        snprintf(text, sizeof(text), "%s IN %lu PATS", next->name,
+                 (unsigned long)(next->cost - s->sparks) * APP_DESK_PETS_PER_SPARK);
     } else {
         snprintf(text, sizeof(text), "%s IN %lu STEPS", next->name,
                  (unsigned long)(next->cost - s->sparks) * APP_STEPS_PER_SPARK);
@@ -184,11 +187,18 @@ static void draw_about(const draw_ctx_t *d, int oy)
     px_text_center("PIXELMATE", 240, oy + 96, 6, d->color, d->gap);
     snprintf(text, sizeof(text), "MEET %s  V%s", APP_PET_NAME, APP_VERSION);
     px_text_center(text, 240, oy + 160, 3, d->accent, d->gap);
-    px_text_center("A WALKING PET FOR ESP-MOSAICO", 240, oy + 200, 2, d->dim, false);
+    px_text_center(s->desk ? "A DESK PET FOR STACK-CHAN" : "A WALKING PET FOR ESP-MOSAICO", 240, oy + 200, 2,
+                   d->dim, false);
     px_text_center("MADE BY", 240, oy + 250, 2, d->dim, false);
     px_text_center(APP_AUTHOR, 240, oy + 272, 4, d->color, d->gap);
     px_text_center(APP_AUTHOR_URL, 240, oy + 316, 3, d->accent, d->gap);
-    if (s->battery_pct >= 0) {
+    if (s->desk) {
+        if (s->battery_pct >= 0) {
+            snprintf(text, sizeof(text), "BATT %d%%  PATS %u", s->battery_pct, s->pats);
+        } else {
+            snprintf(text, sizeof(text), "PATS %u", s->pats);
+        }
+    } else if (s->battery_pct >= 0) {
         snprintf(text, sizeof(text), "BATT %d%%  TOTAL %lu", s->battery_pct, (unsigned long)s->steps_total);
     } else {
         snprintf(text, sizeof(text), "TOTAL %lu STEPS", (unsigned long)s->steps_total);
@@ -636,12 +646,13 @@ static void draw_settings(const draw_ctx_t *d, int oy)
 {
     const app_game_snapshot_t *s = d->snap;
     draw_header(d, oy, "SETTINGS");
-    const int rows = APP_SETTINGS_ROWS + (s->dev_mode ? 1 : 0);
+    const int rows = app_settings_row_count(s->desk, s->dev_mode);
     for (int row = 0; row < APP_SETTINGS_PER_PAGE; ++row) {
-        const int index = s->settings_page * APP_SETTINGS_PER_PAGE + row;
-        if (index >= rows) {
+        const int slot = s->settings_page * APP_SETTINGS_PER_PAGE + row;
+        if (slot >= rows) {
             break;
         }
+        const int index = app_settings_row_index(s->desk, slot);
         if (index == APP_SETTINGS_ROWS) {
             draw_dev_row(d, row, oy);
             continue;

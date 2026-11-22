@@ -103,8 +103,9 @@ static esp_err_t open_device_once(void)
 {
     s_cam.fd = open(ESP_VIDEO_DVP_DEVICE_NAME, O_RDWR);
     ESP_RETURN_ON_FALSE(s_cam.fd >= 0, ESP_ERR_NOT_FOUND, TAG, "open %s: %d", ESP_VIDEO_DVP_DEVICE_NAME, errno);
-    /* The sensor's default format is chosen in sdkconfig (YUV422, 640x480).
-     * Either byte order works; anything else is refused. */
+    /* The sensor's default format is chosen in sdkconfig (YUV422 YUYV,
+     * 320x240: the 640x480 mode doubled the picture). Either byte order
+     * works; anything else is refused. */
     struct v4l2_format format = {.type = V4L2_BUF_TYPE_VIDEO_CAPTURE};
     ESP_RETURN_ON_ERROR(xioctl(VIDIOC_G_FMT, &format, "G_FMT"), TAG, "format");
     const uint32_t pixel = format.fmt.pix.pixelformat;
@@ -176,10 +177,11 @@ static void release_camera(void)
 
 /* ---- Frames ---------------------------------------------------------- */
 
-/* Center-crop the frame to a square (480 of 640x480) and reduce it to
+/* Center-crop the frame to a square (240 of 320x240) and reduce it to
  * SIDE x SIDE. Each output pixel averages four luminance samples spread over
- * its 3.75-pixel source cell; chroma comes from the cell's first macropixel on
- * two rows. The sensor's default orientation is already upright on the CoreS3. */
+ * its source cell (1.875 pixels at 320x240); chroma comes from the cell's first
+ * macropixel on two rows. The sensor's default orientation is already upright
+ * on the CoreS3. */
 static void downsample(const uint8_t *yuv)
 {
     const uint32_t side = s_cam.width < s_cam.height ? s_cam.width : s_cam.height;

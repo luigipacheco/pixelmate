@@ -34,3 +34,10 @@ CONFIG_APP_PROJECT_VER="1.0.0"
 
 # 27 sound effects (components/app_sfx); the engine default is 20 clips.
 CONFIG_ESP_MOSAICO_AUDIO_CLIPS=32
+
+# Camera (GC0308): 320x240 YUYV, the CoreS3's documented QVGA mode. The
+# 640x480 mode showed a doubled picture on the StackChan, and the booth only
+# needs a 128x128 crop.
+CONFIG_CAMERA_GC0308_DVP_YUV422_YUYV_320X240_20FPS=y
+# CONFIG_CAMERA_GC0308_DVP_YUV422_YUYV_640X480_16FPS is not set
+CONFIG_CAMERA_GC0308_DVP_DEFAULT_FMT_YUV422_YUYV_320X240_20FPS=y

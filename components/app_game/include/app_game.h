@@ -105,6 +105,30 @@ enum {
     APP_RESET_HOLD_S = 3,        /**< Hold RESET PET this long to start over. */
 };
 
+/* Desk pet (a board nobody walks with): the Steps page is skipped, so the
+ * page dots count one fewer. Shared by the model and the view. */
+static inline int app_screen_page(bool desk, int screen)
+{
+    return desk && screen > APP_SCREEN_STEPS ? screen - 1 : screen;
+}
+
+/* Settings rows as shown, in order. Index = the full row list (0 SOUND ..
+ * APP_SETTINGS_ROWS - 1 RESET PET, APP_SETTINGS_ROWS = the DEV MODE row);
+ * a desk pet has no DAILY GOAL (1) or TAP STEPS (5) rows. */
+static inline int app_settings_row_count(bool desk, bool dev_mode)
+{
+    return APP_SETTINGS_ROWS - (desk ? 2 : 0) + (dev_mode ? 1 : 0);
+}
+
+static inline int app_settings_row_index(bool desk, int slot)
+{
+    if (!desk) {
+        return slot;
+    }
+    int index = slot >= 1 ? slot + 1 : slot;
+    return index >= 5 ? index + 1 : index;
+}
+
 #define APP_VERSION "1.0.0"
 #define APP_AUTHOR "LUIS PACHECO"
 #define APP_AUTHOR_URL "WWW.LUIGIPACHECO.COM"
@@ -553,6 +577,7 @@ typedef struct {
     bool tap_steps;             /**< TAP STEPS: tapping the pet counts as a step. */
     uint32_t tap_steps_today;   /**< Steps credited by pats today. */
     bool dev_mode;              /**< DEV MODE on (sandbox: infinite sparks, nothing kept). */
+    bool desk;                  /**< Desk pet: no Steps page or step counters. */
     uint8_t konami_pos;         /**< Konami inputs entered so far on the About page. */
     uint16_t pats;              /**< Lifetime pats (stops at APP_LOVE_PATS). */
     bool love_eyes;             /**< LOVE EYES unlocked: hearts when happy. */

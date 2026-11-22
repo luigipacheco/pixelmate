@@ -732,9 +732,11 @@ static void draw_crt(const pet_view_t *v, const draw_ctx_t *d)
 static void draw_steps_counter(const pet_view_t *v, const draw_ctx_t *d)
 {
     char text[16];
-    px_icon(PX_ICON_SHOE, 18, 18, 3, d->color, d->accent, d->gap);
-    snprintf(text, sizeof(text), "%lu", (unsigned long)(v->steps_shown + 0.5f));
-    px_text(text, 50, 18, 3, d->color, d->gap);
+    if (!d->snap->desk) {   /* A desk pet is never walked. */
+        px_icon(PX_ICON_SHOE, 18, 18, 3, d->color, d->accent, d->gap);
+        snprintf(text, sizeof(text), "%lu", (unsigned long)(v->steps_shown + 0.5f));
+        px_text(text, 50, 18, 3, d->color, d->gap);
+    }
     /* Grabber: pull down from here for the menu. */
     DrawRectangle(216, 6, 48, 4, d->dim);
     DrawRectangle(228, 14, 24, 4, d->dim);
@@ -767,7 +769,8 @@ static void draw_sparks_counter(const pet_view_t *v, const draw_ctx_t *d)
 
 static int s_pages(const app_game_snapshot_t *s)
 {
-    return s->camera_present || s->screen == APP_SCREEN_BOOTH ? APP_SCREEN_COUNT : APP_SCREEN_BOOTH;
+    const int screens = s->camera_present || s->screen == APP_SCREEN_BOOTH ? APP_SCREEN_COUNT : APP_SCREEN_BOOTH;
+    return app_screen_page(s->desk, screens);
 }
 
 static void draw_dots(const pet_view_t *v, const draw_ctx_t *d)
@@ -780,7 +783,8 @@ static void draw_dots(const pet_view_t *v, const draw_ctx_t *d)
         DrawRectangle(x0 + i * spacing, APP_DOTS_Y, size, size, d->dim);
     }
     const float e = screens_ease_out(v->trans);
-    const float pos = v->prev_screen + ((float)v->screen - (float)v->prev_screen) * e;
+    const float from = (float)app_screen_page(d->snap->desk, v->prev_screen);
+    const float pos = from + ((float)app_screen_page(d->snap->desk, v->screen) - from) * e;
     DrawRectangle(x0 + (int)(pos * spacing) - 2, APP_DOTS_Y - 2, size + 4, size + 4, d->color);
 }
 
