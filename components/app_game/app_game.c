@@ -120,6 +120,9 @@ struct app_game {
     uint32_t screen_idle_ticks;   /* Touch-free ticks; steps do not reset it. */
     bool swallow_touch;           /* The touch that woke the screen does nothing else. */
     bool keep_awake;              /* External supply: no idle dimming or dozing. */
+    bool clock;                   /* Clock mode is showing. */
+    int16_t clock_minute;         /* Local minute of the day, -1 = unknown. */
+    uint32_t clock_idle_ticks;    /* Untouched ticks on Home while clock mode is possible. */
     uint32_t pointer_still_ticks; /* Ticks since the last pointer sample while pressed. */
     int8_t battery_pct;
     bool battery_charging;
@@ -319,6 +322,7 @@ app_game_err_t app_game_create(const app_game_config_t *config, app_game_handle_
     }
     g->config = *config;
     g->battery_pct = -1;
+    g->clock_minute = -1;
     cards_init(&g->cards, config->seed);
     slots_init(&g->slots, config->seed ^ 0xa5a5a5a5U);
     grid_init(&g->grid, config->seed ^ 0x5a5a5a5aU);
@@ -579,6 +583,24 @@ static void update_power(app_game_handle_t g)
     } else if (g->screen_idle_ticks >= dim_at) {
         set_power(g, APP_POWER_DIM);
     }
+}
+
+/* Clock mode: a pet kept awake on its charger shows the time once Home has
+ * been left alone for a while. */
+static void update_clock(app_game_handle_t g)
+{
+    const bool possible = g->keep_awake && g->power == APP_POWER_AWAKE && g->screen == APP_SCREEN_HOME
+                          && g->overlay == APP_OVERLAY_NONE && !g->fainted && g->clock_minute >= 0
+                          && !g->pointer_down;
+    if (!possible) {
+        g->clock = false;
+        g->clock_idle_ticks = 0;
+        return;
+    }
+    if (g->clock_idle_ticks < APP_CLOCK_AFTER_S * TICKS_PER_SECOND) {
+        ++g->clock_idle_ticks;
+    }
+    g->clock = g->clock_idle_ticks >= APP_CLOCK_AFTER_S * TICKS_PER_SECOND;
 }
 
 static uint32_t item_bit(const app_store_item_t *item)
@@ -1167,6 +1189,12 @@ void app_game_set_pointer(app_game_handle_t g, int32_t x, int32_t y, bool presse
             g->swallow_touch = true;
             return;
         }
+        if (g->clock) {
+            g->clock = false;         /* Back to the face; the tap does nothing else. */
+            g->clock_idle_ticks = 0;
+            g->swallow_touch = true;
+            return;
+        }
         g->screen_idle_ticks = 0;
         if (g->mood == APP_MOOD_SLEEPY) {
             react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
@@ -1213,6 +1241,13 @@ void app_game_set_sensor_steps(app_game_handle_t g, uint32_t cumulative)
     const uint32_t delta = cumulative - g->sensor_last;
     g->sensor_last = cumulative;
     credit_steps(g, delta);
+}
+
+void app_game_set_clock(app_game_handle_t g, int minute_of_day)
+{
+    if (g) {
+        g->clock_minute = (int16_t)(minute_of_day < 0 ? -1 : minute_of_day % (24 * 60));
+    }
 }
 
 void app_game_set_keep_awake(app_game_handle_t g, bool on)
@@ -1482,6 +1517,7 @@ void app_game_update(app_game_handle_t g)
     decay_stats(g);
     update_booth(g);
     update_power(g);
+    update_clock(g);
     update_reset(g);
     const uint32_t won = cards_update(&g->cards, &g->events);
     if (won) {
@@ -1537,6 +1573,8 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .power = g->power,
         .battery_pct = g->battery_pct,
         .battery_charging = g->battery_charging,
+        .clock = g->clock,
+        .clock_minute = g->clock_minute,
         .mood = g->mood,
         .owned = g->owned,
         .filters_owned = g->filters_owned,

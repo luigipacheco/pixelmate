@@ -62,6 +62,7 @@ enum {
     GAME_ACTION_DEBUG_DAY = 0,    /* Host: left key ends the simulated day. */
     GAME_ACTION_DEBUG_CAMERA = 1, /* Host: right key unplugs/replugs the camera. */
     GAME_ACTION_DEBUG_STEPS = 2,
+    GAME_ACTION_DEBUG_CLOCK = 8,  /* Host: replay action 8 plugs in at 10:08, then adds a minute per press. */
     GAME_ACTION_DEBUG_UNLOCK = 9, /* Host: replay action 9 owns everything (screenshots). */
     DEBUG_STEPS = 50,
     HOST_BATTERY_PCT = 76,
@@ -75,6 +76,7 @@ typedef struct {
     pet_view_t view;
     booth_media_t media;          /* Photo booth pixels; the view reads them. */
     bool debug_key_down, debug_day_down, debug_camera_down;
+    int host_clock;               /* Host: pretend minute of the day, 0 = not started. */
     bool blanked;                 /* Black frame already submitted while the screen is off. */
     app_power_t drawn_power;      /* Power state of the last frame submitted. */
     uint32_t dim_ticks;           /* Render calls since the screen dimmed. */
@@ -100,6 +102,7 @@ typedef struct {
     uint32_t pocket_ticks;        /* Ticks the screen has been dark (pocket mode countdown). */
     bool pocket_radio_off;        /* Pocket mode suspended Wi-Fi. */
     pet_head_t head;              /* Head pose for boards with a neck (StackChan). */
+    uint32_t clock_timer;
 #endif
 } host_state_t;
 
@@ -338,6 +341,18 @@ static void poll_day(host_state_t *state)
     app_game_set_day(state->game, days_from_civil(local.tm_year + 1900, local.tm_mon + 1, local.tm_mday));
 }
 
+/* Clock mode's time: local minute of the day, once a second. */
+static void poll_clock(host_state_t *state)
+{
+    if (state->clock_timer++ % GAME_TICK_HZ) {
+        return;
+    }
+    const time_t now = time(NULL);
+    struct tm local;
+    const bool valid = now >= VALID_EPOCH && localtime_r(&now, &local);
+    app_game_set_clock(state->game, valid ? local.tm_hour * 60 + local.tm_min : -1);
+}
+
 /* ---- Wi-Fi, timezone and stats --------------------------------------- */
 
 /* POSIX TZ from JavaScript's getTimezoneOffset(): minutes WEST of UTC, which is
@@ -571,6 +586,11 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
             }
             state->debug_camera_down = event->pressed;
         }
+        if (event->code == GAME_ACTION_DEBUG_CLOCK && event->pressed) {
+            state->host_clock = state->host_clock ? state->host_clock + 1 : 10 * 60 + 8;
+            app_game_set_keep_awake(state->game, true);
+            app_game_set_clock(state->game, state->host_clock);
+        }
         if (event->code == GAME_ACTION_DEBUG_UNLOCK && event->pressed) {
             app_game_record_t r;
             app_game_export(state->game, &r);
@@ -672,6 +692,7 @@ static void update(void *value)
 #if defined(RAYLIB_LITE_GAME_NATIVE)
     poll_sensor(state);
     poll_day(state);
+    poll_clock(state);
     poll_battery(state);
     poll_net(state);
 #endif

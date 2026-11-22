@@ -52,7 +52,7 @@ static void start_gesture(pet_head_t *h, pet_head_gesture_t gesture, float secon
 
 void pet_head_init(pet_head_t *h, uint32_t seed)
 {
-    *h = (pet_head_t) {.rng = seed ? seed : 0x9e3779b9U, .look_timer = LOOK_MIN_TICKS};
+    *h = (pet_head_t) {.rng = seed ? seed : 0x9e3779b9U, .look_timer = LOOK_MIN_TICKS, .clock_minute = -1};
 }
 
 /* Pick the gesture for this tick's events; the strongest reaction wins. */
@@ -158,6 +158,16 @@ void pet_head_update(pet_head_t *h, const app_game_snapshot_t *s, uint32_t event
     }
     react(h, s, events);
     track_face(h, face);
+    /* Clock mode: a nod as the minute turns, a wiggle on the hour. */
+    if (!s->clock) {
+        h->clock_minute = -1;
+    } else if (s->clock_minute != h->clock_minute) {
+        if (h->clock_minute >= 0) {
+            start_gesture(h, s->clock_minute % 60 == 0 ? PET_HEAD_GESTURE_WIGGLE : PET_HEAD_GESTURE_NOD,
+                          s->clock_minute % 60 == 0 ? 2.4f : 0.8f);
+        }
+        h->clock_minute = s->clock_minute;
+    }
     float pan = 0.0f, tilt = 0.0f;
     const float t = (float)h->t / TICK_HZ;
     if (s->fainted) {
@@ -165,6 +175,8 @@ void pet_head_update(pet_head_t *h, const app_game_snapshot_t *s, uint32_t event
     } else if (h->tracking) {
         pan = h->face_pan;
         tilt = h->face_tilt;
+    } else if (s->clock) {
+        tilt = 3.0f;                                 /* Clock mode: face forward so the time can be read. */
     } else if (s->mood == APP_MOOD_SLEEPY || s->power == APP_POWER_DIM) {
         pan = 5.0f * sinf(0.25f * t);                /* Dozing: sagging, slow sway. */
         tilt = -6.0f - 1.5f * sinf(0.4f * t);

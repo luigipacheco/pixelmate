@@ -89,11 +89,125 @@ static app_eye_anchor_t current_anchor(const pet_view_t *v)
 /* Eyes glide toward where the current screen/panel wants them. */
 static void ease_anchor(pet_view_t *v, const app_game_snapshot_t *s, bool snap)
 {
-    const app_eye_anchor_t to = app_eye_anchor(s->screen, s->overlay, s->arcade);
+    const app_eye_anchor_t to = s->clock ? app_clock_eye_anchor() : app_eye_anchor(s->screen, s->overlay, s->arcade);
     const float k = snap ? 1.0f : ANCHOR_EASE;
     v->anchor_x += (to.cx - v->anchor_x) * k;
     v->anchor_y += (to.cy - v->anchor_y) * k;
     v->anchor_s += (to.scale - v->anchor_s) * k;
+}
+
+/* ---- Clock mode --------------------------------------------------------- */
+
+/* The four time digits, 12-hour: "1041", or " 941" with a blank first slot. */
+static void clock_digits(int minute_of_day, char out[4])
+{
+    const int hour = (minute_of_day / 60) % 12 ? (minute_of_day / 60) % 12 : 12;
+    const int minute = minute_of_day % 60;
+    out[0] = hour >= 10 ? '1' : ' ';
+    out[1] = (char)('0' + hour % 10);
+    out[2] = (char)('0' + minute / 10);
+    out[3] = (char)('0' + minute % 10);
+}
+
+/* Digits that change drop in with a bounce while the pet glances at them; a
+ * new hour gets confetti and a hop. */
+static void update_clock(pet_view_t *v, const app_game_snapshot_t *s)
+{
+    if (v->clock_pop < 1.0f) {
+        v->clock_pop += 1.0f / 18.0f;
+    }
+    if (!s->clock || s->clock_minute < 0) {
+        v->prev_clock_minute = -1;
+        return;
+    }
+    if (s->clock_minute == v->prev_clock_minute) {
+        return;
+    }
+    char now[4], before[4] = {0, 0, 0, 0};   /* Entering clock mode: every digit drops in. */
+    clock_digits(s->clock_minute, now);
+    if (v->prev_clock_minute >= 0) {
+        clock_digits(v->prev_clock_minute, before);
+    }
+    v->clock_changed = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (now[i] != before[i]) {
+            v->clock_changed |= (uint8_t)(1U << i);
+        }
+    }
+    v->clock_pop = 0.0f;
+    const app_eye_anchor_t a = current_anchor(v);
+    pet_eyes_look_at(&v->eyes, APP_VIEW_W / 2 + 60, APP_CLOCK_TIME_Y + 60, a, 34);
+    if (v->prev_clock_minute >= 0 && s->clock_minute % 60 == 0) {
+        const Color c = px_color(s->color_index);
+        burst(v, P_SQUARE, 240, APP_CLOCK_TIME_Y + 40, 26, 8.0f, 0.35f, c, CONFETTI_WHITE);
+        burst(v, P_SQUARE, 240, APP_CLOCK_TIME_Y + 40, 12, 6.0f, 0.35f, px_accent(s->color_index), c);
+        pet_eyes_kick(&v->eyes, -9.0f);
+    }
+    v->prev_clock_minute = s->clock_minute;
+}
+
+/* Days since 1970-01-01 to a civil date (proleptic Gregorian). */
+static void civil_from_days(int32_t z, int *month, int *day)
+{
+    z += 719468;
+    const int32_t era = (z >= 0 ? z : z - 146096) / 146097;
+    const uint32_t doe = (uint32_t)(z - era * 146097);
+    const uint32_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const uint32_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const uint32_t mp = (5 * doy + 2) / 153;
+    *day = (int)(doy - (153 * mp + 2) / 5 + 1);
+    *month = (int)(mp < 10 ? mp + 3 : mp - 9);
+}
+
+/* Big time digits under the small eyes, a tick-tock colon, AM/PM and the date.
+ * Fades in as the eyes shrink into place. */
+static void draw_clock(const pet_view_t *v, const draw_ctx_t *d)
+{
+    const app_game_snapshot_t *s = d->snap;
+    const float settled = (1.0f - v->anchor_s) / (1.0f - app_clock_eye_anchor().scale);
+    if (!s->clock || s->clock_minute < 0 || v->screen != APP_SCREEN_HOME || settled < 0.1f) {
+        return;
+    }
+    const float fade = settled > 1.0f ? 1.0f : settled;
+    const Color ink = px_scale(d->color, fade);
+    const int scale = APP_CLOCK_TIME_SCALE;
+    const int glyph = 5 * scale, gap = scale, colon = 2 * scale;
+    char digits[4];
+    clock_digits(s->clock_minute, digits);
+    const int first = digits[0] == ' ' ? 1 : 0;
+    const int width = (4 - first) * glyph + (3 - first) * gap + colon + gap;
+    int x = APP_VIEW_W / 2 - width / 2;
+    for (int i = first; i < 4; ++i) {
+        float drop = 0.0f;
+        if (v->clock_pop < 1.0f && (v->clock_changed & (1U << i))) {
+            const float p = v->clock_pop;
+            drop = -44.0f * (1.0f - p) * fabsf(cosf(p * 6.5f));
+        }
+        const char text[2] = {digits[i], 0};
+        px_text(text, x, APP_CLOCK_TIME_Y + (int)drop, scale, ink, d->gap);
+        x += glyph + gap;
+        if (i == 1) {
+            /* Colon: two sparks that take turns, one beat a second. */
+            const bool tick = (v->t / 15U) % 2U == 0U;
+            DrawRectangle(x, APP_CLOCK_TIME_Y + 2 * scale, scale, scale, px_scale(ink, tick ? 1.0f : 0.3f));
+            DrawRectangle(x, APP_CLOCK_TIME_Y + 4 * scale, scale, scale, px_scale(ink, tick ? 0.3f : 1.0f));
+            x += colon + gap - scale;
+        }
+    }
+    static const char *const WEEKDAYS[] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
+    static const char *const MONTHS[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+                                         "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
+                                        };
+    char line[24];
+    const char *half = s->clock_minute >= 12 * 60 ? "PM" : "AM";
+    if (s->day > 0) {
+        int month = 1, day = 1;
+        civil_from_days(s->day, &month, &day);
+        snprintf(line, sizeof(line), "%s %d %s  %s", WEEKDAYS[(s->day % 7 + 4) % 7], day, MONTHS[month - 1], half);
+    } else {
+        snprintf(line, sizeof(line), "%s", half);
+    }
+    px_text_center(line, APP_VIEW_W / 2, APP_CLOCK_DATE_Y, APP_CLOCK_DATE_SCALE, px_scale(d->accent, fade), d->gap);
 }
 
 /* Retract the drawn panel before dropping a different one. */
@@ -416,12 +530,15 @@ void pet_view_update(pet_view_t *v, const app_game_snapshot_t *s, uint32_t event
         v->sparks_shown = (float)s->sparks;
         v->prev_sparks = s->sparks;
         v->prev_hp = s->hp;
+        v->prev_clock_minute = -1;
+        v->clock_pop = 1.0f;
         ease_anchor(v, s, true);
     }
     ease_anchor(v, s, false);
     update_overlay(v, s->overlay);
     on_events(v, s, events);
     on_booth(v, s, events);
+    update_clock(v, s);
     v->prev_booth_phase = (uint8_t)s->booth.phase;
     v->prev_booth_count = s->booth.count;
     v->prev_booth_result = (uint8_t)s->booth.result;
@@ -638,6 +755,7 @@ void pet_view_draw(const pet_view_t *v, const app_game_snapshot_t *s)
         }
         draw_steps_counter(v, &d);
         draw_dots(v, &d);
+        draw_clock(v, &d);
     }
     if (panel) {
         const int height = screens_overlay_height(v->overlay_drawn);

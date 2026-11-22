@@ -36,6 +36,7 @@ typedef struct {
     float face_pan, face_tilt; /* Aim while tracking a face. */
     uint16_t face_lost;        /* Ticks since the last detection. */
     uint16_t still;            /* Ticks left to hold still after a touch. */
+    int16_t clock_minute;      /* Minute seen last tick in clock mode, -1 = none. */
     pet_head_gesture_t gesture;
     uint16_t gesture_t, gesture_len;
 } pet_head_t;

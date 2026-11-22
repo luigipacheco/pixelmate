@@ -72,6 +72,18 @@ static inline app_rect_t app_arcade_exit_rect(void)
     return (app_rect_t) {12, 72, 104, 44};
 }
 
+/* Clock mode on Home: small eyes on top, the time under them. */
+static inline app_eye_anchor_t app_clock_eye_anchor(void)
+{
+    return (app_eye_anchor_t) {240, 124, 0.5f};
+}
+enum {
+    APP_CLOCK_TIME_Y = 214,      /**< Top of the time digits. */
+    APP_CLOCK_TIME_SCALE = 13,   /**< Pixels per font dot (digits are 5x7 dots). */
+    APP_CLOCK_DATE_Y = 340,      /**< Top of the date line. */
+    APP_CLOCK_DATE_SCALE = 4,
+};
+
 static inline app_rect_t app_home_eyes_rect(void)
 {
     return (app_rect_t) {80, 120, 320, 240};

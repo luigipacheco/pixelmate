@@ -437,6 +437,8 @@ typedef struct {
     app_power_t power;
     int8_t battery_pct;         /**< 0..100, or -1 when unknown. */
     bool battery_charging;
+    bool clock;                 /**< Clock mode: Home shows the time under small eyes. */
+    int16_t clock_minute;       /**< Local minute of the day, 0..1439; -1 = clock not set. */
     app_mood_t mood;
     uint32_t owned;             /**< APP_OWN_*_BIT flags. */
     uint8_t filters_owned;      /**< APP_OWN_FILTER_BIT flags; NONE always set. */
@@ -533,6 +535,7 @@ typedef struct {
 } app_game_config_t;
 
 enum { APP_DESK_PETS_PER_SPARK = 3 };
+enum { APP_CLOCK_AFTER_S = 12 };   /**< Untouched seconds on Home before clock mode. */
 
 /** Create a caller-owned model with a fresh pet; clears *out_handle on failure. */
 app_game_err_t app_game_create(const app_game_config_t *config, app_game_handle_t *out_handle);
@@ -576,6 +579,11 @@ void app_game_booth_result(app_game_handle_t handle, app_booth_result_t result);
  * neither dims nor turns off by itself, and turning this on wakes it. The
  * menu's SLEEP still turns the screen off until the next touch. */
 void app_game_set_keep_awake(app_game_handle_t handle, bool on);
+/** Report the local time as minute of the day (0..1439); negative = not set.
+ * While the screen is kept awake (app_game_set_keep_awake) and Home has not
+ * been touched for APP_CLOCK_AFTER_S seconds, the pet shows the time (clock
+ * mode); the next touch only brings the face back. */
+void app_game_set_clock(app_game_handle_t handle, int minute_of_day);
 /** Wake the screen (button press, external event). No-op when awake. */
 void app_game_wake(app_game_handle_t handle);
 /** Advance one 30 Hz tick unless paused. No rendering or hardware access. */
