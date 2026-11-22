@@ -203,6 +203,14 @@ static sfx_t pick(uint32_t ev, const app_game_snapshot_t *s, sfx_t *follow, uint
         case APP_CUE_KONAMI_MISS: return SFX_BUZZ;
         case APP_CUE_DEV_ON: return SFX_JACKPOT;
         case APP_CUE_DEV_OFF: return SFX_CLOSE;
+        case APP_CUE_LOVE: return SFX_GOAL;
+        case APP_CUE_COIN_RAIN: return SFX_JACKPOT;
+        case APP_CUE_CREDITS: return SFX_OPEN;
+        case APP_CUE_DIZZY: return SFX_ZAP;
+        case APP_CUE_PANIC: return SFX_BUZZ;
+        case APP_CUE_MISSED: return SFX_REVIVE;
+        case APP_CUE_MARATHON: return SFX_GOAL;
+        case APP_CUE_NEW_YEAR: return SFX_JACKPOT;
         default: break;
         }
     }

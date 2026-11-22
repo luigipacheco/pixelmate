@@ -2,6 +2,7 @@
 /* Pet model: steps -> sparks, stats, mood, screen navigation and touch rules.
  * Pure C; drawing and hardware live in app_game_runtime. */
 #include <stdlib.h>
+#include <math.h>
 #include <string.h>
 #include "include/app_game.h"
 #include "include/app_game_layout.h"
@@ -124,6 +125,15 @@ struct app_game {
     bool dev_mode;
     uint8_t konami_pos;
     uint32_t real_sparks, real_owned;
+    /* Easter eggs. */
+    uint16_t pats;
+    uint8_t eggs;
+    uint8_t coin_taps, credit_taps;
+    uint16_t coin_tap_timer, credit_tap_timer, credits_ticks;
+    uint16_t dizzy_ticks, shake_window, flip_ticks;
+    uint8_t shake_hits;
+    bool shake_high, flipped_now, upside_down, missed_pending;
+    float grav[3];               /* Slow average of 'which way is down'. */
     uint16_t real_filters;
     uint8_t real_lenses;
     bool reset_armed;                  /* Finger went down on RESET PET. */
@@ -236,6 +246,8 @@ static void check_fed(app_game_handle_t g)
     react(g, APP_MOOD_HAPPY, REACT_WIN_TICKS);
 }
 
+static void fire_cue(app_game_handle_t g, uint8_t cue);
+
 static void credit_steps(app_game_handle_t g, uint32_t steps)
 {
     if (!steps) {
@@ -246,6 +258,10 @@ static void credit_steps(app_game_handle_t g, uint32_t steps)
         g->events |= APP_EVENT_DANCE;
     }
     g->steps_total += steps;
+    if (g->steps_today < APP_MARATHON_STEPS && g->steps_today + steps >= APP_MARATHON_STEPS) {
+        fire_cue(g, APP_CUE_MARATHON);   /* Easter egg: the headband for the rest of the day. */
+        react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS);
+    }
     g->steps_today += steps;
     uint32_t progress = g->spark_progress + steps;
     if (progress >= STEPS_PER_SPARK) {
@@ -433,6 +449,11 @@ static void tap_home(app_game_handle_t g, int32_t x, int32_t y)
     add_friendship(g, 1);
     react(g, APP_MOOD_HAPPY, REACT_PET_TICKS);
     g->events |= APP_EVENT_PETTED;
+    if (g->pats < APP_LOVE_PATS && ++g->pats == APP_LOVE_PATS) {
+        g->eggs |= APP_EGG_LOVE;   /* Easter egg: the 1000th pat. */
+        fire_cue(g, APP_CUE_LOVE);
+        react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS * 2);
+    }
     /* TAP STEPS (Settings): every APP_TAPS_PER_STEP pats count as one step. */
     if (g->tap_steps && ++g->tap_pats >= APP_TAPS_PER_STEP) {
         g->tap_pats = 0;
@@ -1285,6 +1306,17 @@ static void tap_arcade(app_game_handle_t g, int32_t x, int32_t y)
 
 static void handle_tap(app_game_handle_t g, int32_t x, int32_t y)
 {
+    if (g->overlay == APP_OVERLAY_NONE && y < 56 && x > 300) {
+        /* Easter egg: ten quick taps on the spark counter make it rain. */
+        g->coin_taps = g->coin_tap_timer ? (uint8_t)(g->coin_taps + 1) : 1;
+        g->coin_tap_timer = 30;
+        if (g->coin_taps >= 10) {
+            g->coin_taps = 0;
+            fire_cue(g, APP_CUE_COIN_RAIN);
+            react(g, APP_MOOD_HAPPY, REACT_WIN_TICKS);
+        }
+        return;
+    }
     switch (g->overlay) {
     case APP_OVERLAY_MENU: tap_menu(g, x, y); return;
     case APP_OVERLAY_STYLE: tap_style(g, x, y); return;
@@ -1296,6 +1328,17 @@ static void handle_tap(app_game_handle_t g, int32_t x, int32_t y)
         if (app_rect_hit(app_panel_back_rect(), x, y)) {
             g->konami_pos = 0;
             set_overlay(g, APP_OVERLAY_SETTINGS);
+        } else if (g->credits_ticks) {
+            g->credits_ticks = 0;   /* Any tap ends the credits. */
+        } else if (g->konami_pos < APP_KONAMI_LEN - 2 && y >= 145 && y <= 195) {
+            /* Easter egg: tap the version line 7 times for the credits. */
+            g->credit_taps = g->credit_tap_timer ? (uint8_t)(g->credit_taps + 1) : 1;
+            g->credit_tap_timer = 60;
+            if (g->credit_taps >= 7) {
+                g->credit_taps = 0;
+                g->credits_ticks = APP_CREDITS_TICKS;
+                fire_cue(g, APP_CUE_CREDITS);
+            }
         } else if (y > 60) {   /* Below BACK. */
             konami_input(g, x < APP_VIEW_W / 2 ? KONAMI_B : KONAMI_A);
         }
@@ -1409,9 +1452,49 @@ void app_game_set_pointer(app_game_handle_t g, int32_t x, int32_t y, bool presse
     }
 }
 
+/* Easter eggs from the accelerometer: three hard jolts within a second make
+ * Bitsy dizzy; holding the board upside down (against its usual "down")
+ * makes it panic. */
+static void sense_motion(app_game_handle_t g, float x, float y, float z)
+{
+    const float m2 = x * x + y * y + z * z;
+    const bool high = m2 > 2.4f * 2.4f;
+    if (high && !g->shake_high) {
+        g->shake_hits = g->shake_window ? (uint8_t)(g->shake_hits + 1) : 1;
+        g->shake_window = 30;
+        if (g->shake_hits >= 3 && !g->dizzy_ticks) {
+            g->dizzy_ticks = 150;
+            fire_cue(g, APP_CUE_DIZZY);
+            react(g, APP_MOOD_GRUMPY, 150);
+        }
+    }
+    g->shake_high = high;
+    if (m2 < 0.5f || m2 > 1.6f) {
+        return;   /* Only steady samples say which way is down. */
+    }
+    const float m = sqrtf(m2), ux = x / m, uy = y / m, uz = z / m;
+    const float gm = sqrtf(g->grav[0] * g->grav[0] + g->grav[1] * g->grav[1] + g->grav[2] * g->grav[2]);
+    if (gm < 0.5f) {
+        g->grav[0] = ux, g->grav[1] = uy, g->grav[2] = uz;   /* First sample. */
+        return;
+    }
+    const float dot = (ux * g->grav[0] + uy * g->grav[1] + uz * g->grav[2]) / gm;
+    g->flipped_now = dot < -0.6f;
+    if (!g->flipped_now) {   /* Learn the usual orientation, not the flipped one. */
+        const float k = 0.01f;
+        g->grav[0] += (ux - g->grav[0]) * k;
+        g->grav[1] += (uy - g->grav[1]) * k;
+        g->grav[2] += (uz - g->grav[2]) * k;
+    }
+}
+
 void app_game_add_accel(app_game_handle_t g, float x_g, float y_g, float z_g)
 {
-    if (!g || g->has_sensor) {
+    if (!g) {
+        return;
+    }
+    sense_motion(g, x_g, y_g, z_g);
+    if (g->has_sensor) {
         return;
     }
     credit_steps(g, pedometer_sample(&g->pedometer, x_g, y_g, z_g, g->tick));
@@ -1519,6 +1602,13 @@ void app_game_wake(app_game_handle_t g)
     }
 }
 
+void app_game_cue(app_game_handle_t g, uint8_t cue)
+{
+    if (g) {
+        fire_cue(g, cue);
+    }
+}
+
 void app_game_sleep(app_game_handle_t g)
 {
     if (g && g->power != APP_POWER_DOZE) {
@@ -1530,6 +1620,9 @@ void app_game_set_day(app_game_handle_t g, int32_t day)
 {
     if (!g || day <= 0 || day == g->day) {
         return;
+    }
+    if (g->day > 0 && day - g->day >= 3) {
+        g->missed_pending = true;   /* Easter egg: greeted on the next wake. */
     }
     if (day < g->day) {
         /* The clock or timezone moved backwards (e.g. UTC first, local time
@@ -1618,6 +1711,9 @@ static app_mood_t compute_mood(const struct app_game *g)
     if (g->fainted) {
         return APP_MOOD_FAINTED;
     }
+    if (g->upside_down) {
+        return APP_MOOD_SURPRISED;
+    }
     if (g->reaction_ticks) {
         return g->reaction;
     }
@@ -1703,6 +1799,26 @@ void app_game_update(app_game_handle_t g)
     update_power(g);
     update_reset(g);
     update_grid_hold(g);
+    /* Easter egg timers. */
+    if (g->coin_tap_timer) --g->coin_tap_timer;
+    if (g->credit_tap_timer) --g->credit_tap_timer;
+    if (g->credits_ticks && (--g->credits_ticks == 0 || g->overlay != APP_OVERLAY_ABOUT)) {
+        g->credits_ticks = 0;
+    }
+    if (g->shake_window) --g->shake_window;
+    if (g->dizzy_ticks) --g->dizzy_ticks;
+    g->flip_ticks = g->flipped_now ? (uint16_t)(g->flip_ticks + 1) : 0;
+    const bool panic = g->flip_ticks >= 20;   /* Upside down for ~2/3 s. */
+    if (panic && !g->upside_down) {
+        fire_cue(g, APP_CUE_PANIC);
+    }
+    g->upside_down = panic;
+    if (g->missed_pending && g->power == APP_POWER_AWAKE && g->overlay == APP_OVERLAY_NONE
+            && g->screen == APP_SCREEN_HOME && !g->fainted) {
+        g->missed_pending = false;
+        fire_cue(g, APP_CUE_MISSED);
+        react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS * 2);
+    }
     if (g->dev_mode && g->sparks < APP_DEV_SPARKS) {
         g->sparks = APP_DEV_SPARKS;   /* Infinite sparks. */
     }
@@ -1788,6 +1904,11 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .tap_steps_today = g->tap_steps_today,
         .dev_mode = g->dev_mode,
         .konami_pos = g->konami_pos,
+        .pats = g->pats,
+        .love_eyes = (g->eggs & APP_EGG_LOVE) != 0,
+        .credits_ticks = g->credits_ticks,
+        .dizzy = g->dizzy_ticks > 0,
+        .upside_down = g->upside_down,
         .reset_hold = (uint8_t)(g->reset_hold_ticks * 100U / (APP_RESET_HOLD_S * TICKS_PER_SECOND)),
         .steps_total = g->steps_total,
         .steps_today = g->steps_today,
@@ -1911,6 +2032,9 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->sleep_code = g->sleep_idx == DEFAULT_SLEEP_IDX ? 0 : (uint8_t)(g->sleep_idx + 1);
     r->bright_code = g->bright_idx == DEFAULT_BRIGHT_IDX ? 0 : (uint8_t)(g->bright_idx + 1);
     r->flags = g->tap_steps ? APP_RECORD_FLAG_TAP_STEPS : 0U;
+    r->pats_lo = (uint8_t)(g->pats & 0xFFU);
+    r->pats_hi = (uint8_t)(g->pats >> 8);
+    r->eggs = g->eggs;
     if (g->dev_mode) {   /* The sandbox is never saved. */
         r->sparks = g->real_sparks;
         r->owned = g->real_owned;
@@ -1963,6 +2087,9 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
     g->bright_idx = r->bright_code && r->bright_code <= APP_BRIGHT_OPTIONS
                     ? (uint8_t)(r->bright_code - 1) : DEFAULT_BRIGHT_IDX;
     g->tap_steps = (r->flags & APP_RECORD_FLAG_TAP_STEPS) != 0;
+    g->pats = (uint16_t)(r->pats_lo | (r->pats_hi << 8));
+    g->pats = g->pats > APP_LOVE_PATS ? APP_LOVE_PATS : g->pats;
+    g->eggs = r->eggs;
     g->filters_owned = (uint16_t)(r->filters_owned | ((uint16_t)r->filters_owned_hi << 8) | FREE_FILTERS);
     g->filters_owned &= (uint16_t)((1U << APP_FILTER_COUNT) - 1U);
     grid_set_level(&g->grid, r->grid_level);

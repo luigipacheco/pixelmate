@@ -267,9 +267,47 @@ static bool cross_inside(const void *shape, float x, float y)
     return ax <= c->half && ay <= c->half && fabsf(ax - ay) <= c->thick;
 }
 
-void pet_eyes_draw(const pet_eyes_t *e, app_eye_anchor_t a, px_grid_t grid, Color color, bool stars,
-                   bool cross)
+typedef struct {
+    float cx, cy, size;
+} heart_raster_t;
+
+/* Classic heart curve (x^2 + y^2 - 1)^3 <= x^2 y^3, y pointing up. */
+static bool heart_inside(const void *shape, float x, float y)
 {
+    const heart_raster_t *h = shape;
+    const float u = (x - h->cx) / h->size, v = -(y - h->cy) / h->size + 0.25f;
+    const float q = u * u + v * v - 1.0f;
+    return q * q * q - u * u * v * v * v <= 0.0f;
+}
+
+typedef struct {
+    float cx, cy, radius, thick, turn;
+} spiral_raster_t;
+
+/* Archimedean spiral r = k * angle, two turns, rotating with `turn`. */
+static bool spiral_inside(const void *shape, float x, float y)
+{
+    const spiral_raster_t *sp = shape;
+    const float dx = x - sp->cx, dy = y - sp->cy;
+    const float r = sqrtf(dx * dx + dy * dy);
+    if (r > sp->radius) {
+        return false;
+    }
+    const float k = sp->radius / (2.0f * 2.0f * 3.14159265f);
+    float a = atan2f(dy, dx) + sp->turn;
+    a -= floorf(a / (2.0f * 3.14159265f)) * 2.0f * 3.14159265f;
+    for (int n = 0; n < 2; ++n) {
+        if (fabsf(r - k * (a + n * 2.0f * 3.14159265f)) <= sp->thick) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void pet_eyes_draw(const pet_eyes_t *e, app_eye_anchor_t a, px_grid_t grid, Color color,
+                   pet_eye_shape_t shape, bool headband)
+{
+    const bool stars = shape == PET_EYES_STARS, cross = shape == PET_EYES_CROSS;
     const float s = a.scale;
     if (s < 0.05f) {
         return;
@@ -296,6 +334,22 @@ void pet_eyes_draw(const pet_eyes_t *e, app_eye_anchor_t a, px_grid_t grid, Colo
                           cross_inside, &cr, color);
             continue;
         }
+        if (shape == PET_EYES_HEARTS) {
+            const float size = fmaxf(fminf(e->cur[EYE_W], e->cur[EYE_H]) * 0.4f * s
+                                     * (1.0f - 0.85f * blink), min_half);
+            const heart_raster_t hr = {r.cx, r.cy, size};
+            px_fill_shape(grid, hr.cx - size * 1.3f, hr.cy - size * 1.4f, hr.cx + size * 1.3f,
+                          hr.cy + size * 1.3f, heart_inside, &hr, color);
+            continue;
+        }
+        if (shape == PET_EYES_SPIRALS) {
+            const float rad = fmaxf(fminf(e->cur[EYE_W], e->cur[EYE_H]) * 0.5f * s, min_half);
+            const spiral_raster_t sr = {r.cx, r.cy, rad, fmaxf(grid.cell * 0.6f, 5.0f * s),
+                                        (float)e->t * 0.35f * (side > 0 ? 1.0f : -1.0f)};
+            px_fill_shape(grid, sr.cx - rad - 1, sr.cy - rad - 1, sr.cx + rad + 1, sr.cy + rad + 1,
+                          spiral_inside, &sr, color);
+            continue;
+        }
         if (stars) {
             /* Stars spin-free but still squash on blinks and bounce with the eyes. */
             const float outer = fmaxf(fminf(e->cur[EYE_W], e->cur[EYE_H]) * 0.62f * s
@@ -308,5 +362,15 @@ void pet_eyes_draw(const pet_eyes_t *e, app_eye_anchor_t a, px_grid_t grid, Colo
         r.r = clampf(e->cur[EYE_R] * s, 0.0f, fminf(r.hw, r.hh));
         px_fill_shape(grid, r.cx - r.hw - 1, r.cy - r.hh - 1, r.cx + r.hw + 1, r.cy + r.hh + 1,
                       eye_inside, &r, color);
+    }
+    if (headband) {
+        /* MARATHON: a red sweatband across the top of both eyes. */
+        const float top = a.cy + (e->cur[EYE_GY] + e->bounce - e->cur[EYE_H] * 0.5f - 26.0f) * s;
+        const float left = a.cx + (-EYE_SPACING - e->cur[EYE_W] * 0.6f + e->cur[EYE_GX]) * s;
+        const float right = a.cx + (EYE_SPACING + e->cur[EYE_W] * 0.6f + e->cur[EYE_GX]) * s;
+        const Color band = {232, 48, 56, 255}, stripe = {250, 250, 240, 255};
+        DrawRectangle((int)left, (int)top, (int)(right - left), (int)(16.0f * s + 2), band);
+        DrawRectangle((int)left, (int)(top + 6.0f * s), (int)(right - left), (int)(3.0f * s + 1), stripe);
+        DrawRectangle((int)right - 2, (int)(top + 4.0f * s), (int)(14.0f * s + 2), (int)(8.0f * s + 2), band);
     }
 }

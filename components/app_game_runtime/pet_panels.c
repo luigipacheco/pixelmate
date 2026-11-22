@@ -149,11 +149,38 @@ static void draw_arrow_glyph(int cx, int cy, char dir, Color c)
     }
 }
 
+/* Easter egg: tap the version line 7 times for an end-of-game credits roll. */
+static void draw_credits(const draw_ctx_t *d, int oy)
+{
+    static const char *const lines[] = {
+        "PIXELMATE", "", "STARRING", "BITSY", "", "DESIGN AND CODE", "LUIS PACHECO", "",
+        "PIXEL EYES", "BITSY", "", "ARCADE", "SLOTS STACK GRID", "BIT FLIP SAYS HI-LO", "",
+        "BUILT ON", "ESP-MOSAICO", "RAYLIB LITE ENGINE", "", "SPECIAL THANKS", "EVERY STEP YOU TOOK",
+        "", "WWW.LUIGIPACHECO.COM", "", "", "THANKS FOR WALKING!",
+    };
+    const int n = (int)(sizeof(lines) / sizeof(lines[0]));
+    const int scroll = (APP_CREDITS_TICKS - d->snap->credits_ticks) * 3 / 2;
+    for (int i = 0; i < n; ++i) {
+        const int y = oy + 470 + i * 34 - scroll;
+        if (y < oy + 64 || y > oy + 470 || !lines[i][0]) {
+            continue;
+        }
+        const bool title = i == 0 || i == n - 1;
+        const bool head = i > 0 && !lines[i - 1][0];
+        px_text_center(lines[i], 240, y, title ? 4 : 2, title ? d->accent : (head ? d->dim : d->color),
+                       title ? d->gap : false);
+    }
+}
+
 static void draw_about(const draw_ctx_t *d, int oy)
 {
     const app_game_snapshot_t *s = d->snap;
     char text[32];
     draw_header(d, oy, "ABOUT");
+    if (s->credits_ticks) {
+        draw_credits(d, oy);
+        return;
+    }
     px_text_center("PIXELMATE", 240, oy + 96, 6, d->color, d->gap);
     snprintf(text, sizeof(text), "MEET %s  V%s", APP_PET_NAME, APP_VERSION);
     px_text_center(text, 240, oy + 160, 3, d->accent, d->gap);
