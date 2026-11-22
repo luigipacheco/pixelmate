@@ -144,6 +144,7 @@ struct app_game {
     uint32_t idle_ticks, walk_ticks, snack_timer, happy_timer;
     app_mood_t reaction;
     uint16_t reaction_ticks, pet_cooldown;
+    uint8_t desk_pets;            /* Desk pet: pats toward the next spark (not saved). */
     app_mood_t mood;
 
     pedometer_t pedometer;
@@ -216,7 +217,7 @@ static void check_fed(app_game_handle_t g)
 
 static void credit_steps(app_game_handle_t g, uint32_t steps)
 {
-    if (!steps) {
+    if (!steps || g->config.desk) {   /* A desk pet is never walked. */
         return;
     }
     if ((g->anims_on & (1U << APP_ANIM_DANCE))
@@ -286,6 +287,7 @@ static void fresh_pet(app_game_handle_t g)
     g->walk_ticks = WALK_MOOD_TICKS;
     g->snack_timer = g->happy_timer = 0;
     g->reaction_ticks = g->pet_cooldown = 0;
+    g->desk_pets = 0;
     g->mood = APP_MOOD_IDLE;
     g->cards.view.best_streak = 0;
     cards_init(&g->cards, g->cards.rng);
@@ -403,6 +405,11 @@ static void tap_home(app_game_handle_t g, int32_t x, int32_t y)
     add_friendship(g, 1);
     react(g, APP_MOOD_HAPPY, REACT_PET_TICKS);
     g->events |= APP_EVENT_PETTED;
+    if (g->config.desk && ++g->desk_pets >= APP_DESK_PETS_PER_SPARK) {
+        g->desk_pets = 0;
+        ++g->sparks;
+        g->events |= APP_EVENT_SPARK;
+    }
     changed(g);
 }
 
@@ -1302,9 +1309,11 @@ void app_game_set_day(app_game_handle_t g, int32_t day)
     if (g->day > 0) {
         /* Settle the day that ended, then every day the pet went unwalked. */
         const int32_t missed = day - g->day - 1;
-        int hp = g->hp + (g->fed_today ? 1 : -1) - (missed > APP_HP_MAX ? APP_HP_MAX : missed);
-        hp = hp < 0 ? 0 : (hp > APP_HP_MAX ? APP_HP_MAX : hp);
-        g->hp = (uint8_t)hp;
+        if (!g->config.desk) {   /* A desk pet's health is paused: it cannot be walked. */
+            int hp = g->hp + (g->fed_today ? 1 : -1) - (missed > APP_HP_MAX ? APP_HP_MAX : missed);
+            hp = hp < 0 ? 0 : (hp > APP_HP_MAX ? APP_HP_MAX : hp);
+            g->hp = (uint8_t)hp;
+        }
         /* Skipped days are unfed and more recent, so they break the streak. */
         g->fed_streak = (g->fed_today && missed == 0) ? (uint16_t)(g->fed_streak + 1) : 0;
         /* History: yesterday first, then a zero for each skipped day. */
@@ -1656,7 +1665,7 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
     g->friendship = r->friendship > FRIENDSHIP_MAX ? FRIENDSHIP_MAX : r->friendship;
     g->snack = r->hunger > STAT_MAX ? STAT_MAX : r->hunger;
     g->hp = r->hp > APP_HP_MAX ? APP_HP_MAX : r->hp;
-    g->fainted = r->fainted && g->hp == 0;
+    g->fainted = r->fainted && g->hp == 0 && !g->config.desk;   /* Only walking revives. */
     g->fed_today = r->fed_today != 0;
     memcpy(g->history, r->history, sizeof(g->history));
     g->fed_streak = r->fed_streak;

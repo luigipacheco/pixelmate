@@ -48,3 +48,6 @@ __pycache__/
 Thumbs.db
 
 # Keep sdkconfig*.defaults, idf_component.yml and source assets versioned.
+
+# Stack-chan build (stackchan/): resolved dependency versions, like the root one
+/stackchan/dependencies.lock

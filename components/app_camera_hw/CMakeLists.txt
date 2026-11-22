@@ -1,3 +1,13 @@
+# The camera driver is written for the ESP-Mosaico's left-slot camera module
+# (hardware JPEG, slot EEPROM, shared pads). Other boards (the Stack-chan build)
+# get a stand-in that reports "no camera", which hides the photo booth.
+if(NOT IDF_TARGET STREQUAL "esp32s31")
+    idf_component_register(SRCS "app_camera_hw_none.c"
+        INCLUDE_DIRS "include"
+        REQUIRES app_photo)
+    return()
+endif()
+
 idf_component_register(SRCS "app_camera_hw.c"
     INCLUDE_DIRS "include"
     REQUIRES app_photo

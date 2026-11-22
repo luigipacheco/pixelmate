@@ -466,7 +466,12 @@ static int initialize(void *value, const char *asset_root)
 #if defined(RAYLIB_LITE_GAME_NATIVE)
     seed = esp_random();
 #endif
-    const app_game_config_t config = {GAME_WIDTH, GAME_HEIGHT, seed};
+#if defined(APP_DESK_PET)
+    const bool desk = true;    /* Set by the build for boards nobody walks with. */
+#else
+    const bool desk = false;
+#endif
+    const app_game_config_t config = {GAME_WIDTH, GAME_HEIGHT, seed, desk};
     if (app_game_create(&config, &state->game) != APP_GAME_OK) {
         return -1;
     }

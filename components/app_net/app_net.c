@@ -21,7 +21,9 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "mdns.h"
+#if defined(APP_NET_VIBE_SHARED)
 #include "mosaico_shared.h"
+#endif
 #include "nvs.h"
 
 static const char *TAG = "app_net";
@@ -178,6 +180,7 @@ static bool load_creds(creds_t *c, const char **source)
         }
         memset(c, 0, sizeof(*c));
     }
+#if defined(APP_NET_VIBE_SHARED)
     if (mosaico_shared_get("wifi_ssid", c->ssid, sizeof(c->ssid)) == ESP_OK && c->ssid[0]) {
         if (mosaico_shared_get("wifi_password", c->pass, sizeof(c->pass)) != ESP_OK) {
             c->pass[0] = '\0';
@@ -185,6 +188,7 @@ static bool load_creds(creds_t *c, const char **source)
         *source = "Vibe Mode";
         return true;
     }
+#endif
     memset(c, 0, sizeof(*c));
     return false;
 }

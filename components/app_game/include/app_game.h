@@ -526,7 +526,13 @@ typedef struct {
     uint16_t width;    /**< Viewport width in pixels, 1..65535. */
     uint16_t height;   /**< Viewport height in pixels, 1..65535. */
     uint32_t seed;     /**< Card shuffle seed; 0 selects a fixed default. */
+    bool desk;         /**< Desk pet (a board nobody walks with): steps are never
+                            credited, daily health is paused (no hearts lost, no
+                            fainting) and every APP_DESK_PETS_PER_SPARK pats on the
+                            face earn a spark. */
 } app_game_config_t;
+
+enum { APP_DESK_PETS_PER_SPARK = 3 };
 
 /** Create a caller-owned model with a fresh pet; clears *out_handle on failure. */
 app_game_err_t app_game_create(const app_game_config_t *config, app_game_handle_t *out_handle);
