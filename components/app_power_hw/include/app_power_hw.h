@@ -17,10 +17,26 @@ typedef struct {
     uint16_t time_to_empty_min;  /**< 0xFFFF while not discharging or unread. */
     uint16_t remaining_mah;      /**< RemainingCapacity; 0 if unread. */
     uint16_t full_mah;           /**< FullChargeCapacity; 0 if unread. */
+    uint16_t design_mah;         /**< DesignCapacity (80 once the profile is loaded); 0 if unread. */
 } app_battery_reading_t;
 
-/** Read the BQ27220 fuel gauge on the shared I2C bus (address 0x55). */
+/** Battery profile in the gauge (it lives in gauge RAM and is lost when the
+ *  gauge resets, e.g. after the battery ran flat). */
+typedef enum {
+    APP_GAUGE_PROFILE_UNCHECKED = 0,
+    APP_GAUGE_PROFILE_BUSY,      /**< Checking or loading; battery reads wait. */
+    APP_GAUGE_PROFILE_OK,        /**< Already loaded (by us or by Vibe Mode). */
+    APP_GAUGE_PROFILE_LOADED,    /**< Was missing; loaded at this boot. */
+    APP_GAUGE_PROFILE_FAILED,    /**< Could not load; readings use gauge defaults. */
+} app_gauge_profile_t;
+
+/** Read the BQ27220 fuel gauge on the shared I2C bus (address 0x55). The first
+ *  call starts a one-shot profile check; until it finishes this returns
+ *  ESP_ERR_NOT_FINISHED. */
 esp_err_t app_power_hw_battery(app_battery_reading_t *reading);
+
+/** Where the gauge's battery profile stands. */
+app_gauge_profile_t app_power_hw_profile(void);
 
 #ifdef __cplusplus
 }

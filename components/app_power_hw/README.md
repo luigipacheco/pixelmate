@@ -19,6 +19,18 @@ if (app_power_hw_battery(&battery) == ESP_OK) {
   with a 50 ms timeout, so poll it every few seconds.
 - The gauge device handle is kept for the app's lifetime. Call from the game
   loop task only.
+- **Battery profile.** The BQ27220 keeps its battery profile in RAM. When the
+  gauge resets (the battery ran flat, or a hard power-off), it falls back to
+  factory defaults that don't match the 80 mAh cell, and the percentage reads
+  wrong. Vibe Mode loads the profile at every boot through the BSP, which is
+  why "Vibe Mode and back" used to fix it. Now the first
+  `app_power_hw_battery()` call starts a one-shot task that reads
+  DesignCapacity (`0x3C`). If it isn't 80 mAh, the task loads the BSP's exact
+  profile through Espressif's `bq27220` driver (verify, CONFIG UPDATE write,
+  verify, seal). It's identical to Vibe Mode's, so the two firmwares never
+  rewrite each other's. Reads return `ESP_ERR_NOT_FINISHED` until the task is
+  done (a few seconds when it loads). `app_power_hw_profile()` and
+  `/api/stats` (`gauge_profile`, `power_design_mah`) show the outcome.
 
 **Why there is no screen control here:** an earlier version switched the
 CO5300 panel off and changed its brightness from the game loop. Those panel
