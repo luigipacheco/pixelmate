@@ -25,15 +25,16 @@ All commands run from the workspace root
       9 covers (cover + screens 01-08), About as a resource (it is shown in
       the README), license Apache-2.0 (LICENSE and NOTICE are in the repo),
       zh-CN and en device presentations.
-- [x] **Firmware bundle** from main a8c96eb (includes the sturdier
-      Interaction module detection and the MODULE LIGHTS setting):
-      `build/pixel_pal-system-update.irisfw`, 1,314,222 bytes, SHA-256
-      `55703ec127db2b579eadc98c87f233d7f704e87a816b25323c68c8bce1dd559d`,
+- [x] **Firmware bundle** from main (includes the sturdier Interaction
+      module detection, the MODULE LIGHTS setting and the battery gauge
+      profile fix):
+      `build/pixel_pal-system-update.irisfw`, 1,322,446 bytes, SHA-256
+      `25e3ce0cc0b074fa636e0a1acabec085718694c5684a169134c70c0a47a18ea6`,
       `project_version` **1.0.0**. No compiler warnings (CMake
       component-validation warnings only). Not installed on the board.
-- [x] **Upload ZIP** `build/pixelmate-v1.0.0-ideas.zip`, 1,539,569 bytes,
+- [x] **Upload ZIP** `build/pixelmate-v1.0.0-ideas.zip`, 1,548,068 bytes,
       22 files, SHA-256
-      `55ef2f7a8f6d4b061db3fa6efd4a3231995fd1613ab761afbb38d44609170702`.
+      `df6b10c921a9a66ee6477fd4303e21b08ec4adb6a16c668e91d95f5bea189668`.
       `project validate` on the host says `valid`, version 1.0.0.
 
 ## Before uploading
