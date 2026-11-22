@@ -47,7 +47,7 @@ enum {
 
 static const uint16_t s_sleep_s[APP_SLEEP_OPTIONS] = {15, 30, 60, 120};
 static const uint8_t s_bright_pct[APP_BRIGHT_OPTIONS] = {100, 80, 60};
-enum { DEFAULT_SLEEP_IDX = 1, DEFAULT_BRIGHT_IDX = 0, SETTINGS_PAGES = 2, RESET_ROW = 6 };
+enum { DEFAULT_SLEEP_IDX = 1, DEFAULT_BRIGHT_IDX = 0, SETTINGS_PAGES = 2, RESET_ROW = 7 };
 /* Volume order when tapping SOUND: off, low, mid, high. */
 static const app_sound_t s_sound_cycle[APP_SOUND_COUNT] = {
     APP_SOUND_OFF, APP_SOUND_LOW, APP_SOUND_MID, APP_SOUND_HIGH,
@@ -101,7 +101,7 @@ static const app_store_item_t s_store[] = {
 #define FREE_FILTERS APP_OWN_FILTER_BIT(APP_FILTER_NONE)
 #define FREE_LENSES APP_OWN_LENS_BIT(APP_PHOTO_RES_LOW)
 #define DANCE_EVERY_STEPS 100U
-_Static_assert(sizeof(app_game_record_t) == 80, "bump SAVE_VERSION and migrate when the record changes");
+_Static_assert(sizeof(app_game_record_t) == 84, "bump SAVE_VERSION and migrate when the record changes");
 
 struct app_game {
     app_game_config_t config;
@@ -116,6 +116,8 @@ struct app_game {
     uint8_t store_page;
     uint8_t settings_page;
     uint8_t sleep_idx, bright_idx;     /* Indexes into s_sleep_s / s_bright_pct. */
+    bool tap_steps;                    /* TAP STEPS setting. */
+    uint16_t tap_steps_today;          /* Tap steps credited today. */
     bool reset_armed;                  /* Finger went down on RESET PET. */
     uint16_t reset_hold_ticks;
     uint32_t owned;
@@ -365,8 +367,10 @@ static void reset_pet_keep_settings(app_game_handle_t g)
 {
     const app_sound_t sound = g->sound;
     const uint8_t sleep_idx = g->sleep_idx, bright_idx = g->bright_idx;
+    const bool tap_steps = g->tap_steps;
     const uint32_t goal = g->step_goal;
     fresh_pet(g);
+    g->tap_steps = tap_steps;
     g->sound = sound;
     g->sleep_idx = sleep_idx;
     g->bright_idx = bright_idx;
@@ -421,6 +425,11 @@ static void tap_home(app_game_handle_t g, int32_t x, int32_t y)
     add_friendship(g, 1);
     react(g, APP_MOOD_HAPPY, REACT_PET_TICKS);
     g->events |= APP_EVENT_PETTED;
+    /* TAP STEPS (Settings): each pat also counts as a step, up to a daily cap. */
+    if (g->tap_steps && g->tap_steps_today < APP_TAP_STEPS_MAX) {
+        ++g->tap_steps_today;
+        credit_steps(g, 1);
+    }
     changed(g);
 }
 
@@ -849,7 +858,8 @@ static void tap_settings(app_game_handle_t g, int32_t x, int32_t y)
         case 2: open_wifi(g); return;
         case 3: g->sleep_idx = (uint8_t)((g->sleep_idx + 1) % APP_SLEEP_OPTIONS); break;
         case 4: g->bright_idx = (uint8_t)((g->bright_idx + 1) % APP_BRIGHT_OPTIONS); break;
-        case 5: set_overlay(g, APP_OVERLAY_ABOUT); return;
+        case 5: g->tap_steps = !g->tap_steps; break;
+        case 6: set_overlay(g, APP_OVERLAY_ABOUT); return;
         default: return;   /* RESET needs a hold. */
         }
         g->events |= APP_EVENT_SETTINGS;
@@ -1460,6 +1470,7 @@ void app_game_set_day(app_game_handle_t g, int32_t day)
     }
     if (g->day > 0) {
         g->steps_today = 0;
+        g->tap_steps_today = 0;
         g->goal_awarded = false;
         g->fed_today = false;
     }
@@ -1678,6 +1689,8 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .settings_page = g->settings_page,
         .sleep_s = s_sleep_s[g->sleep_idx < APP_SLEEP_OPTIONS ? g->sleep_idx : DEFAULT_SLEEP_IDX],
         .brightness_pct = s_bright_pct[g->bright_idx < APP_BRIGHT_OPTIONS ? g->bright_idx : DEFAULT_BRIGHT_IDX],
+        .tap_steps = g->tap_steps,
+        .tap_steps_today = g->tap_steps_today,
         .reset_hold = (uint8_t)(g->reset_hold_ticks * 100U / (APP_RESET_HOLD_S * TICKS_PER_SECOND)),
         .steps_total = g->steps_total,
         .steps_today = g->steps_today,
@@ -1800,6 +1813,7 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->stack_best = g->stack.view.best;
     r->sleep_code = g->sleep_idx == DEFAULT_SLEEP_IDX ? 0 : (uint8_t)(g->sleep_idx + 1);
     r->bright_code = g->bright_idx == DEFAULT_BRIGHT_IDX ? 0 : (uint8_t)(g->bright_idx + 1);
+    r->flags = g->tap_steps ? APP_RECORD_FLAG_TAP_STEPS : 0U;
     r->goal_k = (uint8_t)(g->step_goal / 1000U);
     r->filters_owned = (uint8_t)(g->filters_owned & 0xFFU);
     r->filters_owned_hi = (uint8_t)(g->filters_owned >> 8);
@@ -1844,6 +1858,7 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
                    ? (uint8_t)(r->sleep_code - 1) : DEFAULT_SLEEP_IDX;
     g->bright_idx = r->bright_code && r->bright_code <= APP_BRIGHT_OPTIONS
                     ? (uint8_t)(r->bright_code - 1) : DEFAULT_BRIGHT_IDX;
+    g->tap_steps = (r->flags & APP_RECORD_FLAG_TAP_STEPS) != 0;
     g->filters_owned = (uint16_t)(r->filters_owned | ((uint16_t)r->filters_owned_hi << 8) | FREE_FILTERS);
     g->filters_owned &= (uint16_t)((1U << APP_FILTER_COUNT) - 1U);
     grid_set_level(&g->grid, r->grid_level);

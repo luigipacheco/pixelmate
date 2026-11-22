@@ -60,7 +60,7 @@ static void pocket_log_init(void)
 
 enum {
     /* v1 builds could store an all-zero pet (ignored); v2..v5 migrate by prefix. */
-    SAVE_VERSION = 7,
+    SAVE_VERSION = 8,
     SAVE_SOON_MS = 2000,          /* After spending, settings or a goal. */
     SAVE_LATER_MS = 30000,        /* After step/stat drift; limits flash wear. */
     SENSOR_POLL_TICKS = GAME_TICK_HZ,          /* 1 s */
@@ -171,7 +171,8 @@ static raylib_lite_result_t migrate_save(uint16_t old_version, const void *old_d
     const bool v4 = old_version == 4 && old_size == APP_GAME_RECORD_V4_SIZE;
     const bool v5 = old_version == 5 && old_size == APP_GAME_RECORD_V5_SIZE;
     const bool v6 = old_version == 6 && old_size == APP_GAME_RECORD_V6_SIZE;
-    if ((!v2 && !v3 && !v4 && !v5 && !v6) || new_size != sizeof(app_game_record_t)) {
+    const bool v7 = old_version == 7 && old_size == APP_GAME_RECORD_V7_SIZE;
+    if ((!v2 && !v3 && !v4 && !v5 && !v6 && !v7) || new_size != sizeof(app_game_record_t)) {
         return RAYLIB_LITE_INVALID_VERSION;
     }
     app_game_record_t *record = new_data;

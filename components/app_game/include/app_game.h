@@ -98,7 +98,8 @@ typedef enum {
 enum {
     APP_SLEEP_OPTIONS = 4,       /**< Screen sleep: 15 s, 30 s (default), 60 s, 120 s. */
     APP_BRIGHT_OPTIONS = 3,      /**< Drawn brightness: 100 % (default), 80 %, 60 %. */
-    APP_SETTINGS_ROWS = 7,
+    APP_SETTINGS_ROWS = 8,
+    APP_TAP_STEPS_MAX = 1000,    /**< TAP STEPS: at most this many tap steps a day. */
     APP_RESET_HOLD_S = 3,        /**< Hold RESET PET this long to start over. */
 };
 
@@ -527,6 +528,8 @@ typedef struct {
     uint8_t settings_page;      /**< 0..1. */
     uint16_t sleep_s;           /**< Seconds without a touch before the screen sleeps. */
     uint8_t brightness_pct;     /**< Drawn brightness when awake, 60..100. */
+    bool tap_steps;             /**< TAP STEPS: tapping the pet counts as a step. */
+    uint16_t tap_steps_today;   /**< Tap steps credited today (capped). */
     uint8_t reset_hold;         /**< 0..100 progress of holding RESET PET. */
     uint32_t steps_total;
     uint32_t steps_today;
@@ -562,7 +565,7 @@ typedef struct {
     uint32_t save_seq;          /**< Increments whenever persistent data changes. */
 } app_game_snapshot_t;
 
-/** Persistent record: plain data, 80 bytes. Bump the save version on layout change;
+/** Persistent record: plain data, 84 bytes. Bump the save version on layout change;
  * fields are only ever appended so older records can be migrated by prefix. */
 typedef struct {
     uint32_t steps_total;
@@ -603,7 +606,12 @@ typedef struct {
     uint8_t grid_level;         /**< Spark Grid level 1..APP_GRID_LEVELS; 0 = 1. */
     uint8_t says_best;          /**< Bitsy Says best rounds (was reserved, 0). */
     uint8_t stack_best;         /**< Spark Stack best rows (was reserved, 0). */
+    /* v8 */
+    uint8_t flags;              /**< APP_RECORD_FLAG_*. */
+    uint8_t reserved5[3];
 } app_game_record_t;
+
+#define APP_RECORD_FLAG_TAP_STEPS 0x01U   /* Tapping the pet counts as a step. */
 
 /** Sizes of older records (prefixes of the current one), for save migration. */
 #define APP_GAME_RECORD_V2_SIZE 32U
@@ -611,6 +619,7 @@ typedef struct {
 #define APP_GAME_RECORD_V4_SIZE 68U
 #define APP_GAME_RECORD_V5_SIZE 72U
 #define APP_GAME_RECORD_V6_SIZE 76U
+#define APP_GAME_RECORD_V7_SIZE 80U
 #define APP_RECORD_LENS_COLOR 0x80U   /* app_game_record_t.lens: color film selected. */
 
 typedef struct {

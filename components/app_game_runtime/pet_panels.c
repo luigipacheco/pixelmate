@@ -484,7 +484,7 @@ static void ip_text(uint32_t ipv4, char *out, size_t cap)
 static void draw_setting_row(const draw_ctx_t *d, int row, int index, int oy)
 {
     static const char *const names[APP_SETTINGS_ROWS] = {
-        "SOUND", "DAILY GOAL", "WI-FI", "SCREEN SLEEP", "BRIGHTNESS", "ABOUT", "RESET PET",
+        "SOUND", "DAILY GOAL", "WI-FI", "SCREEN SLEEP", "BRIGHTNESS", "TAP STEPS", "ABOUT", "RESET PET",
     };
     const app_game_snapshot_t *s = d->snap;
     const app_rect_t r = app_settings_row_rect(row);
@@ -523,6 +523,14 @@ static void draw_setting_row(const draw_ctx_t *d, int row, int index, int oy)
         snprintf(hint, sizeof(hint), "HOW BRIGHT THE PET GLOWS");
         break;
     case 5:
+        snprintf(value, sizeof(value), "%s", s->tap_steps ? "ON" : "OFF");
+        if (s->tap_steps) {
+            snprintf(hint, sizeof(hint), "PATS COUNT AS STEPS %u/%d", s->tap_steps_today, APP_TAP_STEPS_MAX);
+        } else {
+            snprintf(hint, sizeof(hint), "PAT BITSY TO COUNT STEPS");
+        }
+        break;
+    case 6:
         snprintf(value, sizeof(value), "V%s", APP_VERSION);
         snprintf(hint, sizeof(hint), "BY %s - TAP FOR MORE", APP_AUTHOR);
         break;
