@@ -16,11 +16,20 @@
 extern "C" {
 #endif
 
+/* Extra steps around the sleep, one bit each, to find the one that stops a wake. */
+enum {
+    APP_SLEEP_STEP_PANEL = 1,        /* Display Off + Sleep In + Deep Standby, CS floated. */
+    APP_SLEEP_STEP_HOLD_RAIL = 2,    /* Hold GPIO60 (and the v1.0 codec rail). */
+    APP_SLEEP_STEP_HOLD_SWITCH = 4,  /* Hold GPIO57, the shutdown line. */
+    APP_SLEEP_STEP_CAPTURE = 8,      /* Read the step counter at wake, before the board init. */
+};
+
 typedef struct {
     uint32_t seconds;         /* Timer wake after this long. */
     bool rail_off;            /* Cut the switched 3.3 V rail (display, codec, ...). */
     bool touch_wake;          /* Also wake on the touch interrupt (rail on only). */
     bool plain;               /* Timer only: no panel standby, no pin holds, no rail. */
+    uint8_t mask;             /* APP_SLEEP_STEP_* bits to run (plain: 0). */
     uint32_t steps;           /* Hardware step counter just before sleeping. */
     uint16_t remaining_mah;   /* Fuel gauge just before sleeping. */
     uint16_t voltage_mv;
@@ -42,6 +51,8 @@ typedef struct {
     uint16_t alive_rail_off;  /* Bit i set: app_sleep_probe_addrs[i] answered right after the rail was cut. */
     uint16_t mah_before, mv_before;
     bool plain;
+    uint8_t mask;
+    uint8_t pin57, pin60;     /* Levels just before sleeping. */
     bool from_crumb;          /* RTC record lost (power cycle): rebuilt from the flash breadcrumb. */
 } app_sleep_report_t;
 

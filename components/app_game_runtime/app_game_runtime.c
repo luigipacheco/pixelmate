@@ -357,6 +357,7 @@ static void poll_sleep_test(host_state_t *state)
         .rail_off = state->sleep_test.rail_off,
         .touch_wake = state->sleep_test.touch_wake,
         .plain = state->sleep_test.plain,
+        .mask = state->sleep_test.mask,
         .remaining_mah = state->battery_ok ? state->battery.remaining_mah : 0,
         .voltage_mv = state->battery_ok ? state->battery.voltage_mv : 0,
     };
@@ -393,12 +394,12 @@ static void publish_sleep_report(host_state_t *state)
     char json[600];
     const int n = snprintf(json, sizeof(json),
                            "{\"valid\":1,\"woke\":%d,\"reset_reason\":%u,\"wake_causes\":%lu,\"rail\":\"%s\","
-                           "\"touch_wake\":%d,\"plain\":%d,\"from_crumb\":%d,\"board\":\"%s\",\"asked_s\":%lu,\"slept_s\":%lu,"
+                           "\"touch_wake\":%d,\"plain\":%d,\"mask\":%u,\"pins_57_60\":[%u,%u],\"from_crumb\":%d,\"board\":\"%s\",\"asked_s\":%lu,\"slept_s\":%lu,"
                            "\"steps_before\":%lu,\"steps_at_wake\":%ld,\"imu_answered_rail_off\":%d,"
                            "\"imu_chip_id\":%u,\"imu_status\":%u,\"alive_rail_off\":[%s],"
                            "\"mah_before\":%u,\"mah_after\":%u,\"mv_before\":%u,\"mv_after\":%u}",
                            r.woke, r.reset_reason, (unsigned long)r.wake_causes, r.rail_off ? "off" : "on",
-                           r.touch_wake, r.plain, r.from_crumb, r.v1_0 ? "v1.0" : "v1.1+", (unsigned long)r.asked_s,
+                           r.touch_wake, r.plain, r.mask, r.pin57, r.pin60, r.from_crumb, r.v1_0 ? "v1.0" : "v1.1+", (unsigned long)r.asked_s,
                            (unsigned long)r.slept_s, (unsigned long)r.steps_before, (long)r.steps_at_wake,
                            r.imu_answered_rail_off, r.imu_chip_id, r.imu_status, alive, r.mah_before,
                            state->battery.remaining_mah, r.mv_before, state->battery.voltage_mv);

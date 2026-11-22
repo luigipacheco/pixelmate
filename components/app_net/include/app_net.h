@@ -80,7 +80,8 @@ typedef struct {
     bool rail_off;        /**< rail=0: cut the switched 3.3 V rail. */
     bool touch_wake;      /**< touch=1: also wake on a touch (rail on only). */
     bool imu_low_power;   /**< lp=1: gyroscope off, accelerometer low power. */
-    bool plain;           /**< plain=1: timer wake only; no panel standby, pin holds or rail. */
+    bool plain;           /**< plain=1: timer wake only (same as mask=0). */
+    uint8_t mask;         /**< mask=: 1 panel standby, 2 hold rail pin, 4 hold shutdown pin, 8 wake capture (default 15). */
 } app_net_sleep_test_t;
 
 /** Take a pending sleep test. Returns true once per request. */

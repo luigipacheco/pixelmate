@@ -54,7 +54,8 @@ const int app_sleep_probe_count = sizeof(app_sleep_probe_addrs) / sizeof(app_sle
 typedef struct {
     uint32_t magic;                    /* CRUMB_MAGIC while a sleep is outstanding. */
     uint32_t seconds;
-    uint8_t plain, rail_off, touch_wake, reserved;
+    uint8_t plain, rail_off, touch_wake, mask;
+    uint8_t pin57, pin60, reserved[2];
     int64_t slept_at_s;
 } sleep_crumb_t;
 #define CRUMB_MAGIC 0x43524D31U         /* "CRM1". */
@@ -89,11 +90,12 @@ static int64_t wall_seconds(void)
 
 /* ---- Flash breadcrumb ------------------------------------------------------ */
 
-static void write_crumb(const app_sleep_request_t *request, bool plain, bool touch_wake)
+static void write_crumb(const app_sleep_request_t *request, uint8_t mask, bool touch_wake)
 {
     const sleep_crumb_t crumb = {
-        .magic = CRUMB_MAGIC, .seconds = request->seconds, .plain = plain,
-        .rail_off = request->rail_off && !plain, .touch_wake = touch_wake, .slept_at_s = wall_seconds(),
+        .magic = CRUMB_MAGIC, .seconds = request->seconds, .plain = mask == 0, .mask = mask,
+        .rail_off = request->rail_off, .touch_wake = touch_wake, .slept_at_s = wall_seconds(),
+        .pin57 = (uint8_t)gpio_get_level(POWER_SWITCH_GPIO), .pin60 = (uint8_t)gpio_get_level(RAIL_GPIO),
     };
     nvs_handle_t nvs;
     if (nvs_open(CRUMB_NS, NVS_READWRITE, &nvs) == ESP_OK) {
@@ -175,30 +177,16 @@ esp_err_t app_sleep_hw_enter(const app_sleep_request_t *request)
         return ESP_ERR_INVALID_ARG;
     }
     const bool v1_0 = board_is_v1_0();
-    const bool plain = request->plain;
-    const bool touch_wake = request->touch_wake && !request->rail_off && !plain;
-    ESP_LOGI(TAG, "deep sleep for %lu s, %s, rail %s, touch wake %s, board %s", (unsigned long)request->seconds,
-             plain ? "plain" : "full", request->rail_off && !plain ? "off" : "on", touch_wake ? "on" : "off",
+    const uint8_t mask = request->plain ? 0 : request->mask;
+    const bool touch_wake = request->touch_wake && !request->rail_off;
+    ESP_LOGI(TAG, "deep sleep for %lu s, steps 0x%x, rail %s, touch wake %s, board %s",
+             (unsigned long)request->seconds, mask, request->rail_off ? "off" : "on", touch_wake ? "on" : "off",
              v1_0 ? "v1.0" : "v1.1+");
     vTaskDelay(pdMS_TO_TICKS(DRAIN_MS));
-    write_crumb(request, plain, touch_wake);
-    if (plain) {
-        /* Nothing but the timer: tells us whether the chip sleeps and wakes
-         * at all with this app, before any of the extra steps. */
-        esp_err_t err = esp_sleep_enable_timer_wakeup((uint64_t)request->seconds * 1000000ULL);
-        if (err != ESP_OK) {
-            clear_crumb();
-            return err;
-        }
-        memset(&s_record, 0, sizeof(s_record));
-        s_record.request = *request;
-        s_record.slept_at_s = wall_seconds();
-        s_record.v1_0 = v1_0;
-        s_record.magic = RECORD_ARMED_PLAIN;
-        esp_deep_sleep_start();
-        return ESP_FAIL;   /* Not reached. */
+    write_crumb(request, mask, touch_wake);
+    if (mask & APP_SLEEP_STEP_PANEL) {
+        panel_standby();
     }
-    panel_standby();
 
     uint16_t alive = 0;
     if (request->rail_off) {
@@ -229,11 +217,15 @@ esp_err_t app_sleep_hw_enter(const app_sleep_request_t *request)
         return err;
     }
     /* Keep the power pins where they are while the chip sleeps. */
-    gpio_hold_en(RAIL_GPIO);
-    if (v1_0) {
-        gpio_hold_en(CODEC_RAIL_GPIO);
+    if (mask & APP_SLEEP_STEP_HOLD_RAIL) {
+        gpio_hold_en(RAIL_GPIO);
+        if (v1_0) {
+            gpio_hold_en(CODEC_RAIL_GPIO);
+        }
     }
-    gpio_hold_en(POWER_SWITCH_GPIO);
+    if (mask & APP_SLEEP_STEP_HOLD_SWITCH) {
+        gpio_hold_en(POWER_SWITCH_GPIO);
+    }
 
     memset(&s_record, 0, sizeof(s_record));
     s_record.request = *request;
@@ -241,7 +233,8 @@ esp_err_t app_sleep_hw_enter(const app_sleep_request_t *request)
     s_record.slept_at_s = wall_seconds();
     s_record.alive_rail_off = alive;
     s_record.v1_0 = v1_0;
-    s_record.magic = RECORD_ARMED;
+    s_record.request.mask = mask;
+    s_record.magic = (mask & APP_SLEEP_STEP_CAPTURE) ? RECORD_ARMED : RECORD_ARMED_PLAIN;
     esp_deep_sleep_start();
     return ESP_FAIL;   /* Not reached. */
 }
@@ -384,7 +377,8 @@ ESP_SYSTEM_INIT_FN(app_sleep_capture, SECONDARY, BIT(0), 250)
         .alive_rail_off = armed.alive_rail_off,
         .mah_before = armed.request.remaining_mah,
         .mv_before = armed.request.voltage_mv,
-        .plain = plain,
+        .plain = armed.request.mask == 0,
+        .mask = armed.request.mask,
     };
     report.woke = report.reset_reason == ESP_RST_DEEPSLEEP;
     if (report.woke && plain) {
@@ -432,12 +426,14 @@ bool app_sleep_hw_report(app_sleep_report_t *out)
     /* The RTC record is gone (power cycle, or a reset that cleared RTC
      * memory): the sleep was started and never came back as a wake. */
     const app_sleep_report_t report = {
-        .valid = true, .woke = false, .from_crumb = true, .plain = crumb.plain != 0,
+        .valid = true, .woke = false, .from_crumb = true, .plain = crumb.plain != 0, .mask = crumb.mask,
+        .pin57 = crumb.pin57, .pin60 = crumb.pin60,
         .rail_off = crumb.rail_off != 0, .touch_wake = crumb.touch_wake != 0,
         .reset_reason = (uint8_t)esp_reset_reason(), .asked_s = crumb.seconds, .steps_at_wake = -1,
     };
-    ESP_LOGW(TAG, "breadcrumb: a %s sleep of %lu s never woke; this boot's reset reason %u",
-             report.plain ? "plain" : "full", (unsigned long)crumb.seconds, report.reset_reason);
+    ESP_LOGW(TAG, "breadcrumb: a sleep (steps 0x%x) of %lu s never woke; pins 57/60 were %u/%u; "
+             "this boot's reset reason %u", crumb.mask, (unsigned long)crumb.seconds, crumb.pin57, crumb.pin60,
+             report.reset_reason);
     if (out) {
         *out = report;
     }
