@@ -16,6 +16,7 @@
 #if defined(RAYLIB_LITE_GAME_NATIVE)
 #include <stdlib.h>
 #include <time.h>
+#include "app_neck_hw.h"
 #include "app_net.h"
 #include "app_pedometer_hw.h"
 #include "app_power_hw.h"
@@ -27,6 +28,7 @@
 #include "esp_timer.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "private/pet_head.h"
 #include "raylib_lite_clock.h"
 #include "raylib_lite_save.h"
 
@@ -97,6 +99,7 @@ typedef struct {
     char stats_json[STATS_JSON_MAX];   /* Instance-owned buffer for /api/stats. */
     uint32_t pocket_ticks;        /* Ticks the screen has been dark (pocket mode countdown). */
     bool pocket_radio_off;        /* Pocket mode suspended Wi-Fi. */
+    pet_head_t head;              /* Head pose for boards with a neck (StackChan). */
 #endif
 } host_state_t;
 
@@ -491,6 +494,8 @@ static int initialize(void *value, const char *asset_root)
     state->logged_power = -1;
     load_save(state);
     load_timezone();
+    pet_head_init(&state->head, seed);
+    app_neck_hw_start();          /* Does nothing on boards without a neck. */
 #else
     app_game_set_battery(state->game, HOST_BATTERY_PCT, false);
     app_game_set_network(state->game, APP_NET_NO_CONFIG, 0);   /* First run: nothing saved. */
@@ -685,6 +690,10 @@ static void update(void *value)
     }
     maybe_save(state, events);
     app_sfx_update(events, &snapshot);
+    /* Neck: asleep the head goes home and the servos let go. */
+    pet_head_update(&state->head, &snapshot, events, NULL);
+    app_neck_hw_aim(state->head.pan, state->head.tilt);
+    app_neck_hw_rest(snapshot.power == APP_POWER_DOZE);
     pocket_maybe_sleep(state, &snapshot);
 #endif
 }
