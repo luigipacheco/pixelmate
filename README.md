@@ -36,7 +36,10 @@ the `pixel_pal` name so existing pets carry over.)
   number and a shorter timer. 5 sparks a run, 1 spark per hit (up to 30).
 - **Spark Grid (unlockable cabinet, 200 sparks):** a 5x5 logic flip puzzle.
   Tiles hide x1/x2/x3 or a dud; row/column hints show totals and dud counts.
-  10 sparks a round, each flip multiplies the score, CASH banks it.
+  10 sparks a round, each flip multiplies the score, CASH banks it. Levels
+  1-5 like the original: clear a board to climb (level 5 boards pay up to
+  576), a dud or CASH drops you to the number of tiles you flipped. Long-press
+  a hidden tile to cycle a memo (X guards it from taps, or a note 1/2/3).
 - **Low-energy mode:** after 20 s without a touch the pet dozes off and the
   screen dims; at 30 s the screen turns off (12 s on low battery). SLEEP in
   the menu does it at once. Steps keep counting; tap the screen to wake.

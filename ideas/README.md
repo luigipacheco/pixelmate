@@ -22,7 +22,7 @@ Made by **Luis Pacheco**: [www.luigipacheco.com](https://www.luigipacheco.com)
 | ![Arcade](screens/04_arcade.png) | **Arcade** of pixel cabinets, unlocked in order: Spark Slots, Spark Grid, Bit Flip and HI-LO. Each costs a few sparks a play. |
 | ![Bit Flip](screens/05_bitflip.png) | **Bit Flip**: set eight switches to the target number in binary before the timer runs out. |
 | ![HI-LO](screens/06_hilo.png) | **HI-LO**: double or nothing. Guess whether the next card is higher or lower, and cash out before you lose it all. |
-| ![Photo booth](screens/07_booth_color.png) | **Photo booth** (needs the camera module): low-res photos and GIFs with retro looks (dither, scanlines, game-green, thermal, ASCII, halftone, stickers) and **COLOR FILM**. Plug the camera in or out at any time. |
+| ![Photo booth](screens/07_booth_color.png) | **Photo booth** (needs the camera module): low-res photos and GIFs with retro looks (dither, scanlines, game-green, thermal, ASCII, halftone, stickers, edges, pop, mirror, CRT) and **COLOR FILM**. Plug the camera in or out at any time. |
 | ![Webcam](screens/08_webcam.png) | **Wi-Fi webcam**: tap ON AIR and watch Bitsy's camera in a browser, or bring it into Zoom/Meet through OBS's virtual camera. |
 | ![About](screens/09_about.png) | **Settings**: volume, daily goal, Wi-Fi, screen sleep, brightness, about and reset. |
 
