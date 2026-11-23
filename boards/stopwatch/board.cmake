@@ -3,7 +3,7 @@
 # which the board adapter opens.
 pixelmate_name("M5 STOPWATCH")
 pixelmate_setting(I2C_PORT 1)
-pixelmate_setting(SLEEP_BUTTON_GPIO 2)   # KEYA (yellow), active low.
+pixelmate_setting(SLEEP_BUTTON_GPIO 2)   # KEYA (yellow), active low: sleep, wake, pocket wake.
 pixelmate_part(CAMERA none)
 pixelmate_part(INTERACT none)
 pixelmate_part(NECK none)
@@ -12,5 +12,6 @@ pixelmate_part(PEDOMETER bmi270)
 pixelmate_part(POWER m5pm1)
 pixelmate_part(RTC rx8130)
 pixelmate_part(SENSORS none)
-pixelmate_part(SLEEP none)
+pixelmate_part(SLEEP m5stopwatch)
 pixelmate_feature(ROUND_SCREEN)
+pixelmate_feature(POCKET_MODE)   # On battery: deep sleep, steps still counted.

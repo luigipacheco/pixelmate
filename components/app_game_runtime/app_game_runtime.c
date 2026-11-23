@@ -679,7 +679,12 @@ static int initialize(void *value, const char *asset_root)
         ++s_pocket_log.timer_wakes;   /* Deep-sleep wakes (touch or backstop timer). */
         app_game_add_sensor_delta(state->game, slept_steps);
         ESP_LOGI(TAG, "pocket: woke from deep sleep, %lu steps counted while asleep", (unsigned long)slept_steps);
-        state->pocket_grace = POCKET_GRACE_TICKS;
+        /* A wake by the sleep button is on purpose; a touch or the backstop
+         * timer may not be, so those go back to sleep unless touched. */
+        app_sleep_report_t wake = {0};
+        const bool by_button = app_sleep_hw_report(&wake) && !wake.touch_wake
+                               && (wake.wake_causes & BIT(ESP_SLEEP_WAKEUP_EXT1));
+        state->pocket_grace = by_button ? 0 : POCKET_GRACE_TICKS;
     }
     load_timezone();
     if (time(NULL) < VALID_EPOCH && app_rtc_hw_load() == ESP_OK) {
@@ -822,7 +827,11 @@ enum {
     POCKET_SOON_TICKS = 30,            /* After the AI button: pocket mode in 1 s. */
     POCKET_BACKSTOP_S = 12 * 60 * 60,  /* Deep sleep backstop wake (a tap wakes it sooner). */
 };
+#if defined(PIXELMATE_SLEEP_BUTTON_GPIO)
+#define POCKET_BUTTON_GPIO ((gpio_num_t)PIXELMATE_SLEEP_BUTTON_GPIO)   /* The board's sleep button. */
+#else
 #define POCKET_BUTTON_GPIO GPIO_NUM_7  /* AI button, active low: the only wake key. */
+#endif
 
 #if defined(APP_POCKET_MODE)
 

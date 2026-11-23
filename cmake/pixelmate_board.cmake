@@ -27,7 +27,7 @@ get_filename_component(PIXELMATE_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 #   POWER      bq27220 | ina226 | m5pm1 | none
 #   RTC        bm8563 | rx8130 | none   (rx8130: on port I2C_PORT)
 #   SENSORS    bmm150_mosaico | none   (magnetometers for the TOOLS page)
-#   SLEEP      mosaico | none          (deep-sleep pocket mode)
+#   SLEEP      mosaico | m5stopwatch | none   (deep-sleep pocket mode)
 set(PIXELMATE_PART_KINDS CAMERA INTERACT NECK NET PEDOMETER POWER RTC SENSORS SLEEP)
 
 # Features: DESK_PET (nobody walks with it: pats earn sparks, no step UI),
