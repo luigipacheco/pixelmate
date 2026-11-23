@@ -1,0 +1,10 @@
+version: "0.1.0"
+description: M5Stack StopWatch adapter for PixelMate on Raylib Lite Engine
+license: Apache-2.0
+
+dependencies:
+  idf: ">=6.1"
+  espressif/esp_display_present: "==1.0.2"
+  espressif2022/raylib-lite-engine: "^0.1.0"
+  # Same CO5300 driver as the ESP-Mosaico BSP.
+  espressif/esp_lcd_co5300: "^2.2"

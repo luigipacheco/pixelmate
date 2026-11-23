@@ -8,6 +8,7 @@ needs that the others don't lives in its folder here; the game itself
 | --- | --- | --- | --- |
 | `mosaico` | ESP32-S31 | the repo root (links ESP-Iris, Vibe Mode, Recovery) | walking pet |
 | `stackchan` | ESP32-S3 (M5Stack CoreS3) | `boards/stackchan` | desk pet with a neck |
+| `stopwatch` | ESP32-S3R8 (M5Stack StopWatch) | `boards/stopwatch` | first milestone: picture and touch (see its README) |
 
 ## How a board says what it has
 

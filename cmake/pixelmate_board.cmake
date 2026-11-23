@@ -24,7 +24,7 @@ get_filename_component(PIXELMATE_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 #   NECK       scs0009 | none          (pan/tilt servos)
 #   NET        vibe | plain            (vibe: Wi-Fi shared with Mosaico Vibe Mode)
 #   PEDOMETER  bmi270_mosaico | none
-#   POWER      bq27220 | ina226 | none
+#   POWER      bq27220 | ina226 | m5pm1 | none
 #   RTC        bm8563 | none
 #   SENSORS    bmm150_mosaico | none   (magnetometers for the TOOLS page)
 #   SLEEP      mosaico | none          (deep-sleep pocket mode)
