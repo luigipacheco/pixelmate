@@ -7,6 +7,30 @@
 #include <string.h>
 #include "cores3_viewport.h"
 
+/* Rows [top, top+count) of the viewport only (view_width pixels each, packed),
+ * for frames that skip the black bars. An exact 2:1 reduction (480 logical
+ * to 240) takes every other pixel without a division per pixel. */
+static inline void cores3_fill_view_rows(
+    const cores3_viewport_t *view, const uint16_t *frame, uint16_t *strip,
+    uint16_t top, uint16_t count)
+{
+    const uint32_t logical_w = view->logical_width;
+    const uint32_t logical_h = view->logical_height;
+    const uint32_t w = view->view_width;
+    const bool half = logical_w == 2U * w && logical_h == 2U * view->view_height;
+    for (uint32_t row = 0; row < count; row++) {
+        const uint32_t vy = (uint32_t)top + row;
+        uint16_t *dst = strip + row * w;
+        const uint32_t src_y = half ? vy * 2U : (vy * logical_h) / view->view_height;
+        const uint16_t *src = frame + src_y * logical_w;
+        if (half) {
+            for (uint32_t x = 0; x < w; x++) dst[x] = src[x * 2U];
+        } else {
+            for (uint32_t x = 0; x < w; x++) dst[x] = src[(x * logical_w) / w];
+        }
+    }
+}
+
 static inline void cores3_fill_strip_pixels(
     const cores3_viewport_t *view, const uint16_t *frame, uint16_t *strip,
     uint16_t top, uint16_t count, bool swap_bytes)
