@@ -1,12 +1,12 @@
 # PixelMate for the M5Stack StackChan (CoreS3, ESP32-S3).
 #
-# A second firmware project that builds the same game sources as the
-# ESP-Mosaico project one folder up (../main and ../components), with its own
+# Builds the same game as the ESP-Mosaico project in the repo root (../../main
+# and ../../components) with this board's parts list (board.cmake), its own
 # board adapter (components/stackchan_board) and none of the Mosaico services
 # (ESP-Iris, Vibe Mode, Recovery). See README.md for the build steps.
 cmake_minimum_required(VERSION 3.22)
 
-get_filename_component(PIXELMATE_GAME_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+get_filename_component(PIXELMATE_GAME_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 get_filename_component(RAYLIB_LITE_ENGINE_ROOT
     "${PIXELMATE_GAME_DIR}/../../submodule/raylib-lite-engine" ABSOLUTE)
 if(NOT EXISTS "${RAYLIB_LITE_ENGINE_ROOT}/examples/common_components/examples_common/CMakeLists.txt")
@@ -16,25 +16,16 @@ endif()
 # The game's main component names its board through this variable.
 set(RAYLIB_LITE_BOARD "stackchan_board" CACHE STRING "Raylib Lite Board component" FORCE)
 
-# Shared game code. Listed one by one so the Mosaico project's generated
-# Board Manager component (../components/gen_bmgr_codes) is never picked up;
-# this project generates its own under components/gen_bmgr_codes.
+# Shared game code: every component in ../../components except the Mosaico
+# project's generated Board Manager code (this project generates its own under
+# components/gen_bmgr_codes).
+include("${PIXELMATE_GAME_DIR}/cmake/pixelmate_board.cmake")
+pixelmate_shared_component_dirs(PIXELMATE_SHARED_COMPONENTS)
 list(APPEND EXTRA_COMPONENT_DIRS
     "${RAYLIB_LITE_ENGINE_ROOT}/examples/common_components/examples_common"
     "${RAYLIB_LITE_ENGINE_ROOT}/examples/common_components/examples_audio"
     "${PIXELMATE_GAME_DIR}/main"
-    "${PIXELMATE_GAME_DIR}/components/app_game"
-    "${PIXELMATE_GAME_DIR}/components/app_game_runtime"
-    "${PIXELMATE_GAME_DIR}/components/app_photo"
-    "${PIXELMATE_GAME_DIR}/components/app_photo_store"
-    "${PIXELMATE_GAME_DIR}/components/app_camera_hw"
-    "${PIXELMATE_GAME_DIR}/components/app_cam_stream"
-    "${PIXELMATE_GAME_DIR}/components/app_neck_hw"
-    "${PIXELMATE_GAME_DIR}/components/app_net"
-    "${PIXELMATE_GAME_DIR}/components/app_pedometer_hw"
-    "${PIXELMATE_GAME_DIR}/components/app_power_hw"
-    "${PIXELMATE_GAME_DIR}/components/app_rtc_hw"
-    "${PIXELMATE_GAME_DIR}/components/app_sfx")
+    ${PIXELMATE_SHARED_COMPONENTS})
 
 # Board Manager's generated defaults enable the CoreS3 devices; ours come last
 # so they win.
@@ -54,4 +45,5 @@ if(NOT SDKCONFIG)
 endif()
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+pixelmate_board(stackchan)
 project(pixelmate_stackchan VERSION 1.0.0)

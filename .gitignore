@@ -51,3 +51,6 @@ Thumbs.db
 
 # Stack-chan build (stackchan/): resolved dependency versions, like the root one
 /stackchan/dependencies.lock
+
+# Per-board firmware projects (boards/<name>): resolved dependencies
+boards/*/dependencies.lock

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 /* Pull-down panels: menu, style picker and store. */
+#ifndef PIXELMATE_NAME
+#define PIXELMATE_NAME "ESP-MOSAICO"   /* The board's name (boards/<name>/board.cmake); host builds: Mosaico. */
+#endif
 #include <stdio.h>
 #include "private/pet_screens.h"
 #include "../app_game/include/app_game_layout.h"
@@ -178,7 +181,7 @@ static void draw_credits(const draw_ctx_t *d, int oy)
 static void draw_about(const draw_ctx_t *d, int oy)
 {
     const app_game_snapshot_t *s = d->snap;
-    char text[32];
+    char text[40];
     draw_header(d, oy, "ABOUT");
     if (s->credits_ticks) {
         draw_credits(d, oy);
@@ -187,8 +190,8 @@ static void draw_about(const draw_ctx_t *d, int oy)
     px_text_center("PIXELMATE", 240, oy + 96, 6, d->color, d->gap);
     snprintf(text, sizeof(text), "MEET %s  V%s", APP_PET_NAME, APP_VERSION);
     px_text_center(text, 240, oy + 160, 3, d->accent, d->gap);
-    px_text_center(s->desk ? "A DESK PET FOR STACK-CHAN" : "A WALKING PET FOR ESP-MOSAICO", 240, oy + 200, 2,
-                   d->dim, false);
+    snprintf(text, sizeof(text), "A %s PET FOR %s", s->desk ? "DESK" : "WALKING", PIXELMATE_NAME);
+    px_text_center(text, 240, oy + 200, 2, d->dim, false);
     px_text_center("MADE BY", 240, oy + 250, 2, d->dim, false);
     px_text_center(APP_AUTHOR, 240, oy + 272, 4, d->color, d->gap);
     px_text_center(APP_AUTHOR_URL, 240, oy + 316, 3, d->accent, d->gap);
@@ -652,13 +655,13 @@ static void draw_settings(const draw_ctx_t *d, int oy)
 {
     const app_game_snapshot_t *s = d->snap;
     draw_header(d, oy, "SETTINGS");
-    const int rows = app_settings_row_count(s->desk, s->dev_mode);
+    const int rows = app_settings_row_count(s->settings_hidden, s->dev_mode);
     for (int row = 0; row < APP_SETTINGS_PER_PAGE; ++row) {
         const int slot = s->settings_page * APP_SETTINGS_PER_PAGE + row;
         if (slot >= rows) {
             break;
         }
-        const int index = app_settings_row_index(s->desk, slot);
+        const int index = app_settings_row_index(s->settings_hidden, slot);
         if (index == APP_SETTINGS_ROWS) {
             draw_dev_row(d, row, oy);
             continue;

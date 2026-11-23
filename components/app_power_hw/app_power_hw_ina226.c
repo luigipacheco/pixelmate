@@ -115,3 +115,9 @@ esp_err_t app_power_hw_battery(app_battery_reading_t *reading)
     reading->external_power = drain_ma < EXTERNAL_MAX_DRAIN_MA;
     return ESP_OK;
 }
+
+/* No fuel gauge here, so there is no battery profile to check or load. */
+app_gauge_profile_t app_power_hw_profile(void)
+{
+    return APP_GAUGE_PROFILE_OK;
+}

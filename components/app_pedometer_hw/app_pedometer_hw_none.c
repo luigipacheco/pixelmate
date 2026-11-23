@@ -13,3 +13,15 @@ esp_err_t app_pedometer_hw_read(uint32_t *steps)
     (void)steps;
     return ESP_ERR_NOT_SUPPORTED;
 }
+
+esp_err_t app_pedometer_hw_motion(float accel_g[3], float gyro_dps[3])
+{
+    (void)accel_g;
+    (void)gyro_dps;
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+esp_err_t app_pedometer_hw_low_power(void)
+{
+    return ESP_ERR_NOT_SUPPORTED;
+}

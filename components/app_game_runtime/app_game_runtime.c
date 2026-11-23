@@ -653,7 +653,12 @@ static int initialize(void *value, const char *asset_root)
 #else
     const bool desk = false;
 #endif
-    const app_game_config_t config = {GAME_WIDTH, GAME_HEIGHT, seed, desk};
+#if defined(RAYLIB_LITE_GAME_NATIVE) && !defined(PIXELMATE_HAS_INTERACT)
+    const bool no_module = true;   /* This board has no Interaction module slot. */
+#else
+    const bool no_module = false;
+#endif
+    const app_game_config_t config = {GAME_WIDTH, GAME_HEIGHT, seed, desk, no_module};
     if (app_game_create(&config, &state->game) != APP_GAME_OK) {
         return -1;
     }

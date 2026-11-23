@@ -9,7 +9,7 @@ the `pixel_pal` name so existing pets carry over.)
 
 There is also a build for the **M5Stack StackChan** (CoreS3), where Bitsy is a
 desk pet that earns sparks from pats instead of steps: see
-[stackchan/README.md](stackchan/README.md).
+[boards/stackchan/README.md](boards/stackchan/README.md).
 
 - **Steps → sparks:** the BMI270's on-chip step counter keeps counting while
   the pet is idle; every 20 steps earns 1 spark. Daily goal: 8000 steps by

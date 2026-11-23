@@ -115,19 +115,30 @@ static inline int app_screen_page(bool desk, int screen)
 
 /* Settings rows as shown, in order. Index = the full row list (0 SOUND ..
  * APP_SETTINGS_ROWS - 1 RESET PET, APP_SETTINGS_ROWS = the DEV MODE row);
- * a desk pet has no DAILY GOAL (1) or TAP STEPS (5) rows. */
-static inline int app_settings_row_count(bool desk, bool dev_mode)
+ * `hidden` has a bit per row index the board leaves out (app_settings_hidden). */
+enum {
+    APP_SETTINGS_ROW_GOAL = 1,
+    APP_SETTINGS_ROW_TAP_STEPS = 5,
+    APP_SETTINGS_ROW_MODULE_LIGHTS = 7,
+};
+
+static inline int app_settings_row_count(uint16_t hidden, bool dev_mode)
 {
-    return APP_SETTINGS_ROWS - (desk ? 2 : 0) + (dev_mode ? 1 : 0);
+    int rows = dev_mode ? 1 : 0;
+    for (int i = 0; i < APP_SETTINGS_ROWS; ++i) {
+        rows += (hidden >> i) & 1U ? 0 : 1;
+    }
+    return rows;
 }
 
-static inline int app_settings_row_index(bool desk, int slot)
+static inline int app_settings_row_index(uint16_t hidden, int slot)
 {
-    if (!desk) {
-        return slot;
+    for (int i = 0; i < APP_SETTINGS_ROWS; ++i) {
+        if (!((hidden >> i) & 1U) && slot-- == 0) {
+            return i;
+        }
     }
-    int index = slot >= 1 ? slot + 1 : slot;
-    return index >= 5 ? index + 1 : index;
+    return APP_SETTINGS_ROWS + slot;   /* Past the last row: the DEV MODE row. */
 }
 
 #define APP_VERSION "1.0.0"
@@ -629,6 +640,7 @@ typedef struct {
     uint32_t tap_steps_today;   /**< Steps credited by pats today. */
     bool dev_mode;              /**< DEV MODE on (sandbox: infinite sparks, nothing kept). */
     bool desk;                  /**< Desk pet: no Steps page or step counters. */
+    uint16_t settings_hidden;   /**< Settings rows this board leaves out (bit per row). */
     uint8_t konami_pos;         /**< Konami inputs entered so far on the About page. */
     uint16_t pats;              /**< Lifetime pats (stops at APP_LOVE_PATS). */
     bool love_eyes;             /**< LOVE EYES unlocked: hearts when happy. */
@@ -745,6 +757,8 @@ typedef struct {
                             credited, daily health is paused (no hearts lost, no
                             fainting) and every APP_DESK_PETS_PER_SPARK pats on the
                             face earn a spark. */
+    bool no_module;    /**< The board has no Interaction module slot: no MODULE
+                            LIGHTS setting. */
 } app_game_config_t;
 
 enum { APP_DESK_PETS_PER_SPARK = 3 };

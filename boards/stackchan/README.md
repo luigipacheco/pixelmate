@@ -3,8 +3,8 @@
 A second firmware build of PixelMate for the **M5Stack StackChan** (its head is
 an M5Stack CoreS3: ESP32-S3, 320x240 touch LCD, 16 MB flash, 8 MB quad PSRAM).
 
-It builds the same game sources as the ESP-Mosaico project one folder up
-(`../main`, `../components`). Only what is in this folder is Stack-chan specific:
+It builds the same game sources as the ESP-Mosaico project in the repo root
+(`../../main`, `../../components`). Only what is in this folder is Stack-chan specific:
 
 | Path | What |
 |---|---|

@@ -588,6 +588,20 @@ static void tap_tools(app_game_handle_t g, int32_t x, int32_t y);
 static void handle_tap(app_game_handle_t g, int32_t x, int32_t y);
 static int settings_rows(const struct app_game *g);
 
+/* Rows a board leaves out: a desk pet has no step goal or TAP STEPS, a board
+ * without the Interaction module slot has no MODULE LIGHTS. */
+static uint16_t settings_hidden(const struct app_game *g)
+{
+    uint16_t hidden = 0;
+    if (g->config.desk) {
+        hidden |= (uint16_t)((1U << APP_SETTINGS_ROW_GOAL) | (1U << APP_SETTINGS_ROW_TAP_STEPS));
+    }
+    if (g->config.no_module) {
+        hidden |= (uint16_t)(1U << APP_SETTINGS_ROW_MODULE_LIGHTS);
+    }
+    return hidden;
+}
+
 static void set_arcade(app_game_handle_t g, app_arcade_t arcade)
 {
     if (g->arcade != arcade) {
@@ -928,7 +942,7 @@ static void tap_settings(app_game_handle_t g, int32_t x, int32_t y)
         if (slot >= settings_rows(g) || !app_rect_hit(app_settings_row_rect(row), x, y)) {
             continue;
         }
-        switch (app_settings_row_index(g->config.desk, slot)) {
+        switch (app_settings_row_index(settings_hidden(g), slot)) {
         case APP_SETTINGS_ROWS: dev_mode_off(g); return;
         case 0: {
             int at = 0;
@@ -955,7 +969,7 @@ static void tap_settings(app_game_handle_t g, int32_t x, int32_t y)
 
 static bool on_reset_row(const struct app_game *g, int32_t x, int32_t y)
 {
-    const int slot = app_settings_row_count(g->config.desk, false) - 1;   /* RESET PET is last. */
+    const int slot = app_settings_row_count(settings_hidden(g), false) - 1;   /* RESET PET is last. */
     return g->overlay == APP_OVERLAY_SETTINGS
            && g->settings_page == slot / APP_SETTINGS_PER_PAGE
            && app_rect_hit(app_settings_row_rect(slot % APP_SETTINGS_PER_PAGE), x, y);
@@ -1239,7 +1253,7 @@ static void dev_mode_on(app_game_handle_t g)
     g->sparks = APP_DEV_SPARKS;
     fire_cue(g, APP_CUE_DEV_ON);
     react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS);
-    g->settings_page = (uint8_t)(app_settings_row_count(g->config.desk, false)
+    g->settings_page = (uint8_t)(app_settings_row_count(settings_hidden(g), false)
                                  / APP_SETTINGS_PER_PAGE);   /* Show its row. */
     set_overlay(g, APP_OVERLAY_SETTINGS);
     g->events |= APP_EVENT_SETTINGS;
@@ -1283,7 +1297,7 @@ static void konami_input(app_game_handle_t g, konami_t input)
 
 static int settings_rows(const struct app_game *g)
 {
-    return app_settings_row_count(g->config.desk, g->dev_mode);
+    return app_settings_row_count(settings_hidden(g), g->dev_mode);
 }
 
 /* ---- TOOLS -------------------------------------------------------- */
@@ -2184,6 +2198,7 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .tap_steps_today = g->tap_steps_today,
         .dev_mode = g->dev_mode,
         .desk = g->config.desk,
+        .settings_hidden = settings_hidden(g),
         .konami_pos = g->konami_pos,
         .pats = g->pats,
         .love_eyes = (g->eggs & APP_EGG_LOVE) != 0,

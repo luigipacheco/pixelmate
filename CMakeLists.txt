@@ -6,6 +6,10 @@ set(RAYLIB_LITE_BSP_DIR "${MOSAICO_BSP_ROOT}")
 set(RAYLIB_LITE_UTILS_DIR "${MOSAICO_UTILS_ROOT}")
 set(RAYLIB_LITE_GAME_DIR "${CMAKE_CURRENT_LIST_DIR}")
 include("${MOSAICO_UTILS_ROOT}/mosaico-tools/cmake/raylib_lite_iris_app.cmake")
+# The ESP-Mosaico board: which parts it has (boards/mosaico/board.cmake).
+# Other devices build from their own folder, e.g. boards/stackchan.
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/pixelmate_board.cmake")
+pixelmate_board(mosaico)
 project(pixel_pal VERSION 1.0.0)
 raylib_lite_iris_link_game_board()
 include("${MOSAICO_SYSTEM_UPDATE_CMAKE}")

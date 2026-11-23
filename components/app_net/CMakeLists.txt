@@ -1,7 +1,11 @@
-# Vibe Mode's shared Wi-Fi values exist only on the ESP-Mosaico.
+# Vibe Mode's shared Wi-Fi values exist only on the ESP-Mosaico
+# (boards/<name>/board.cmake: pixelmate_part(NET vibe), else plain).
+idf_build_get_property(part PIXELMATE_NET)
 set(app_net_vibe)
-if(IDF_TARGET STREQUAL "esp32s31")
+if(part STREQUAL "vibe")
     set(app_net_vibe esp_mosaico_app_recovery)
+elseif(NOT part STREQUAL "plain")
+    message(FATAL_ERROR "app_net: PIXELMATE_NET is '${part}'; expected vibe or plain.")
 endif()
 idf_component_register(SRCS "app_net.c" "app_net_web.c" "app_net_portal.c" "app_net_dns.c" "app_net_photos.c"
     INCLUDE_DIRS "include"
