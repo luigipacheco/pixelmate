@@ -809,6 +809,15 @@ static void pocket_deep_sleep(host_state_t *state)
         const uint8_t dark[APP_INTERACT_LEDS][3] = {{0}};
         (void)app_interact_hw_leds(dark);
     }
+    /* The sensors that stay powered: the step sensor keeps only what step
+     * counting needs (no gyroscope), the magnetometers suspend. */
+    app_sensors_hw_mag_suspend();
+    if (have_steps) {
+        const esp_err_t lp = app_pedometer_hw_low_power();
+        if (lp != ESP_OK) {
+            ESP_LOGW(TAG, "pocket: step sensor low power: %s", esp_err_to_name(lp));
+        }
+    }
     const app_sleep_request_t request = {
         .seconds = POCKET_BACKSTOP_S,
         .touch_wake = true,
