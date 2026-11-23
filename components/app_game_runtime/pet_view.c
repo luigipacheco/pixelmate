@@ -411,6 +411,53 @@ static void on_events(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
 }
 
 /* Booth cues: digits bounce the eyes, the flash startles them, results pop. */
+/* An act (a behaviour stored as data) is playing: hold its gaze, and at the
+ * start of each step do its hop, particles and floater. Its expression arrives
+ * as the snapshot's mood; eye shape and color are applied when drawing. */
+static void on_act(pet_view_t *v, const app_game_snapshot_t *s)
+{
+    if (!s->act.active) {
+        v->seen_act_seq = s->act.seq;
+        return;
+    }
+    const app_act_step_t *step = &s->act.now;
+    pet_eyes_force_gaze(&v->eyes, (float)step->look_x, (float)step->look_y, 2);
+    if (s->act.seq == v->seen_act_seq) {
+        return;
+    }
+    v->seen_act_seq = s->act.seq;
+    const Color c = px_color(s->color_index), acc = px_accent(s->color_index);
+    const app_eye_anchor_t a = current_anchor(v);
+    if (s->act.step == 0 && s->act.text[0]) {
+        floater(v, s->act.text, 240, 150, acc);
+    }
+    if (step->hop) {
+        pet_eyes_kick(&v->eyes, -(float)step->hop);
+    }
+    switch ((app_act_fx_t)step->fx) {
+    case APP_ACT_FX_HEARTS:
+        for (int i = 0; i < 4; ++i) {
+            spawn(v, P_HEART, a.cx + rand_range(v, -90, 90) * a.scale, a.cy - 70 * a.scale,
+                  rand_range(v, -1.2f, 1.2f), rand_range(v, -3.5f, -2.0f), 0.02f, 34, acc);
+        }
+        break;
+    case APP_ACT_FX_SPARKS:
+        burst(v, P_SQUARE, a.cx, a.cy - 40 * a.scale, 14, 7.0f, 0.35f, c, acc);
+        break;
+    case APP_ACT_FX_BOLTS:
+        burst(v, P_BOLT, a.cx, a.cy, 8, 6.0f, 0.3f, c, acc);
+        break;
+    case APP_ACT_FX_ZZZ:
+        spawn(v, P_Z, a.cx + 110 * a.scale, a.cy - 50 * a.scale, 0.8f, -1.4f, 0.0f, 50, c);
+        break;
+    case APP_ACT_FX_SHAKE:
+        pet_eyes_shake(&v->eyes);
+        break;
+    default:
+        break;
+    }
+}
+
 static void on_booth(pet_view_t *v, const app_game_snapshot_t *s, uint32_t ev)
 {
     const app_booth_snapshot_t *b = &s->booth;
@@ -483,6 +530,7 @@ void pet_view_update(pet_view_t *v, const app_game_snapshot_t *s, uint32_t event
     ease_anchor(v, s, false);
     update_overlay(v, s->overlay);
     on_events(v, s, events);
+    on_act(v, s);
     on_booth(v, s, events);
     v->prev_booth_phase = (uint8_t)s->booth.phase;
     v->prev_booth_count = s->booth.count;
@@ -775,6 +823,20 @@ void pet_view_draw(const pet_view_t *v, const app_game_snapshot_t *s)
         shape = PET_EYES_SPIRALS;
     } else if (!fainted && s->love_eyes && s->mood == APP_MOOD_HAPPY) {
         shape = PET_EYES_HEARTS;   /* LOVE EYES replace stars once unlocked. */
+    }
+    if (s->act.active && !fainted) {   /* An act picks its own eyes and color. */
+        static const pet_eye_shape_t shapes[APP_ACT_EYES_COUNT] = {
+            [APP_ACT_EYES_ROUND] = PET_EYES_ROUND, [APP_ACT_EYES_STARS] = PET_EYES_STARS,
+            [APP_ACT_EYES_HEARTS] = PET_EYES_HEARTS, [APP_ACT_EYES_SPIRALS] = PET_EYES_SPIRALS,
+        };
+        if (s->act.now.eyes != APP_ACT_EYES_ROUND && s->act.now.eyes < APP_ACT_EYES_COUNT) {
+            shape = shapes[s->act.now.eyes];
+        }
+        if (s->act.now.color == APP_ACT_COLOR_RAINBOW) {
+            eye = rainbow(v->t);
+        } else if (s->act.now.color >= APP_ACT_COLOR_FIRST) {
+            eye = px_scale(px_color(s->act.now.color - APP_ACT_COLOR_FIRST), level);
+        }
     }
     pet_eyes_draw(&v->eyes, current_anchor(v), grid, eye, shape, s->steps_today >= APP_MARATHON_STEPS);
     draw_food_toss(v, &d);

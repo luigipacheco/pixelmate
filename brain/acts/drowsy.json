@@ -1,0 +1,15 @@
+{
+  "id": 7,
+  "name": "DROWSY",
+  "say": "YAWN",
+  "on": "idle",
+  "param": 14,
+  "cooldown": 3,
+  "chance": 100,
+  "steps": [
+    {"mood": "sleepy", "eyes": "round", "color": "pet", "look": [0, 8], "hop": 0, "fx": "zzz", "sound": "none", "ticks": 26},
+    {"mood": "sleepy", "eyes": "round", "color": "pet", "look": [-8, 14], "hop": 0, "fx": "none", "sound": "none", "ticks": 22},
+    {"mood": "surprised", "eyes": "round", "color": "pet", "look": [0, -8], "hop": 4, "fx": "none", "sound": "tap", "ticks": 8},
+    {"mood": "sleepy", "eyes": "round", "color": "pet", "look": [0, 14], "hop": 0, "fx": "zzz", "sound": "none", "ticks": 34}
+  ]
+}

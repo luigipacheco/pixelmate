@@ -1,0 +1,15 @@
+{
+  "id": 8,
+  "name": "LUNCH",
+  "say": "LUNCH?",
+  "on": "time",
+  "param": "12:30",
+  "param2": "13:30",
+  "cooldown": 720,
+  "chance": 100,
+  "steps": [
+    {"mood": "hungry", "eyes": "round", "color": "pet", "look": [0, 10], "hop": 0, "fx": "none", "sound": "none", "ticks": 30},
+    {"mood": "thinking", "eyes": "round", "color": "pet", "look": [24, -6], "hop": 0, "fx": "none", "sound": "tap", "ticks": 20},
+    {"mood": "happy", "eyes": "stars", "color": "pet", "look": [0, 0], "hop": 6, "fx": "sparks", "sound": "coins", "ticks": 40}
+  ]
+}

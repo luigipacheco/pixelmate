@@ -73,6 +73,27 @@ int app_net_scan_results(app_net_ap_t *out, int max);
  * JavaScript getTimezoneOffset(). Returns true once per new value. */
 bool app_net_take_timezone(int *minutes_west);
 
+/* A "brain" program on the local network reads the pet's diary and sends new
+ * behaviours (docs/LEARNING.md). The game provides these hooks; they run on
+ * the web server's task, so they must lock what they share with the game. */
+enum {
+    APP_NET_BRAIN_TEXT_MAX = 4096,    /**< Largest POST /api/behaviors body. */
+    APP_NET_BRAIN_JSON_MAX = 6144,    /**< Buffer for GET /api/behaviors. */
+};
+typedef struct {
+    void *ctx;
+    /** Diary entries from number `since` on, as comma-separated JSON objects.
+     *  Returns the bytes written (0 = no more) and the number to ask for next. */
+    int (*diary)(void *ctx, uint32_t since, char *out, size_t cap, uint32_t *next);
+    /** The behaviours in use, as JSON. Returns the length or -1. */
+    int (*acts_get)(void *ctx, char *out, size_t cap);
+    /** A new pack (text). Returns true when accepted; `reply` says what happened. */
+    bool (*acts_post)(void *ctx, const char *body, char *reply, size_t cap);
+} app_net_brain_t;
+
+/** Set (or with NULL, remove) the hooks behind /api/diary and /api/behaviors. */
+void app_net_set_brain(const app_net_brain_t *brain);
+
 /** Replace the JSON served at GET /api/sleep (what the last deep sleep did). */
 esp_err_t app_net_publish_sleep(const char *json);
 

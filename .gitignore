@@ -48,3 +48,7 @@ __pycache__/
 Thumbs.db
 
 # Keep sdkconfig*.defaults, idf_component.yml and source assets versioned.
+
+# Bitsy's brain: your pet's diary, synced locally
+bitsy_diary.jsonl
+bitsy_diary.state.json

@@ -1,4 +1,4 @@
-idf_component_register(SRCS "app_net.c" "app_net_web.c" "app_net_portal.c" "app_net_dns.c" "app_net_photos.c"
+idf_component_register(SRCS "app_net.c" "app_net_web.c" "app_net_portal.c" "app_net_dns.c" "app_net_photos.c" "app_net_brain.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
     REQUIRES esp_common

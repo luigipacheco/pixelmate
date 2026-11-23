@@ -11,6 +11,7 @@
     "components/app_game/says.c",
     "components/app_game/stack.c",
     "components/app_game/booth.c",
+    "components/app_game/acts.c",
     "components/app_photo/app_photo.c",
     "components/app_photo/app_photo_codec.c",
     "components/app_photo_store/app_photo_store.c",
@@ -28,6 +29,7 @@
     "components/app_game_runtime/pet_booth.c",
     "components/app_game_runtime/booth_media.c",
     "components/app_game_runtime/pet_eyes.c",
+    "components/app_game_runtime/pet_diary.c",
     "components/app_game_runtime/pixel_draw.c"
   ]
 }

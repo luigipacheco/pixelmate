@@ -11,6 +11,7 @@
 #include "../app_game/include/app_game.h"
 #include "private/booth_media.h"
 #include "private/game_config.h"
+#include "private/pet_diary.h"
 #include "private/pet_view.h"
 #include "raylib_lite_raylib.h"
 
@@ -25,6 +26,7 @@
 #include "app_sleep_hw.h"
 #include "app_sfx.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "esp_attr.h"
@@ -602,6 +604,252 @@ static void handle_wifi_events(host_state_t *state, uint32_t events)
 #endif
 }
 
+/* ---- Brain link: the diary and the acts (docs/LEARNING.md) ----------------
+ * The diary records what happens to the pet; the acts are its behaviours as
+ * data. A program on the local network reads the first and replaces the
+ * second, so the pet can learn. Game-loop state below is shared with the web
+ * server's task through BRAIN_LOCK. */
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+#define BRAIN_NVS_NAMESPACE "pixel_pal"
+#define BRAIN_DIARY_KEY "diary"
+#define BRAIN_ACTS_KEY "acts"
+enum {
+    BRAIN_ACTS_MAGIC = 0x41435431,              /* "ACT1" */
+    BRAIN_DIARY_SAVE_MS = 30 * 60 * 1000,       /* New entries reach flash this often... */
+    BRAIN_SLEEP_SAVE_MS = 10 * 60 * 1000,       /* ...or before a pocket sleep, after this long... */
+    BRAIN_SLEEP_SAVE_ENTRIES = 8,               /* ...or with this many new entries. */
+};
+/* RTC memory: the diary survives deep sleep and restarts without a flash
+ * write; flash is the backup for a battery that runs flat. */
+static RTC_NOINIT_ATTR pet_diary_store_t s_diary_store;
+static SemaphoreHandle_t s_brain_lock;
+static uint64_t s_diary_saved_ms;
+static app_act_t s_acts_staged[APP_ACTS_MAX];   /* A pack accepted by the web task, waiting for the game loop. */
+static int s_acts_staged_count;
+static volatile bool s_acts_pending;
+#define BRAIN_LOCK() xSemaphoreTake(s_brain_lock, portMAX_DELAY)
+#define BRAIN_UNLOCK() xSemaphoreGive(s_brain_lock)
+#else
+enum { HOST_EPOCH_S = 1795400000 };             /* Host: a fixed, repeatable clock. */
+static pet_diary_store_t s_diary_store;
+#define BRAIN_LOCK() ((void)0)
+#define BRAIN_UNLOCK() ((void)0)
+#endif
+static pet_diary_t s_diary;
+static app_act_t s_acts_live[APP_ACTS_MAX];     /* Copy of the model's pack, for the web task. */
+static int s_acts_live_count;
+
+static uint32_t brain_now_s(uint32_t tick)
+{
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    (void)tick;
+    const time_t now = time(NULL);
+    return now >= VALID_EPOCH ? (uint32_t)now : 0U;
+#else
+    return (uint32_t)HOST_EPOCH_S + tick / GAME_TICK_HZ;
+#endif
+}
+
+/* Give the model the time, for act cooldowns and time-of-day acts. */
+static void brain_clock(host_state_t *state, uint32_t tick)
+{
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    (void)tick;
+    const time_t now = time(NULL);
+    struct tm local;
+    if (now >= VALID_EPOCH && localtime_r(&now, &local)) {
+        app_game_set_clock(state->game, (uint32_t)(now / 60), local.tm_hour * 60 + local.tm_min);
+    } else {
+        app_game_set_clock(state->game, (uint32_t)(now_ms() / 60000U) + 1U, -1);
+    }
+#else
+    const uint32_t minutes = tick / (60U * GAME_TICK_HZ);
+    app_game_set_clock(state->game, (uint32_t)HOST_EPOCH_S / 60U + minutes, (int)((10U * 60U + 41U + minutes) % 1440U));
+#endif
+}
+
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+typedef struct {
+    uint32_t magic, count;
+    app_act_t acts[APP_ACTS_MAX];
+} brain_acts_blob_t;
+
+static void brain_save_diary(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(BRAIN_NVS_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) {
+        return;
+    }
+    /* Only the game loop writes the store, so it can read it without the lock. */
+    if (nvs_set_blob(h, BRAIN_DIARY_KEY, &s_diary_store, sizeof(s_diary_store)) == ESP_OK) {
+        nvs_commit(h);
+    }
+    nvs_close(h);
+    s_diary.added = 0;
+    s_diary_saved_ms = now_ms();
+}
+
+static void brain_save_acts(void)
+{
+    static brain_acts_blob_t blob;   /* Game loop only. */
+    blob.magic = BRAIN_ACTS_MAGIC;
+    blob.count = (uint32_t)s_acts_live_count;
+    memcpy(blob.acts, s_acts_live, sizeof(blob.acts));
+    nvs_handle_t h;
+    if (nvs_open(BRAIN_NVS_NAMESPACE, NVS_READWRITE, &h) == ESP_OK) {
+        if (nvs_set_blob(h, BRAIN_ACTS_KEY, &blob, sizeof(blob)) == ESP_OK) {
+            nvs_commit(h);
+        }
+        nvs_close(h);
+    }
+}
+
+static void brain_load(host_state_t *state)
+{
+    nvs_handle_t h;
+    if (nvs_open(BRAIN_NVS_NAMESPACE, NVS_READONLY, &h) != ESP_OK) {
+        return;
+    }
+    if (s_diary_store.magic != PET_DIARY_MAGIC) {   /* Not a restart or a wake: read the backup. */
+        size_t size = sizeof(s_diary_store);
+        if (nvs_get_blob(h, BRAIN_DIARY_KEY, &s_diary_store, &size) != ESP_OK || size != sizeof(s_diary_store)) {
+            s_diary_store.magic = 0;
+        }
+    }
+    static brain_acts_blob_t blob;
+    size_t size = sizeof(blob);
+    if (nvs_get_blob(h, BRAIN_ACTS_KEY, &blob, &size) == ESP_OK && size == sizeof(blob)
+            && blob.magic == BRAIN_ACTS_MAGIC && blob.count <= APP_ACTS_MAX) {
+        app_game_set_acts(state->game, blob.acts, (int)blob.count);
+        ESP_LOGI(TAG, "brain: %lu learned acts loaded", (unsigned long)blob.count);
+    }
+    nvs_close(h);
+}
+
+static int brain_diary_hook(void *ctx, uint32_t since, char *out, size_t cap, uint32_t *next)
+{
+    (void)ctx;
+    BRAIN_LOCK();
+    const int n = pet_diary_json(&s_diary_store, since, out, cap, next);
+    BRAIN_UNLOCK();
+    return n;
+}
+
+static int brain_acts_get_hook(void *ctx, char *out, size_t cap)
+{
+    (void)ctx;
+    BRAIN_LOCK();
+    const int n = app_acts_to_json(s_acts_live, s_acts_live_count, out, cap);
+    BRAIN_UNLOCK();
+    return n;
+}
+
+/* Web task: check the pack and leave it for the game loop. */
+static bool brain_acts_post_hook(void *ctx, const char *body, char *reply, size_t cap)
+{
+    (void)ctx;
+    app_act_t *acts = malloc(sizeof(app_act_t) * APP_ACTS_MAX);
+    if (!acts) {
+        snprintf(reply, cap, "out of memory");
+        return false;
+    }
+    const bool defaults = strncmp(body, "defaults", 8) == 0;
+    const int count = defaults ? app_acts_defaults(acts, APP_ACTS_MAX)
+                               : app_acts_parse(body, acts, APP_ACTS_MAX, reply, cap);
+    if (count < 0) {
+        free(acts);
+        return false;
+    }
+    BRAIN_LOCK();
+    memcpy(s_acts_staged, acts, sizeof(app_act_t) * (size_t)count);
+    s_acts_staged_count = count;
+    s_acts_pending = true;
+    BRAIN_UNLOCK();
+    free(acts);
+    snprintf(reply, cap, "ok: %d acts%s", count, defaults ? " (built-in)" : "");
+    return true;
+}
+#endif
+
+static void brain_start(host_state_t *state, bool pocket_wake, uint32_t slept_steps)
+{
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    if (!s_brain_lock) {
+        s_brain_lock = xSemaphoreCreateMutex();
+    }
+    brain_load(state);
+#else
+    memset(&s_diary_store, 0, sizeof(s_diary_store));
+#endif
+    pet_diary_init(&s_diary, &s_diary_store);
+    s_acts_live_count = app_game_get_acts(state->game, s_acts_live, APP_ACTS_MAX);
+    for (int i = 0; i < s_acts_live_count; ++i) {   /* Cooldowns carry over a restart. */
+        const uint32_t when = pet_diary_last_act(&s_diary_store, s_acts_live[i].id);
+        if (when) {
+            app_game_mark_act_played(state->game, s_acts_live[i].id, when / 60U);
+        }
+    }
+    brain_clock(state, 0);
+    pet_diary_add(&s_diary, brain_now_s(0), PET_DIARY_BOOT, pocket_wake ? 1 : 0, 0);
+    if (slept_steps) {
+        pet_diary_add(&s_diary, brain_now_s(0), PET_DIARY_WALK, 1, slept_steps);
+    }
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    s_diary_saved_ms = now_ms();
+    if (s_brain_lock) {
+        const app_net_brain_t hooks = {
+            .diary = brain_diary_hook, .acts_get = brain_acts_get_hook, .acts_post = brain_acts_post_hook,
+        };
+        app_net_set_brain(&hooks);
+    }
+#endif
+}
+
+/* Once per tick, after the model update. */
+static void brain_tick(host_state_t *state, uint32_t events, const app_game_snapshot_t *s)
+{
+    if (s->tick % GAME_TICK_HZ == 0U) {
+        brain_clock(state, s->tick);
+    }
+    BRAIN_LOCK();
+    pet_diary_observe(&s_diary, brain_now_s(s->tick), events, s);
+    BRAIN_UNLOCK();
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    if (s_acts_pending) {
+        static app_act_t incoming[APP_ACTS_MAX];
+        BRAIN_LOCK();
+        const int count = s_acts_staged_count;
+        memcpy(incoming, s_acts_staged, sizeof(incoming));
+        s_acts_pending = false;
+        BRAIN_UNLOCK();
+        app_game_set_acts(state->game, incoming, count);
+        BRAIN_LOCK();
+        s_acts_live_count = app_game_get_acts(state->game, s_acts_live, APP_ACTS_MAX);
+        BRAIN_UNLOCK();
+        brain_save_acts();
+        ESP_LOGI(TAG, "brain: %d acts learned", s_acts_live_count);
+    }
+    if (s_diary.added && now_ms() - s_diary_saved_ms >= BRAIN_DIARY_SAVE_MS) {
+        brain_save_diary();
+    }
+#endif
+}
+
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+/* Before a pocket deep sleep: close the open walk and pat counts. */
+static void brain_before_sleep(host_state_t *state)
+{
+    const app_game_snapshot_t s = app_game_read(state->game);
+    BRAIN_LOCK();
+    pet_diary_flush(&s_diary, brain_now_s(s.tick), &s);
+    BRAIN_UNLOCK();
+    if (s_diary.added >= BRAIN_SLEEP_SAVE_ENTRIES
+            || (s_diary.added && now_ms() - s_diary_saved_ms >= BRAIN_SLEEP_SAVE_MS)) {
+        brain_save_diary();
+    }
+}
+#endif
+
 static int initialize(void *value, const char *asset_root)
 {
     (void)asset_root;
@@ -628,11 +876,13 @@ static int initialize(void *value, const char *asset_root)
         state->pocket_grace = POCKET_GRACE_TICKS;
     }
     load_timezone();
+    brain_start(state, state->pocket_grace != 0, slept_steps);
 #else
     app_game_set_battery(state->game, HOST_BATTERY_PCT, false);
     app_game_set_network(state->game, APP_NET_NO_CONFIG, 0);   /* First run: nothing saved. */
     state->host_day = HOST_FIRST_DAY;
     app_game_set_day(state->game, state->host_day);
+    brain_start(state, false, 0);
 #endif
     booth_media_init(&state->media);
     pet_view_init(&state->view);
@@ -780,6 +1030,7 @@ static void pocket_deep_sleep(host_state_t *state)
             state->saved_seq = app_game_read(state->game).save_seq;
         }
     }
+    brain_before_sleep(state);
     app_sfx_close();
     if (app_interact_hw_present()) {
         const uint8_t dark[APP_INTERACT_LEDS][3] = {{0}};
@@ -1161,6 +1412,7 @@ static void update(void *value)
     handle_wifi_events(state, events);
     const app_game_snapshot_t snapshot = app_game_read(state->game);
     pet_view_update(&state->view, &snapshot, events);
+    brain_tick(state, events, &snapshot);
     run_module(state, &snapshot);
     feed_tools(state, &snapshot);
 #if defined(RAYLIB_LITE_GAME_NATIVE)
@@ -1329,6 +1581,7 @@ static int state_json(const void *value, char *output, size_t capacity)
                         "\"lenses_owned\":%u,\"booth\":{\"phase\":%d,\"filter\":%u,\"res\":%u,\"color\":%s,\"on_air\":%s,\"cam_code\":%u,\"unplugged\":%s,"
                         "\"camera\":%s,\"photos\":%u,\"gifs\":%u,\"index\":%u,\"result\":%d,"
                         "\"confirm\":%s},"
+                        "\"act\":{\"active\":%s,\"id\":%u,\"step\":%u,\"ended_id\":%u,\"ended_how\":%u,\"ended_seq\":%u},\"diary\":%lu,"
                         "\"pointer_x\":%ld,\"pointer_y\":%ld,\"pointer_down\":%s,\"state_hash\":\"%08lx\"}",
                         s.paused ? "paused" : "running", (unsigned long)s.tick,
                         screens[s.screen < APP_SCREEN_COUNT ? s.screen : 0],
@@ -1359,6 +1612,8 @@ static int state_json(const void *value, char *output, size_t capacity)
                         s.booth.unplugged ? "true" : "false",
                         s.booth.camera ? "true" : "false", s.booth.photos, s.booth.gifs, s.booth.index,
                         (int)s.booth.result, s.booth.confirm_delete ? "true" : "false",
+                        s.act.active ? "true" : "false", s.act.id, s.act.step, s.act.ended_id, s.act.ended_how,
+                        s.act.ended_seq, (unsigned long)s_diary_store.total,
                         (long)s.pointer_x, (long)s.pointer_y,
                         s.pointer_down ? "true" : "false", (unsigned long)state_hash(value));
     return size < 0 || (size_t)size >= capacity ? -1 : size;

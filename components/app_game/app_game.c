@@ -194,7 +194,158 @@ struct app_game {
     booth_t booth;
     bool camera_present;
     uint16_t camera_gone_ticks;   /* On the booth page without a camera. */
+    /* Acts: behaviours as data (app_acts.h). */
+    app_act_t acts[APP_ACTS_MAX];
+    uint8_t act_count;
+    uint32_t act_last_min[APP_ACTS_MAX];   /* Clock minutes of the last play; 0 = never. */
+    uint32_t clock_min;           /* Minutes counter from the runtime. */
+    int16_t minute_of_day;        /* Local time, -1 while unknown. */
+    bool act_active;
+    uint8_t act_index, act_step, act_seq;
+    uint16_t act_ticks_left;
+    uint8_t act_ended_seq, act_ended_how;
+    uint16_t act_ended_id;
+    uint32_t act_rng;
+    uint32_t home_idle_ticks;     /* Ticks on the home screen with no touch. */
+    uint16_t act_pats;            /* Pats since start, for every-Nth-pat acts. */
 };
+
+/* ---- Acts: behaviours as data ------------------------------------------ */
+
+enum { ACT_BOOT_GREET_TICK = 45 };   /* 1.5 s after start: the wake greeting. */
+
+static uint32_t act_random(app_game_handle_t g)
+{
+    uint32_t x = g->act_rng ? g->act_rng : (0x9E3779B9U ^ g->tick);
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    g->act_rng = x ? x : 0x2F6B1D3DU;
+    return g->act_rng;
+}
+
+/* Acts only play on the home screen, awake, with nothing on top. */
+static bool act_stage_free(const struct app_game *g)
+{
+    return !g->paused && g->power == APP_POWER_AWAKE && g->screen == APP_SCREEN_HOME
+           && g->overlay == APP_OVERLAY_NONE && !g->fainted;
+}
+
+static void act_end(app_game_handle_t g, app_act_end_t how)
+{
+    if (!g->act_active) {
+        return;
+    }
+    g->act_active = false;
+    g->act_ended_id = g->acts[g->act_index].id;
+    g->act_ended_how = (uint8_t)how;
+    ++g->act_ended_seq;
+}
+
+static void act_begin_step(app_game_handle_t g)
+{
+    g->act_ticks_left = g->acts[g->act_index].steps[g->act_step].ticks;
+    ++g->act_seq;
+}
+
+/* Something happened that acts may react to. `a`/`b` depend on the trigger:
+ * the pat count, today's steps before/after, idle ticks, the minute of the day. */
+static bool act_try(app_game_handle_t g, app_act_trigger_t trigger, uint32_t a, uint32_t b)
+{
+    if (g->act_active || !g->act_count || !act_stage_free(g)) {
+        return false;
+    }
+    const int start = (int)(act_random(g) % g->act_count);
+    for (int n = 0; n < g->act_count; ++n) {
+        const int i = (start + n) % g->act_count;
+        const app_act_t *act = &g->acts[i];
+        if (act->trigger != trigger) {
+            continue;
+        }
+        switch (trigger) {
+        case APP_ACT_ON_PAT:
+            if (a % act->param) {
+                continue;
+            }
+            break;
+        case APP_ACT_ON_STEPS:
+            if (b / act->param == a / act->param) {
+                continue;
+            }
+            break;
+        case APP_ACT_ON_IDLE:
+            if (a != (uint32_t)act->param * TICKS_PER_SECOND) {
+                continue;
+            }
+            break;
+        case APP_ACT_ON_TIME: {
+            const bool inside = act->param <= act->param2 ? (a >= act->param && a <= act->param2)
+                                                          : (a >= act->param || a <= act->param2);
+            if (!inside) {
+                continue;
+            }
+            break;
+        }
+        case APP_ACT_ON_RANDOM:   /* Asked once a second. */
+            if (act_random(g) % ((uint32_t)act->param * 60U)) {
+                continue;
+            }
+            break;
+        default:
+            break;
+        }
+        if (act->cooldown_min && g->act_last_min[i] && g->clock_min - g->act_last_min[i] < act->cooldown_min) {
+            continue;
+        }
+        const bool plays = act_random(g) % 100U < act->chance;
+        if (plays || trigger == APP_ACT_ON_TIME) {
+            /* A time-of-day act that sits this one out waits a full cooldown too. */
+            g->act_last_min[i] = g->clock_min ? g->clock_min : 1;
+        }
+        if (!plays) {
+            continue;
+        }
+        g->act_active = true;
+        g->act_index = (uint8_t)i;
+        g->act_step = 0;
+        act_begin_step(g);
+        return true;
+    }
+    return false;
+}
+
+static void act_update(app_game_handle_t g)
+{
+    if (g->act_active) {
+        if (!act_stage_free(g)) {
+            act_end(g, APP_ACT_END_OTHER);
+        } else if (--g->act_ticks_left == 0) {
+            if (++g->act_step >= g->acts[g->act_index].step_count) {
+                act_end(g, APP_ACT_END_DONE);
+            } else {
+                act_begin_step(g);
+            }
+        }
+        return;
+    }
+    if (!act_stage_free(g) || g->pointer_down) {
+        g->home_idle_ticks = 0;
+        return;
+    }
+    ++g->home_idle_ticks;
+    if (g->tick == ACT_BOOT_GREET_TICK && act_try(g, APP_ACT_ON_WAKE, 0, 0)) {
+        return;
+    }
+    if (act_try(g, APP_ACT_ON_IDLE, g->home_idle_ticks, 0)) {
+        return;
+    }
+    if (g->tick % TICKS_PER_SECOND == 0U) {
+        if (g->minute_of_day >= 0 && act_try(g, APP_ACT_ON_TIME, (uint32_t)g->minute_of_day, 0)) {
+            return;
+        }
+        (void)act_try(g, APP_ACT_ON_RANDOM, 0, 0);
+    }
+}
 
 static uint8_t add_stat(uint8_t value, int delta)
 {
@@ -243,6 +394,7 @@ static void check_fed(app_game_handle_t g)
     }
     g->fed_today = true;
     g->events |= APP_EVENT_FED;
+    (void)act_try(g, APP_ACT_ON_FED, 0, 0);
     if (g->fainted) {
         g->fainted = false;
         g->hp = 1;
@@ -263,6 +415,7 @@ static void credit_steps(app_game_handle_t g, uint32_t steps)
         g->events |= APP_EVENT_DANCE;
     }
     g->steps_total += steps;
+    const uint32_t steps_before = g->steps_today;
     if (g->steps_today < APP_MARATHON_STEPS && g->steps_today + steps >= APP_MARATHON_STEPS) {
         fire_cue(g, APP_CUE_MARATHON);   /* Easter egg: the headband for the rest of the day. */
         react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS);
@@ -285,7 +438,9 @@ static void credit_steps(app_game_handle_t g, uint32_t steps)
         g->happiness = STAT_MAX;
         react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS);
         g->events |= APP_EVENT_GOAL;
+        (void)act_try(g, APP_ACT_ON_GOAL, 0, 0);
     }
+    (void)act_try(g, APP_ACT_ON_STEPS, steps_before, g->steps_today);
     changed(g);
 }
 
@@ -370,6 +525,9 @@ app_game_err_t app_game_create(const app_game_config_t *config, app_game_handle_
     bits_init(&g->bits, config->seed ^ 0x3c3c3c3cU);
     says_init(&g->says, config->seed ^ 0x6b6b6b6bU);
     stack_init(&g->stack, config->seed ^ 0x1d1d1d1dU);
+    g->act_rng = config->seed ^ 0x7e7e7e7eU;
+    g->minute_of_day = -1;   /* Unknown until the runtime sets the clock. */
+    g->act_count = (uint8_t)app_acts_defaults(g->acts, APP_ACTS_MAX);
     fresh_pet(g);
     *ret_handle = g;
     return APP_GAME_OK;
@@ -456,6 +614,7 @@ static void tap_home(app_game_handle_t g, int32_t x, int32_t y)
     add_friendship(g, 1);
     react(g, APP_MOOD_HAPPY, REACT_PET_TICKS);
     g->events |= APP_EVENT_PETTED;
+    (void)act_try(g, APP_ACT_ON_PAT, ++g->act_pats, 0);
     if (g->pats < APP_LOVE_PATS && ++g->pats == APP_LOVE_PATS) {
         g->eggs |= APP_EGG_LOVE;   /* Easter egg: the 1000th pat. */
         fire_cue(g, APP_CUE_LOVE);
@@ -603,6 +762,7 @@ static void wake(app_game_handle_t g)
     set_power(g, APP_POWER_AWAKE);
     react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
     g->events |= APP_EVENT_WOKE;
+    (void)act_try(g, APP_ACT_ON_WAKE, 0, 0);
 }
 
 static uint32_t doze_after_ticks(const struct app_game *g)
@@ -1608,6 +1768,7 @@ void app_game_set_pointer(app_game_handle_t g, int32_t x, int32_t y, bool presse
         return;
     }
     if (pressed && !was_down) {
+        act_end(g, APP_ACT_END_TOUCH);
         g->press_x = x;
         g->press_y = y;
         g->idle_ticks = 0;
@@ -2075,6 +2236,7 @@ void app_game_update(app_game_handle_t g)
         }
         changed(g);
     }
+    act_update(g);
     g->mood = compute_mood(g);
 }
 
@@ -2152,7 +2314,65 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
     };
     memcpy(snap.history, g->history, sizeof(snap.history));
     memcpy(snap.setup_ap, g->setup_ap, sizeof(snap.setup_ap));
+    snap.act.ended_seq = g->act_ended_seq;
+    snap.act.ended_id = g->act_ended_id;
+    snap.act.ended_how = g->act_ended_how;
+    snap.act.seq = g->act_seq;
+    if (g->act_active) {
+        const app_act_t *act = &g->acts[g->act_index];
+        snap.act.active = true;
+        snap.act.id = act->id;
+        snap.act.step = g->act_step;
+        snap.act.now = act->steps[g->act_step];
+        memcpy(snap.act.text, act->text, sizeof(snap.act.text));
+        if (snap.act.now.mood != APP_ACT_MOOD_KEEP) {
+            snap.mood = (app_mood_t)snap.act.now.mood;   /* The act's expression wins. */
+        }
+    }
     return snap;
+}
+
+void app_game_set_acts(app_game_handle_t g, const app_act_t *acts, int count)
+{
+    if (!g) {
+        return;
+    }
+    act_end(g, APP_ACT_END_OTHER);
+    g->act_count = 0;
+    memset(g->act_last_min, 0, sizeof(g->act_last_min));
+    for (int i = 0; acts && i < count && g->act_count < APP_ACTS_MAX; ++i) {
+        if (app_act_valid(&acts[i], NULL, 0)) {
+            g->acts[g->act_count++] = acts[i];
+        }
+    }
+}
+
+int app_game_get_acts(app_game_handle_t g, app_act_t *out, int max)
+{
+    if (!g || !out || max <= 0) {
+        return 0;
+    }
+    const int n = g->act_count < max ? g->act_count : max;
+    memcpy(out, g->acts, (size_t)n * sizeof(app_act_t));
+    return n;
+}
+
+void app_game_set_clock(app_game_handle_t g, uint32_t minutes, int minute_of_day)
+{
+    if (!g) {
+        return;
+    }
+    g->clock_min = minutes;
+    g->minute_of_day = (int16_t)(minute_of_day >= 0 && minute_of_day < 1440 ? minute_of_day : -1);
+}
+
+void app_game_mark_act_played(app_game_handle_t g, uint16_t id, uint32_t minutes)
+{
+    for (int i = 0; g && i < g->act_count; ++i) {
+        if (g->acts[i].id == id && minutes > g->act_last_min[i]) {
+            g->act_last_min[i] = minutes;
+        }
+    }
 }
 
 uint32_t app_game_take_events(app_game_handle_t g)
