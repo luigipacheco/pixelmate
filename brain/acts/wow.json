@@ -1,0 +1,15 @@
+{
+  "id": 6,
+  "name": "WOW",
+  "say": "WOW!",
+  "on": "pat",
+  "param": 3,
+  "cooldown": 0,
+  "chance": 100,
+  "steps": [
+    {"mood": "surprised", "eyes": "round", "color": "pet", "look": [0, -14], "hop": 10, "fx": "none", "sound": "wake", "ticks": 8},
+    {"mood": "happy", "eyes": "stars", "color": "rainbow", "look": [-16, 0], "hop": 0, "fx": "sparks", "sound": "coins", "ticks": 14},
+    {"mood": "happy", "eyes": "stars", "color": "rainbow", "look": [16, 0], "hop": 6, "fx": "bolts", "sound": "none", "ticks": 14},
+    {"mood": "happy", "eyes": "stars", "color": "rainbow", "look": [0, 0], "hop": 4, "fx": "sparks", "sound": "win", "ticks": 20}
+  ]
+}

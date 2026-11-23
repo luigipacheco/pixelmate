@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 """Bitsy's brain: a small program for your computer that reads the pet's diary
-and teaches it behaviours over the local network (see docs/LEARNING.md).
+and teaches it behaviours ("acts") over the local network. How to write acts:
+brain/README.md. How it all fits together: docs/LEARNING.md.
 
-    python tools/bitsy_brain.py sync              # copy new diary entries to bitsy_diary.jsonl
-    python tools/bitsy_brain.py show              # the behaviours Bitsy has now
-    python tools/bitsy_brain.py export pack.json  # save them as an editable file
-    python tools/bitsy_brain.py push pack.json    # teach Bitsy the behaviours in a file
-    python tools/bitsy_brain.py learn             # suggest changes from the diary (add --apply to send them)
-    python tools/bitsy_brain.py defaults          # back to the built-in behaviours
+    python brain/bitsy_brain.py show                  # the acts Bitsy has now
+    python brain/bitsy_brain.py add brain/acts/wow.json   # teach one more act
+    python brain/bitsy_brain.py remove WOW            # forget one
+    python brain/bitsy_brain.py export pack.json      # save all of them as an editable file
+    python brain/bitsy_brain.py push pack.json        # replace all of them with a file
+    python brain/bitsy_brain.py defaults              # back to the built-in acts
+    python brain/bitsy_brain.py sync                  # copy new diary entries to bitsy_diary.jsonl
+    python brain/bitsy_brain.py learn                 # suggest changes from the diary (--apply sends them)
 
 The pet's address comes from --host, or the BITSY_HOST environment variable, or
 pixelmate.local. Only the Python standard library is needed.
@@ -184,6 +187,39 @@ def cmd_defaults(args):
     print(request(args.host, "/api/behaviors", "defaults\n").strip())
 
 
+def load_acts(path):
+    """A file holds one act, or a pack: {"acts": [...]}."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    return data["acts"] if isinstance(data, dict) and "acts" in data else [data]
+
+
+def cmd_add(args):
+    """Teach Bitsy the act(s) in a file, keeping what it already knows."""
+    pack = fetch_pack(args.host)
+    for act in load_acts(args.file):
+        name = str(act["name"]).upper()
+        replaced = [a["name"] for a in pack["acts"] if a["id"] == act["id"] or a["name"] == name]
+        pack["acts"] = [a for a in pack["acts"] if a["id"] != act["id"] and a["name"] != name]
+        pack["acts"].append(act)
+        print(f"{name}: {'replaces ' + ', '.join(replaced) if replaced else 'new'}")
+    if len(pack["acts"]) > MAX_ACTS:
+        raise BrainError(f"Bitsy holds {MAX_ACTS} acts; remove one first (it would have {len(pack['acts'])})")
+    print(request(args.host, "/api/behaviors", pack_to_wire(pack)).strip())
+
+
+def cmd_remove(args):
+    """Make Bitsy forget an act, by name or id."""
+    pack = fetch_pack(args.host)
+    key = args.act.upper()
+    keep = [a for a in pack["acts"] if a["name"] != key and str(a["id"]) != key]
+    if len(keep) == len(pack["acts"]):
+        raise BrainError(f"no act called {args.act!r}; see 'show'")
+    if not keep:
+        raise BrainError("that is the last act; use 'defaults' to start over")
+    pack["acts"] = keep
+    print(request(args.host, "/api/behaviors", pack_to_wire(pack)).strip())
+
+
 def read_state(path):
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"next": 0}
 
@@ -271,6 +307,12 @@ def main():
     p = sub.add_parser("push", help="send the behaviours in a JSON file")
     p.add_argument("file")
     p.set_defaults(run=cmd_push)
+    p = sub.add_parser("add", help="teach the act(s) in a JSON file, keeping the rest")
+    p.add_argument("file")
+    p.set_defaults(run=cmd_add)
+    p = sub.add_parser("remove", help="forget an act, by name or id")
+    p.add_argument("act")
+    p.set_defaults(run=cmd_remove)
     sub.add_parser("defaults", help="restore the built-in behaviours").set_defaults(run=cmd_defaults)
     p = sub.add_parser("learn", help="tune how often each behaviour plays, from the diary")
     p.add_argument("--diary", default="bitsy_diary.jsonl")

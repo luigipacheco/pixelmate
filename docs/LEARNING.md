@@ -89,16 +89,16 @@ one stays. A good one is saved to flash and survives restarts.
 A pack can only make Bitsy pull faces, but anyone on your Wi-Fi can send one.
 A pairing code is a possible later step.
 
-## The brain: `tools/bitsy_brain.py`
+## The brain: `brain/bitsy_brain.py`
 
 Standard-library Python, run on any computer on the same network:
 
 ```
-python tools/bitsy_brain.py --host 192.168.1.142 sync      # diary -> bitsy_diary.jsonl
-python tools/bitsy_brain.py --host 192.168.1.142 show      # what Bitsy knows
-python tools/bitsy_brain.py --host 192.168.1.142 export pack.json
-python tools/bitsy_brain.py --host 192.168.1.142 push pack.json
-python tools/bitsy_brain.py --host 192.168.1.142 learn     # add --apply to send
+python brain/bitsy_brain.py --host 192.168.1.142 sync      # diary -> bitsy_diary.jsonl
+python brain/bitsy_brain.py --host 192.168.1.142 show      # what Bitsy knows
+python brain/bitsy_brain.py --host 192.168.1.142 export pack.json
+python brain/bitsy_brain.py --host 192.168.1.142 push pack.json
+python brain/bitsy_brain.py --host 192.168.1.142 learn     # add --apply to send
 ```
 
 `export` writes a friendly file with names instead of numbers, for example:
@@ -113,6 +113,8 @@ python tools/bitsy_brain.py --host 192.168.1.142 learn     # add --apply to send
 ```
 
 Edit it (or have a language model write new acts in this format) and `push`.
+To add a single act and keep the rest, use `add`. The step-by-step guide and the
+full field reference are in [brain/README.md](../brain/README.md).
 
 `learn` is the first, simple kind of learning: for each act it counts plays,
 how often you let it finish, and pats during or right after it. Acts you
