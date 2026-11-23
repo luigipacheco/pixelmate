@@ -58,6 +58,17 @@ desk pet that earns sparks from pats instead of steps: see
 - **TAP STEPS (Settings, off by default):** an accessibility mode for people who
   can't walk (or boards without a step counter): every 10 pats on Bitsy count
   as one step, with no daily cap.
+- **TOOLS (a page after the arcade):** Flipper-style sensor apps; each use
+  earns Bitsy tools XP and levels. SENSORS (live graphs: accelerometer,
+  gyroscope, magnetometer, battery, steps), STEP CAL (walk 50 counted steps to
+  correct the step counter; saved), COMPASS / METAL detector (the board's
+  BMM150 magnetometers; beeps faster near metal), LEVEL (bubble, tap to zero),
+  SEISMO (vibration trace) and WI-FI scanner. With the Interaction module in
+  the RIGHT slot: IR REMOTE (NEC codes: power, volume, channel, a TV OFF blast),
+  GUARD (PIR motion alarm with a visitor count) and LIGHT (light meter and a
+  lamp). The module's LEDs also glow with Bitsy's mood (red pulse when hungry,
+  rainbow at the goal), walking past wakes Bitsy, and its two keys act as arcade
+  buttons (HI/LO, slots, Spark Stack drop, a pat on the home screen).
 - **Easter eggs (spoilers):** 1000 lifetime pats unlock LOVE EYES (hearts when
   happy); ten quick taps on the spark counter make it rain sparks (just for
   show); tapping the version on About 7 times rolls the credits; three hard

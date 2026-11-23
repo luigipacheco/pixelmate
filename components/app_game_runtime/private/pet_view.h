@@ -11,6 +11,37 @@
 
 enum { VIEW_PARTICLES = 56, VIEW_FLOATERS = 6, VIEW_FLOATER_TEXT = 16 };
 
+/* ---- TOOLS data, fed by the runtime while a tool is open ---- */
+enum { PET_TOOL_HIST = 96, PET_TOOL_APS = 8 };
+
+typedef struct {
+    float acc[3];      /* g */
+    float gyr[3];      /* degrees/s */
+    float mag[3];      /* raw magnetometer counts */
+    float mv, ma;      /* battery */
+    float light;       /* interaction module light level, 0..100 */
+    bool pir;          /* interaction module motion */
+} pet_tool_sample_t;
+
+typedef struct {
+    char ssid[20];
+    int8_t rssi;
+    bool open;
+} pet_tool_ap_t;
+
+typedef struct {
+    pet_tool_sample_t hist[PET_TOOL_HIST];
+    int head, count;
+    bool has_mag;
+    float mag_min[3], mag_max[3];   /* Hard-iron calibration (compass). */
+    float mag_base, metal_dev;      /* Metal detector: slow baseline and deviation. */
+    float zero_x, zero_y;           /* LEVEL zero. */
+    uint8_t zero_seq_seen;
+    pet_tool_ap_t aps[PET_TOOL_APS];
+    int ap_count;                   /* -1 while scanning. */
+    bool ir_flash;
+} pet_tools_view_t;
+
 typedef struct {
     float x, y, vx, vy, gravity;
     uint16_t life, max_life;
@@ -45,6 +76,7 @@ typedef struct {
     float bits_pop_t;         /* 0..1 pop of a new Bit Flip target. */
     float arcade_scroll;      /* Eased arcade row (0 = first row). */
     uint8_t seen_cue_seq;     /* Last arcade/dev cue animated. */
+    pet_tools_view_t tools;
     float crt_t;              /* 0..1 CRT power-on when a cabinet opens, >= 1 idle. */
     uint8_t prev_slot_stopped;  /* Reel-stop bits seen last tick. */
     uint8_t prev_hp;            /* Health seen last tick, for day-change floaters. */
@@ -67,6 +99,12 @@ typedef struct {
 void pet_view_init(pet_view_t *view);
 void pet_view_update(pet_view_t *view, const app_game_snapshot_t *snapshot, uint32_t events);
 void pet_view_draw(const pet_view_t *view, const app_game_snapshot_t *snapshot);
+
+/** TOOLS: append one sensor sample (and update compass/metal/level state). */
+void pet_view_tool_sample(pet_view_t *view, const app_game_snapshot_t *snapshot, const pet_tool_sample_t *sample,
+                          bool has_mag);
+/** TOOLS: Wi-Fi scan results (count -1 = scanning). */
+void pet_view_tool_aps(pet_view_t *view, const pet_tool_ap_t *aps, int count);
 
 /** Local time for clock mode. */
 typedef struct {

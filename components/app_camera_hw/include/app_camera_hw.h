@@ -5,6 +5,7 @@
  * the slot and the camera; the game loop only picks a mode, reads presence and
  * copies frames. ../README.md has the board details (shared I2C,
  * USB-Serial/JTAG pad, orientation, hot-plug). */
+#include "esp_err.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -35,6 +36,11 @@ void app_camera_hw_set_mode(app_camera_mode_t mode);
 /** Camera board detected by the last probes (debounced); any task. Keeps its
  * last value while the mode is OFF. */
 bool app_camera_hw_present(void);
+
+/** The module slots' I2C bus (board I2C0 on v1.0, the sub-board I2C1 on
+ * v1.1/1.2), created on first use. Shared with the interaction module driver.
+ * Call from the game loop. */
+esp_err_t app_camera_hw_slot_bus(void **bus);
 
 /** Webcam: while on (and streaming), the worker also hardware-encodes an
  * upright APP_CAMERA_WEBCAM_W x _H color JPEG every other frame (~12 fps). */

@@ -18,6 +18,15 @@ esp_err_t app_pedometer_hw_start(void);
  * at 0 on every boot). ESP_ERR_INVALID_STATE before a successful start. */
 esp_err_t app_pedometer_hw_read(uint32_t *steps);
 
+/** One accelerometer (g) and gyroscope (degrees/s) sample from the same IMU,
+ * for the TOOLS sensor apps. ESP_ERR_INVALID_STATE before a successful start. */
+esp_err_t app_pedometer_hw_motion(float accel_g[3], float gyro_dps[3]);
+
+/** Before deep sleep: gyroscope off and the accelerometer in its low-power
+ * mode (50 Hz, 2 samples averaged), which the step counter still runs on.
+ * The next boot configures the sensor from scratch. */
+esp_err_t app_pedometer_hw_low_power(void);
+
 #ifdef __cplusplus
 }
 #endif

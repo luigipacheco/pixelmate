@@ -48,7 +48,7 @@ enum {
 
 static const uint16_t s_sleep_s[APP_SLEEP_OPTIONS] = {15, 30, 60, 120};
 static const uint8_t s_bright_pct[APP_BRIGHT_OPTIONS] = {100, 80, 60};
-enum { DEFAULT_SLEEP_IDX = 1, DEFAULT_BRIGHT_IDX = 0, SETTINGS_PAGES = 2 };
+enum { DEFAULT_SLEEP_IDX = 1, DEFAULT_BRIGHT_IDX = 0 };
 /* Volume order when tapping SOUND: off, low, mid, high. */
 static const app_sound_t s_sound_cycle[APP_SOUND_COUNT] = {
     APP_SOUND_OFF, APP_SOUND_LOW, APP_SOUND_MID, APP_SOUND_HIGH,
@@ -102,7 +102,7 @@ static const app_store_item_t s_store[] = {
 #define FREE_FILTERS APP_OWN_FILTER_BIT(APP_FILTER_NONE)
 #define FREE_LENSES APP_OWN_LENS_BIT(APP_PHOTO_RES_LOW)
 #define DANCE_EVERY_STEPS 100U
-_Static_assert(sizeof(app_game_record_t) == 84, "bump SAVE_VERSION and migrate when the record changes");
+_Static_assert(sizeof(app_game_record_t) == 88, "bump SAVE_VERSION and migrate when the record changes");
 
 struct app_game {
     app_game_config_t config;
@@ -118,6 +118,7 @@ struct app_game {
     uint8_t settings_page;
     uint8_t sleep_idx, bright_idx;     /* Indexes into s_sleep_s / s_bright_pct. */
     bool tap_steps;                    /* TAP STEPS setting. */
+    bool lights_off;                   /* MODULE LIGHTS off. */
     uint32_t tap_steps_today;          /* Steps credited by pats today. */
     uint8_t tap_pats;                  /* Pats toward the next tap step. */
     /* DEV MODE sandbox: the real economy is parked here while it is on, and
@@ -134,6 +135,10 @@ struct app_game {
     uint8_t shake_hits;
     bool shake_high, flipped_now, upside_down, missed_pending;
     float grav[3];               /* Slow average of 'which way is down'. */
+    app_tools_snapshot_t tools;
+    uint32_t raw_steps;          /* Hardware counter steps before calibration. */
+    uint32_t cal_start;
+    uint16_t cal_remainder;      /* Calibrated-steps remainder (percent units). */
     uint16_t real_filters;
     uint8_t real_lenses;
     bool reset_armed;                  /* Finger went down on RESET PET. */
@@ -310,6 +315,7 @@ static void fresh_pet(app_game_handle_t g)
     g->screen_idle_ticks = 0;
     g->swallow_touch = false;
     g->steps_total = g->steps_today = 0;
+    g->tools.step_cal_pct = 100;
     g->day = 0;
     g->sparks = START_SPARKS;
     g->spark_progress = 0;
@@ -398,10 +404,11 @@ static void reset_pet_keep_settings(app_game_handle_t g)
 {
     const app_sound_t sound = g->sound;
     const uint8_t sleep_idx = g->sleep_idx, bright_idx = g->bright_idx;
-    const bool tap_steps = g->tap_steps;
+    const bool tap_steps = g->tap_steps, lights_off = g->lights_off;
     const uint32_t goal = g->step_goal;
     fresh_pet(g);
     g->tap_steps = tap_steps;
+    g->lights_off = lights_off;
     g->sound = sound;
     g->sleep_idx = sleep_idx;
     g->bright_idx = bright_idx;
@@ -422,7 +429,7 @@ void app_game_set_paused(app_game_handle_t g, bool paused)
  * exists only while a camera module is plugged in. */
 static int last_screen(const struct app_game *g)
 {
-    return g->camera_present ? APP_SCREEN_BOOTH : APP_SCREEN_ARCADE;
+    return g->camera_present ? APP_SCREEN_BOOTH : APP_SCREEN_TOOLS;
 }
 
 static void set_screen(app_game_handle_t g, app_screen_t screen)
@@ -577,6 +584,8 @@ static void set_overlay(app_game_handle_t g, app_overlay_t overlay)
 static app_minigame_t cabinet_game(app_arcade_t cabinet);
 
 static void dev_mode_off(app_game_handle_t g);
+static void tap_tools(app_game_handle_t g, int32_t x, int32_t y);
+static void handle_tap(app_game_handle_t g, int32_t x, int32_t y);
 static int settings_rows(const struct app_game *g);
 
 static void set_arcade(app_game_handle_t g, app_arcade_t arcade)
@@ -935,6 +944,7 @@ static void tap_settings(app_game_handle_t g, int32_t x, int32_t y)
         case 4: g->bright_idx = (uint8_t)((g->bright_idx + 1) % APP_BRIGHT_OPTIONS); break;
         case 5: g->tap_steps = !g->tap_steps; break;
         case 6: set_overlay(g, APP_OVERLAY_ABOUT); return;
+        case 7: g->lights_off = !g->lights_off; break;
         default: return;   /* RESET needs a hold. */
         }
         g->events |= APP_EVENT_SETTINGS;
@@ -1276,6 +1286,186 @@ static int settings_rows(const struct app_game *g)
     return app_settings_row_count(g->config.desk, g->dev_mode);
 }
 
+/* ---- TOOLS -------------------------------------------------------- */
+
+static void tools_xp(app_game_handle_t g, uint16_t amount)
+{
+    const uint16_t before = g->tools.xp / APP_TOOLS_XP_PER_LEVEL;
+    g->tools.xp = (uint16_t)(g->tools.xp + amount);
+    if (g->tools.xp / APP_TOOLS_XP_PER_LEVEL > before) {
+        fire_cue(g, APP_CUE_LEVEL_UP);
+        react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS);
+    }
+    changed(g);
+}
+
+static bool tool_available(const struct app_game *g, int tool)
+{
+    return tool < APP_TOOL_IR || g->tools.module_present;
+}
+
+static void tap_tools(app_game_handle_t g, int32_t x, int32_t y)
+{
+    app_tools_snapshot_t *t = &g->tools;
+    if (t->tool == APP_TOOL_LIST) {
+        for (int i = 0; i < APP_TOOL_COUNT - 1; ++i) {
+            if (!app_rect_hit(app_tools_cell_rect(i), x, y)) {
+                continue;
+            }
+            if (!tool_available(g, i + 1)) {
+                react(g, APP_MOOD_GRUMPY, REACT_GRUMPY_TICKS);   /* Needs the module. */
+                return;
+            }
+            t->tool = (uint8_t)(i + 1);
+            fire_cue(g, APP_CUE_TOOL_OPEN);
+            tools_xp(g, 1);
+            return;
+        }
+        return;
+    }
+    if (app_rect_hit(app_tools_back_rect(), x, y)) {
+        if (t->tool == APP_TOOL_STEPCAL && t->cal_phase == APP_CAL_WALKING) {
+            t->cal_phase = APP_CAL_IDLE;
+        }
+        t->tool = APP_TOOL_LIST;
+        g->events |= APP_EVENT_SETTINGS;
+        return;
+    }
+    switch ((app_tool_t)t->tool) {
+    case APP_TOOL_SENSORS:
+        t->sensor_page = (uint8_t)((t->sensor_page + 1) % APP_SENSOR_PAGES);
+        g->events |= APP_EVENT_SETTINGS;
+        break;
+    case APP_TOOL_STEPCAL:
+        if (app_rect_hit(app_tools_button_rect(0), x, y)) {          /* START */
+            t->cal_phase = APP_CAL_WALKING;
+            g->cal_start = g->raw_steps;
+            t->cal_measured = 0;
+            fire_cue(g, APP_CUE_TOOL_ACTION);
+        } else if (app_rect_hit(app_tools_button_rect(1), x, y)       /* DONE */
+                   && t->cal_phase == APP_CAL_WALKING && t->cal_measured >= 10) {
+            uint32_t pct = (uint32_t)APP_CAL_STEPS * 100U / t->cal_measured;
+            pct = pct < 50U ? 50U : (pct > 200U ? 200U : pct);
+            t->step_cal_pct = (uint8_t)pct;
+            t->cal_phase = APP_CAL_DONE;
+            fire_cue(g, APP_CUE_CAL_DONE);
+            tools_xp(g, 5);
+        } else if (app_rect_hit(app_tools_button_rect(2), x, y)) {   /* RESET */
+            t->step_cal_pct = 100;
+            t->cal_phase = APP_CAL_IDLE;
+            fire_cue(g, APP_CUE_TOOL_ACTION);
+            changed(g);
+        }
+        break;
+    case APP_TOOL_COMPASS:
+        t->metal_mode = !t->metal_mode;
+        fire_cue(g, APP_CUE_TOOL_ACTION);
+        break;
+    case APP_TOOL_LEVEL:
+        ++t->level_zero_seq;   /* Zero the bubble where it sits. */
+        fire_cue(g, APP_CUE_TOOL_ACTION);
+        break;
+    case APP_TOOL_WIFI:
+        if (app_rect_hit(app_tools_button_rect(1), x, y)) {
+            ++t->scan_seq;
+            fire_cue(g, APP_CUE_TOOL_ACTION);
+            tools_xp(g, 1);
+        }
+        break;
+    case APP_TOOL_IR:
+        for (int i = 0; i < APP_IR_BUTTONS; ++i) {
+            if (app_rect_hit(app_tools_ir_rect(i), x, y)) {
+                t->ir_button = (uint8_t)i;
+                ++t->ir_seq;
+                fire_cue(g, APP_CUE_TOOL_ACTION);
+                tools_xp(g, 1);
+                return;
+            }
+        }
+        break;
+    case APP_TOOL_GUARD:
+        if (app_rect_hit(app_tools_button_rect(1), x, y)) {
+            t->guard_armed = !t->guard_armed;
+            if (t->guard_armed) {
+                t->guard_hits = 0;
+            }
+            fire_cue(g, APP_CUE_TOOL_ACTION);
+        }
+        break;
+    case APP_TOOL_LIGHT:
+        if (app_rect_hit(app_tools_button_rect(1), x, y)) {
+            t->flashlight = !t->flashlight;
+            fire_cue(g, APP_CUE_TOOL_ACTION);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+void app_game_set_module(app_game_handle_t g, bool present)
+{
+    if (!g || g->tools.module_present == present) {
+        return;
+    }
+    g->tools.module_present = present;
+    if (!present && g->tools.tool >= APP_TOOL_IR) {
+        g->tools.tool = APP_TOOL_LIST;
+        g->tools.guard_armed = false;
+        g->tools.flashlight = false;
+    }
+    g->events |= APP_EVENT_SETTINGS;
+}
+
+/* The module's two keys as arcade buttons: HI/LO and DEAL in the card game,
+ * STOP/SPIN in the slots, DROP in Spark Stack, a pat on the home screen. */
+void app_game_module_key(app_game_handle_t g, bool right)
+{
+    if (!g || g->power != APP_POWER_AWAKE || g->overlay != APP_OVERLAY_NONE) {
+        if (g && g->power != APP_POWER_AWAKE) {
+            wake(g);
+        }
+        return;
+    }
+    if (g->screen == APP_SCREEN_HOME) {
+        const app_rect_t r = app_home_eyes_rect();
+        handle_tap(g, r.x + r.w / 2, r.y + r.h / 2);
+        return;
+    }
+    if (g->screen != APP_SCREEN_ARCADE) {
+        return;
+    }
+    switch (g->arcade) {
+    case APP_ARCADE_CARDS:
+        if (g->cards.view.phase == APP_CARDS_GUESS) {
+            if (right) { const app_rect_t r = app_cards_lo_rect(); handle_tap(g, r.x + r.w / 2, r.y + r.h / 2); } else { const app_rect_t r = app_cards_hi_rect(); handle_tap(g, r.x + r.w / 2, r.y + r.h / 2); }
+        } else {
+            { const app_rect_t r = app_cards_deal_rect(); handle_tap(g, r.x + r.w / 2, r.y + r.h / 2); }
+        }
+        break;
+    case APP_ARCADE_SLOTS: { const app_rect_t r = app_slots_button_rect(); handle_tap(g, r.x + r.w / 2, r.y + r.h / 2); } break;
+    case APP_ARCADE_STACK:
+        if (g->stack.view.phase == APP_STACK_READY) {
+            { const app_rect_t r = app_stack_button_rect(); handle_tap(g, r.x + r.w / 2, r.y + r.h / 2); }
+        } else {
+            handle_tap(g, 240, 300);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+void app_game_guard_motion(app_game_handle_t g)
+{
+    if (g && g->tools.guard_armed) {
+        ++g->tools.guard_hits;
+        fire_cue(g, APP_CUE_ALARM);
+        react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
+        tools_xp(g, 1);
+    }
+}
+
 static bool booth_owned(const struct app_game *g)
 {
     return (g->owned & APP_OWN_GAME_BIT(APP_GAME_PHOTO)) != 0;
@@ -1392,6 +1582,7 @@ static void handle_tap(app_game_handle_t g, int32_t x, int32_t y)
     case APP_SCREEN_HOME: tap_home(g, x, y); break;
     case APP_SCREEN_FEED: tap_feed(g, x, y); break;
     case APP_SCREEN_ARCADE: tap_arcade(g, x, y); break;
+    case APP_SCREEN_TOOLS: tap_tools(g, x, y); break;
     case APP_SCREEN_BOOTH: tap_booth(g, x, y); break;
     default: break;
     }
@@ -1563,7 +1754,23 @@ void app_game_set_sensor_steps(app_game_handle_t g, uint32_t cumulative)
     }
     const uint32_t delta = cumulative - g->sensor_last;
     g->sensor_last = cumulative;
-    credit_steps(g, delta);
+    app_game_add_sensor_delta(g, delta);
+}
+
+void app_game_add_sensor_delta(app_game_handle_t g, uint32_t delta)
+{
+    if (!g || delta == 0) {
+        return;
+    }
+    g->raw_steps += delta;
+    if (g->tools.cal_phase == APP_CAL_WALKING) {
+        g->tools.cal_measured = (uint16_t)(g->raw_steps - g->cal_start);
+    }
+    /* STEP CAL: scale by the saved correction, carrying the remainder. */
+    const uint32_t pct = g->tools.step_cal_pct ? g->tools.step_cal_pct : 100U;
+    const uint32_t scaled = delta * pct + g->cal_remainder;
+    g->cal_remainder = (uint16_t)(scaled % 100U);
+    credit_steps(g, scaled / 100U);
 }
 
 void app_game_set_clock(app_game_handle_t g, int minute_of_day)
@@ -1973,6 +2180,7 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .sleep_s = s_sleep_s[g->sleep_idx < APP_SLEEP_OPTIONS ? g->sleep_idx : DEFAULT_SLEEP_IDX],
         .brightness_pct = s_bright_pct[g->bright_idx < APP_BRIGHT_OPTIONS ? g->bright_idx : DEFAULT_BRIGHT_IDX],
         .tap_steps = g->tap_steps,
+        .module_lights = !g->lights_off,
         .tap_steps_today = g->tap_steps_today,
         .dev_mode = g->dev_mode,
         .desk = g->config.desk,
@@ -1982,6 +2190,7 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .credits_ticks = g->credits_ticks,
         .dizzy = g->dizzy_ticks > 0,
         .upside_down = g->upside_down,
+        .tools = g->tools,
         .reset_hold = (uint8_t)(g->reset_hold_ticks * 100U / (APP_RESET_HOLD_S * TICKS_PER_SECOND)),
         .steps_total = g->steps_total,
         .steps_today = g->steps_today,
@@ -2104,10 +2313,13 @@ void app_game_export(app_game_handle_t g, app_game_record_t *r)
     r->stack_best = g->stack.view.best;
     r->sleep_code = g->sleep_idx == DEFAULT_SLEEP_IDX ? 0 : (uint8_t)(g->sleep_idx + 1);
     r->bright_code = g->bright_idx == DEFAULT_BRIGHT_IDX ? 0 : (uint8_t)(g->bright_idx + 1);
-    r->flags = g->tap_steps ? APP_RECORD_FLAG_TAP_STEPS : 0U;
+    r->flags = (uint8_t)((g->tap_steps ? APP_RECORD_FLAG_TAP_STEPS : 0U)
+                         | (g->lights_off ? APP_RECORD_FLAG_LIGHTS_OFF : 0U));
     r->pats_lo = (uint8_t)(g->pats & 0xFFU);
     r->pats_hi = (uint8_t)(g->pats >> 8);
     r->eggs = g->eggs;
+    r->tools_xp = g->tools.xp;
+    r->step_cal_pct = g->tools.step_cal_pct == 100 ? 0 : g->tools.step_cal_pct;
     if (g->dev_mode) {   /* The sandbox is never saved. */
         r->sparks = g->real_sparks;
         r->owned = g->real_owned;
@@ -2160,9 +2372,12 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
     g->bright_idx = r->bright_code && r->bright_code <= APP_BRIGHT_OPTIONS
                     ? (uint8_t)(r->bright_code - 1) : DEFAULT_BRIGHT_IDX;
     g->tap_steps = (r->flags & APP_RECORD_FLAG_TAP_STEPS) != 0;
+    g->lights_off = (r->flags & APP_RECORD_FLAG_LIGHTS_OFF) != 0;
     g->pats = (uint16_t)(r->pats_lo | (r->pats_hi << 8));
     g->pats = g->pats > APP_LOVE_PATS ? APP_LOVE_PATS : g->pats;
     g->eggs = r->eggs;
+    g->tools.xp = r->tools_xp;
+    g->tools.step_cal_pct = r->step_cal_pct >= 50 && r->step_cal_pct <= 200 ? r->step_cal_pct : 100;
     g->filters_owned = (uint16_t)(r->filters_owned | ((uint16_t)r->filters_owned_hi << 8) | FREE_FILTERS);
     g->filters_owned &= (uint16_t)((1U << APP_FILTER_COUNT) - 1U);
     grid_set_level(&g->grid, r->grid_level);

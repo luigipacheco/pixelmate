@@ -50,3 +50,59 @@ esp_err_t app_pedometer_hw_read(uint32_t *steps)
     *steps = data.sens_data.step_counter_output;
     return ESP_OK;
 }
+
+/* Full-scale ranges as configured by the board (read once). */
+static float s_acc_scale, s_gyr_scale;
+
+esp_err_t app_pedometer_hw_motion(float accel_g[3], float gyro_dps[3])
+{
+    if (!accel_g || !gyro_dps) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!s_started) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (s_acc_scale == 0.0f) {
+        struct bmi2_sens_config cfg[2] = {{.type = BMI2_ACCEL}, {.type = BMI2_GYRO}};
+        if (bmi2_get_sensor_config(cfg, 2, s_sensor) != BMI2_OK) {
+            return ESP_FAIL;
+        }
+        static const float acc_g[4] = {2.0f, 4.0f, 8.0f, 16.0f};
+        static const float gyr_dps[5] = {2000.0f, 1000.0f, 500.0f, 250.0f, 125.0f};
+        s_acc_scale = acc_g[cfg[0].cfg.acc.range & 3U] / 32768.0f;
+        s_gyr_scale = gyr_dps[cfg[1].cfg.gyr.range <= 4U ? cfg[1].cfg.gyr.range : 0U] / 32768.0f;
+    }
+    struct bmi2_sens_data data = {0};
+    if (bmi2_get_sensor_data(&data, s_sensor) != BMI2_OK) {
+        return ESP_FAIL;
+    }
+    accel_g[0] = data.acc.x * s_acc_scale;
+    accel_g[1] = data.acc.y * s_acc_scale;
+    accel_g[2] = data.acc.z * s_acc_scale;
+    gyro_dps[0] = data.gyr.x * s_gyr_scale;
+    gyro_dps[1] = data.gyr.y * s_gyr_scale;
+    gyro_dps[2] = data.gyr.z * s_gyr_scale;
+    return ESP_OK;
+}
+
+esp_err_t app_pedometer_hw_low_power(void)
+{
+    if (!s_started) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const uint8_t gyro[] = {BMI2_GYRO};
+    if (bmi270_sensor_disable(gyro, 1, s_sensor) != BMI2_OK) {
+        return ESP_FAIL;
+    }
+    struct bmi2_sens_config accel = {.type = BMI2_ACCEL};
+    if (bmi2_get_sensor_config(&accel, 1, s_sensor) != BMI2_OK) {
+        return ESP_FAIL;
+    }
+    accel.cfg.acc.odr = BMI2_ACC_ODR_50HZ;
+    accel.cfg.acc.bwp = BMI2_ACC_OSR2_AVG2;
+    accel.cfg.acc.filter_perf = BMI2_POWER_OPT_MODE;
+    if (bmi2_set_sensor_config(&accel, 1, s_sensor) != BMI2_OK) {
+        return ESP_FAIL;
+    }
+    return bmi2_set_adv_power_save(BMI2_ENABLE, s_sensor) == BMI2_OK ? ESP_OK : ESP_FAIL;
+}

@@ -557,7 +557,8 @@ static void ip_text(uint32_t ipv4, char *out, size_t cap)
 static void draw_setting_row(const draw_ctx_t *d, int row, int index, int oy)
 {
     static const char *const names[APP_SETTINGS_ROWS] = {
-        "SOUND", "DAILY GOAL", "WI-FI", "SCREEN SLEEP", "BRIGHTNESS", "TAP STEPS", "ABOUT", "RESET PET",
+        "SOUND", "DAILY GOAL", "WI-FI", "SCREEN SLEEP", "BRIGHTNESS", "TAP STEPS", "ABOUT", "MODULE LIGHTS",
+        "RESET PET",
     };
     const app_game_snapshot_t *s = d->snap;
     const app_rect_t r = app_settings_row_rect(row);
@@ -607,6 +608,11 @@ static void draw_setting_row(const draw_ctx_t *d, int row, int index, int oy)
     case 6:
         snprintf(value, sizeof(value), "V%s", APP_VERSION);
         snprintf(hint, sizeof(hint), "BY %s - TAP FOR MORE", APP_AUTHOR);
+        break;
+    case 7:
+        snprintf(value, sizeof(value), "%s", s->module_lights ? "ON" : "OFF");
+        snprintf(hint, sizeof(hint), "%s", s->tools.module_present ? "INTERACTION MODULE MOOD GLOW"
+                                                                     : "NEEDS THE INTERACTION MODULE");
         break;
     default:
         snprintf(value, sizeof(value), "HOLD");

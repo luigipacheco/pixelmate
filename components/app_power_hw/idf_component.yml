@@ -1,0 +1,4 @@
+dependencies:
+  # Same driver and version the ESP-Mosaico BSP uses to load the gauge profile.
+  espressif/bq27220: "0.1.3"
+  espressif/i2c_bus: "^1.4"
