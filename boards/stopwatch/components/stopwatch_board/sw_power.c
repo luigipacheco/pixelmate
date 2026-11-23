@@ -115,3 +115,12 @@ i2c_master_bus_handle_t sw_power_bus(void)
 {
     return s_bus;
 }
+
+esp_err_t sw_power_ioe_set(int pin, bool on)
+{
+    if (!s_ioe || pin < 1 || pin > 16) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const uint8_t reg = (uint8_t)(0x05 + (pin - 1) / 8), bit = (uint8_t)(1U << ((pin - 1) % 8));
+    return update(s_ioe, reg, on ? bit : 0, on ? 0 : bit);
+}

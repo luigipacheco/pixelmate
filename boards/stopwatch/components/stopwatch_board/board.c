@@ -2,8 +2,7 @@
 /* M5Stack StopWatch application-side adapter for Raylib Lite Engine.
  * No ESP Board Manager: the board powers its display and touch itself
  * (sw_power.c, M5's sequence), drives the CO5300 over QSPI (sw_video.c) and
- * polls the CST820 touch (sw_touch.c). First milestone: picture and touch;
- * sound (ES8311), buttons, IMU and vibration come next. */
+ * polls the CST820 touch (sw_touch.c); sound is sw_audio.c. */
 #include "raylib_lite_example_board.h"
 
 #include <stdatomic.h>
@@ -63,40 +62,6 @@ esp_err_t raylib_lite_example_board_haptic_set(uint8_t strength)
     return ESP_ERR_NOT_SUPPORTED;
 }
 
-/* Sound is not wired up yet (ES8311 codec + IOE1 amplifier enable): the game
- * runs silent. */
-static raylib_lite_result_t audio_start(void *context, const raylib_lite_audio_format_t *format)
-{
-    (void)context;
-    (void)format;
-    return RAYLIB_LITE_NOT_SUPPORTED;
-}
-
-static raylib_lite_result_t audio_write(void *context, const int16_t *frames, size_t frame_count,
-                                        uint32_t timeout_ms, size_t *out_written)
-{
-    (void)context;
-    (void)frames;
-    (void)frame_count;
-    (void)timeout_ms;
-    if (out_written) *out_written = 0;
-    return RAYLIB_LITE_NOT_READY;
-}
-
-static raylib_lite_result_t audio_stop(void *context, uint32_t timeout_ms)
-{
-    (void)context;
-    (void)timeout_ms;
-    return RAYLIB_LITE_OK;
-}
-
-raylib_lite_audio_backend_t platform_esp_audio_board_backend(void)
-{
-    return (raylib_lite_audio_backend_t) {
-        .context = NULL, .start = audio_start, .write = audio_write, .stop = audio_stop,
-    };
-}
-
 static void lock_input(void *ctx)
 {
     (void)xSemaphoreTake((SemaphoreHandle_t)ctx, portMAX_DELAY);
@@ -133,7 +98,13 @@ static void touch_worker(void *arg)
     int32_t last_x = 0, last_y = 0;
     while (atomic_load_explicit(&board->sampling, memory_order_acquire)) {
         int32_t x = last_x, y = last_y;
-        const bool pressed = sw_touch_read(&x, &y);
+        bool pressed = sw_touch_read(&x, &y);
+        if (pressed) {
+            pressed = sw_video_map_touch(&x, &y);
+            if (!was_pressed) {
+                ESP_LOGI(TAG, "touch -> game %ld,%ld", (long)x, (long)y);
+            }
+        }
         if (!pressed) {
             x = last_x;
             y = last_y;

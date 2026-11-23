@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 /* M5Stack StopWatch display: CO5300 AMOLED over QSPI, driven as a 480x480
- * memory like the ESP-Mosaico's panel (M5GFX's Panel_StopWatch: 480x480
- * memory, the round glass shows the middle 468, 6 columns in). The game's
- * 480x480 surface goes out 1:1.
+ * memory (M5GFX's Panel_StopWatch: the round glass shows a 468-pixel circle,
+ * 6 columns in, rows 0..467). The game's square 480x480 surface is scaled down
+ * to SW_VIEW_SIDE and centred on the glass, so its corners stay inside the
+ * circle; the rest of the panel is painted black once.
  *
  * Two logical frames live in PSRAM: the game draws one while a sender task
  * (CPU 0) pushes the other through esp_display_present, which owns the DMA
@@ -35,6 +36,13 @@
 #define SENDER_STACK 4096U
 #define SENDER_PRIORITY 6U
 #define STOP_ITEM 0xFFU
+/* Glass centre in panel memory, and the scaled square's top-left (QSPI area
+ * writes want x on a multiple of 4). */
+#define GLASS_CX 240U
+#define GLASS_CY 234U
+#define VIEW_X0 (GLASS_CX - SW_VIEW_SIDE / 2U)
+#define VIEW_Y0 (GLASS_CY - SW_VIEW_SIDE / 2U)
+_Static_assert(SW_VIEW_SIDE % 8U == 0U && SW_VIEW_SIDE <= LCD_SIZE, "view side: a multiple of 8, at most 480");
 
 /* M5GFX Panel_StopWatch init list (MIT, M5Stack), plus RGB565 (0x3A). */
 static const co5300_lcd_init_cmd_t s_init[] = {
@@ -64,6 +72,8 @@ struct sw_video {
     esp_display_presenter_t *presenter;
     volatile uint32_t in_flight;
     volatile bool failed;
+    bool cleared;                      /* Panel painted black once (sender task). */
+    uint16_t src_index[SW_VIEW_SIDE];  /* View pixel -> game pixel, both axes. */
 };
 
 static raylib_lite_result_t result_from_esp(esp_err_t err)
@@ -124,20 +134,44 @@ static raylib_lite_result_t acquire(void *ctx, raylib_lite_frame_t *out)
     return RAYLIB_LITE_OK;
 }
 
-/* One frame to the panel in strips. Sender task only. */
-static esp_err_t send_frame(sw_video_t *video, const uint16_t *frame)
+/* One area of the panel in strips: rows come from `fill`. Sender task only. */
+typedef void (*fill_rows_t)(const sw_video_t *video, const uint16_t *frame, uint16_t *out, uint16_t top,
+                            uint16_t rows);
+
+static void fill_black(const sw_video_t *video, const uint16_t *frame, uint16_t *out, uint16_t top, uint16_t rows)
 {
-    const size_t stride = LCD_SIZE * sizeof(uint16_t);
+    (void)video;
+    (void)frame;
+    (void)top;
+    memset(out, 0, (size_t)rows * LCD_SIZE * sizeof(uint16_t));
+}
+
+/* Nearest-neighbour reduction of the 480x480 game to the view square. */
+static void fill_view(const sw_video_t *video, const uint16_t *frame, uint16_t *out, uint16_t top, uint16_t rows)
+{
+    for (uint16_t r = 0; r < rows; ++r) {
+        const uint16_t *src = frame + (size_t)video->src_index[top + r] * LCD_SIZE;
+        uint16_t *dst = out + (size_t)r * SW_VIEW_SIDE;
+        for (uint32_t x = 0; x < SW_VIEW_SIDE; ++x) {
+            dst[x] = src[video->src_index[x]];
+        }
+    }
+}
+
+static esp_err_t send_area(sw_video_t *video, const uint16_t *frame, uint16_t x0, uint16_t y0, uint16_t width,
+                           uint16_t height, fill_rows_t fill, bool whole)
+{
+    const size_t stride = (size_t)width * sizeof(uint16_t);
     size_t areas = 0;
     bool full = false;
     esp_err_t err = esp_display_presenter_begin_next_frame(video->presenter, NULL, NULL, 0, &areas, &full);
     if (err != ESP_OK) return err;
-    for (uint16_t y = 0; y < LCD_SIZE;) {
+    for (uint16_t y = 0; y < height;) {
         esp_display_presenter_buffer_t lease = {0};
         err = esp_display_presenter_acquire_buffer(video->presenter, &lease);
         if (err != ESP_OK) goto cancel;
         size_t rows = 0;
-        const size_t remaining = LCD_SIZE - y;
+        const size_t remaining = height - y;
         if (!lease.lease_id || !lease.surface.pixels || !lease.resolve_rows || lease.capacity_bytes < stride) {
             err = ESP_FAIL;
             goto cancel;
@@ -148,21 +182,38 @@ static esp_err_t send_frame(sw_video_t *video, const uint16_t *frame)
             err = ESP_FAIL;
             goto cancel;
         }
-        memcpy(lease.surface.pixels, frame + (size_t)y * LCD_SIZE, rows * stride);
+        fill(video, frame, lease.surface.pixels, y, (uint16_t)rows);
         const esp_display_present_area_t area = {
-            .x1 = 0, .y1 = y, .x2 = LCD_SIZE - 1, .y2 = y + rows - 1,
+            .x1 = x0, .y1 = y0 + y, .x2 = x0 + width - 1, .y2 = y0 + y + rows - 1,
         };
         err = esp_display_presenter_submit_buffer(video->presenter, &lease, &area, stride);
         if (err != ESP_OK) goto cancel;
         y += (uint16_t)rows;
     }
-    const esp_display_presenter_submit_t done = {.coverage = ESP_DISPLAY_PRESENT_COVERAGE_FULL};
+    const esp_display_present_area_t covered = {
+        .x1 = x0, .y1 = y0, .x2 = x0 + width - 1, .y2 = y0 + height - 1,
+    };
+    const esp_display_presenter_submit_t done = whole
+        ? (esp_display_presenter_submit_t) {.coverage = ESP_DISPLAY_PRESENT_COVERAGE_FULL}
+        : (esp_display_presenter_submit_t) {
+            .coverage = ESP_DISPLAY_PRESENT_COVERAGE_AREAS, .areas = &covered, .area_count = 1,
+        };
     err = esp_display_presenter_commit_frame(video->presenter, &done);
     if (err != ESP_OK) goto cancel;
     return esp_display_presenter_quiesce(video->presenter, 1500);
 cancel:
     esp_display_presenter_cancel_frame(video->presenter);
     return err;
+}
+
+static esp_err_t send_frame(sw_video_t *video, const uint16_t *frame)
+{
+    if (!video->cleared) {
+        const esp_err_t err = send_area(video, NULL, 0, 0, LCD_SIZE, LCD_SIZE, fill_black, true);
+        if (err != ESP_OK) return err;
+        video->cleared = true;
+    }
+    return send_area(video, frame, VIEW_X0, VIEW_Y0, SW_VIEW_SIDE, SW_VIEW_SIDE, fill_view, false);
 }
 
 static void sender(void *arg)
@@ -286,6 +337,9 @@ raylib_lite_result_t sw_video_open(sw_video_t **out)
     if (!video) return RAYLIB_LITE_NO_MEMORY;
     video->acquired = -1;
     portMUX_INITIALIZE(&video->lock);
+    for (uint32_t i = 0; i < SW_VIEW_SIDE; ++i) {
+        video->src_index[i] = (uint16_t)((i * LCD_SIZE + LCD_SIZE / 2U) / SW_VIEW_SIDE);
+    }
     for (uint32_t i = 0; i < FRAMES; ++i) {
         video->frames[i] = heap_caps_calloc((size_t)LCD_SIZE * LCD_SIZE, sizeof(uint16_t),
                                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -320,10 +374,21 @@ raylib_lite_result_t sw_video_open(sw_video_t **out)
     if (err != ESP_OK) return result_from_esp(err);
     if (xTaskCreatePinnedToCore(sender, "sw_lcd", SENDER_STACK, video, SENDER_PRIORITY, &video->sender, 0) != pdPASS)
         return RAYLIB_LITE_NO_MEMORY;
-    ESP_LOGI(TAG, "CO5300 480x480 over QSPI at %u MHz, %u frames", (unsigned)(LCD_PCLK_HZ / 1000000U),
+    ESP_LOGI(TAG, "CO5300 over QSPI at %u MHz: game scaled to %u px at (%u,%u), %u frames",
+             (unsigned)(LCD_PCLK_HZ / 1000000U), (unsigned)SW_VIEW_SIDE, (unsigned)VIEW_X0, (unsigned)VIEW_Y0,
              (unsigned)FRAMES);
     *out = video;
     return RAYLIB_LITE_OK;
+}
+
+bool sw_video_map_touch(int32_t *x, int32_t *y)
+{
+    int32_t vx = *x - (int32_t)VIEW_X0, vy = *y - (int32_t)VIEW_Y0;
+    vx = vx < 0 ? 0 : (vx >= (int32_t)SW_VIEW_SIDE ? (int32_t)SW_VIEW_SIDE - 1 : vx);
+    vy = vy < 0 ? 0 : (vy >= (int32_t)SW_VIEW_SIDE ? (int32_t)SW_VIEW_SIDE - 1 : vy);
+    *x = vx * (int32_t)LCD_SIZE / (int32_t)SW_VIEW_SIDE;
+    *y = vy * (int32_t)LCD_SIZE / (int32_t)SW_VIEW_SIDE;
+    return true;
 }
 
 raylib_lite_video_backend_t sw_video_backend(sw_video_t *video)

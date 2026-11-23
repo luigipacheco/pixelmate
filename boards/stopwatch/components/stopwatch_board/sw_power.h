@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 /* M5Stack StopWatch pins and power-up (see sw_power.c). */
+#include <stdbool.h>
 #include "driver/i2c_master.h"
 #include "esp_err.h"
 
@@ -26,3 +27,8 @@
 /** Open the internal I2C bus and power the display and touch (once). */
 esp_err_t sw_power_init(void);
 i2c_master_bus_handle_t sw_power_bus(void);
+/** Drive an M5IOE1 output pin (1-16; already set up as an output in
+ * sw_power_init: 3 codec power, 10 speaker amplifier). */
+esp_err_t sw_power_ioe_set(int pin, bool on);
+#define SW_IOE_CODEC_POWER 3
+#define SW_IOE_SPEAKER_AMP 10

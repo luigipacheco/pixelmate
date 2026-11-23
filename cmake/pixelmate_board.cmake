@@ -23,9 +23,9 @@ get_filename_component(PIXELMATE_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 #   INTERACT   mosaico_module | none   (the Mosaico's Interaction module slot)
 #   NECK       scs0009 | none          (pan/tilt servos)
 #   NET        vibe | plain            (vibe: Wi-Fi shared with Mosaico Vibe Mode)
-#   PEDOMETER  bmi270_mosaico | none
+#   PEDOMETER  bmi270_mosaico | bmi270 | none   (bmi270: its own I2C device, port I2C_PORT)
 #   POWER      bq27220 | ina226 | m5pm1 | none
-#   RTC        bm8563 | none
+#   RTC        bm8563 | rx8130 | none   (rx8130: on port I2C_PORT)
 #   SENSORS    bmm150_mosaico | none   (magnetometers for the TOOLS page)
 #   SLEEP      mosaico | none          (deep-sleep pocket mode)
 set(PIXELMATE_PART_KINDS CAMERA INTERACT NECK NET PEDOMETER POWER RTC SENSORS SLEEP)
@@ -38,6 +38,14 @@ macro(pixelmate_part kind driver)
         message(FATAL_ERROR "pixelmate_part: unknown kind '${kind}' (one of: ${PIXELMATE_PART_KINDS})")
     endif()
     idf_build_set_property(PIXELMATE_${kind} "${driver}")
+endmacro()
+
+# A board value some drivers need, e.g. pixelmate_setting(I2C_PORT 1): the
+# I2C port of the internal bus for drivers that find it by port, or
+# pixelmate_setting(SLEEP_BUTTON_GPIO 2): an active-low button that puts the
+# pet to sleep and wakes it (like the Mosaico's AI button).
+macro(pixelmate_setting name value)
+    idf_build_set_property(PIXELMATE_${name} "${value}")
 endmacro()
 
 # The board's name as the About page shows it ("A DESK PET FOR <name>").

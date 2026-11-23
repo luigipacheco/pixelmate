@@ -3,18 +3,19 @@
 Bitsy on M5Stack's StopWatch (SKU C152): ESP32-S3R8 (16 MB flash, 8 MB octal
 PSRAM), 1.75" round 466x466 CO5300 AMOLED with CST820 touch.
 
-## Status: first milestone, not yet run on the device
+## Status
 
 | Part | State |
 | --- | --- |
-| Display (CO5300, QSPI 40 MHz) | written: 480x480 game sent 1:1, two frames overlap drawing and sending |
-| Power-up (M5PM1 0x6E, M5IOE1 0x4F) | written: M5GFX's StopWatch sequence |
-| Touch (CST820 0x15) | written; units with a CST9217 (0x5A) have no touch yet |
-| Battery (M5PM1 VBAT/VIN) | written: voltage, estimated percent, USB present |
-| Sound (ES8311 + AW8737A amp) | not yet: silent |
-| Steps (BMI270 0x68) | not yet: runs as a desk pet (pats earn sparks) until then |
-| Clock chip (RX8130 0x32) | not yet |
-| Buttons (G1, G2, active low), vibration (IOE1 PWM) | not yet |
+| Display (CO5300, QSPI 40 MHz) | game scaled to 328 px and centred so the whole square fits the round glass (`SW_VIEW_SIDE` in sw_video.h); runs on the device |
+| Power-up (M5PM1 0x6E, M5IOE1 0x4F) | M5GFX's StopWatch sequence; runs on the device |
+| Touch (CST820 0x15) | answers; mapping not calibrated yet (logs raw values on each touch-down). CST9217 (0x5A) units: no touch yet |
+| Sound (ES8311 + AW8737A) | written (M5Unified's codec setup), not heard yet |
+| Steps (BMI270 0x68) | written: walking pet, TOOLS motion apps |
+| Clock chip (RX8130 0x32) | written: time survives power-off |
+| KEYA (G2) | sleep / wake, like the Mosaico's AI button |
+| Battery (M5PM1) | voltage, estimated percent, USB present |
+| Not yet | pocket-mode deep sleep, magnetometer TOOLS (none on this board), KEYB, vibration (the game has no haptics) |
 
 ## Where the hardware details come from
 

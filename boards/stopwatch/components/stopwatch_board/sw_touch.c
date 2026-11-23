@@ -3,7 +3,8 @@
  * it). It reports 0..233 across the round glass, half the panel's 468 visible
  * pixels, and the glass starts 6 columns into the 480-wide panel memory
  * (M5GFX: touch range 0..233, panel 468x468 at offset 6,0). Some units carry
- * a two-finger CST9217 at 0x5A instead; that one is not supported yet. */
+ * a two-finger CST9217 at 0x5A instead; that one is not supported yet.
+ * Coordinates come out in panel pixels; sw_video maps them onto the game. */
 #include "sw_touch.h"
 
 #include "esp_check.h"
@@ -17,7 +18,7 @@
 #define RAW_SPAN 234      /* Raw 0..233. */
 #define GLASS 468         /* Visible pixels. */
 #define GLASS_X0 6        /* First visible column of the 480-wide memory. */
-#define LOGICAL 480
+#define PANEL 480
 
 static i2c_master_dev_handle_t s_touch;
 
@@ -54,7 +55,7 @@ esp_err_t sw_touch_init(void)
 static int32_t to_logical(int32_t raw, int32_t first)
 {
     int32_t v = first + raw * GLASS / RAW_SPAN;
-    return v < 0 ? 0 : (v >= LOGICAL ? LOGICAL - 1 : v);
+    return v < 0 ? 0 : (v >= PANEL ? PANEL - 1 : v);
 }
 
 bool sw_touch_read(int32_t *x, int32_t *y)
@@ -68,12 +69,19 @@ bool sw_touch_read(int32_t *x, int32_t *y)
     if (i2c_master_transmit_receive(s_touch, &reg, 1, data, sizeof(data), TIMEOUT_MS) != ESP_OK) {
         return false;
     }
+    static bool s_down;
     if ((data[0] & 0x0F) == 0) {
+        s_down = false;
         return false;
     }
     const int32_t rx = ((data[1] & 0x0F) << 8) | data[2];
     const int32_t ry = ((data[3] & 0x0F) << 8) | data[4];
     *x = to_logical(rx, GLASS_X0);
     *y = to_logical(ry, 0);
+    if (!s_down) {
+        /* Calibration aid: one line per touch-down (raw chip value, panel pixel). */
+        ESP_LOGI(TAG, "down raw %ld,%ld -> panel %ld,%ld", (long)rx, (long)ry, (long)*x, (long)*y);
+        s_down = true;
+    }
     return true;
 }

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 /* Battery-backed real-time clock, so the time survives power-off without
- * Wi-Fi. Only the M5Stack CoreS3 (StackChan) has one wired up (BM8563 at I2C
- * 0x51); other boards get calls that report ESP_ERR_NOT_SUPPORTED.
+ * Wi-Fi: BM8563 (StackChan, I2C 0x51) or RX8130 (StopWatch, 0x32); boards
+ * without one get calls that report ESP_ERR_NOT_SUPPORTED.
  * Device-only; call from the game loop task. The RTC holds UTC. */
 #include "esp_err.h"
 

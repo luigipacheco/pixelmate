@@ -978,10 +978,47 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
     (void)s;
 }
 
+#if defined(PIXELMATE_SLEEP_BUTTON_GPIO)
+/* The board's sleep button (pixelmate_setting(SLEEP_BUTTON_GPIO ...), active
+ * low, e.g. the StopWatch's KEYA): a press puts the pet to sleep, a press
+ * while asleep wakes it, like the Mosaico's AI button without pocket mode. */
+static void poll_ai_button(host_state_t *state)
+{
+    if (!state->ai_ready) {
+        const gpio_config_t button = {
+            .pin_bit_mask = 1ULL << PIXELMATE_SLEEP_BUTTON_GPIO,
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_ENABLE,
+        };
+        gpio_config(&button);
+        state->ai_ready = true;
+    }
+    if (gpio_get_level(PIXELMATE_SLEEP_BUTTON_GPIO) != 0) {
+        state->ai_down_ticks = 0;
+        state->ai_swallow = false;
+        return;
+    }
+    if (state->ai_down_ticks < UINT8_MAX) {
+        ++state->ai_down_ticks;
+    }
+    if (state->ai_down_ticks != 2 || state->ai_swallow) {
+        return;   /* Debounced: act once per press. */
+    }
+    state->ai_swallow = true;
+    if (app_game_read(state->game).power == APP_POWER_DOZE) {
+        ESP_LOGI(TAG, "sleep button: wake");
+        app_game_wake(state->game);
+    } else {
+        ESP_LOGI(TAG, "sleep button: sleep");
+        app_game_sleep(state->game);
+    }
+}
+#else
 static void poll_ai_button(host_state_t *state)
 {
     (void)state;
 }
+#endif
 
 static void pocket_grace_tick(host_state_t *state)
 {
