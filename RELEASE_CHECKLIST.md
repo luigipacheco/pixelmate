@@ -35,7 +35,7 @@ All commands run from the workspace root
       the feat/deep-sleep branch plus the sleep-test endpoint, now removed.
 - [x] **Upload ZIP** `build/pixelmate-v1.0.0-ideas.zip`, 1,564,113 bytes,
       22 files, SHA-256
-      `f6a0f4b6a868ac93f65fb45f5c6f3dd191db349eeb6c334df9c131db4dd75a9f`.
+      `f851da6dd6861f457265212c34c4bcf005adb361fe9d075199b90c476649f73d`.
       `project validate` on the host says `valid`, version 1.0.0.
 
 ## Before uploading
@@ -48,10 +48,9 @@ All commands run from the workspace root
    not tried from a phone and the OV3640 is untested. Correct it if needed
    and re-package (below).
 
-2. **GitHub repo name.** The manifest links to
-   `https://github.com/luigipacheco/pixel_pal`. If you rename the repo to
-   `pixelmate` first, change that URL in `mosaico-ideas.json` and re-package.
-   GitHub redirects the old URL, so keeping it also works.
+2. **GitHub repo name.** Done 2026-11-22: the repo is now
+   `https://github.com/luigipacheco/pixelmate` (old URL redirects); the manifest
+   links there and the ZIP was re-packaged.
 
 ## Upload (creates a private draft; needs your login and your OK)
 
