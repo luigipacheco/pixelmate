@@ -77,6 +77,8 @@ enum {
     DAY_POLL_TICKS = 10 * GAME_TICK_HZ,
     BATTERY_POLL_TICKS = 10 * GAME_TICK_HZ,
     CHARGING_MIN_MA = 5,          /* Gauge current above this counts as charging. */
+    EXTERNAL_POWER_MIN_MA = -30,  /* Above this: on USB, even full and tapered to ~0 mA (the
+                                   * board alone draws 100+ mA from the battery while running). */
     BATTERY_LOG_POLLS = 6,        /* Log the power figures every 6th poll (1 min). */
     POWER_STATES = APP_POWER_DOZE + 1,
     VALID_EPOCH = 1700000000,     /* Earlier clocks are unsynchronized. */
@@ -377,6 +379,13 @@ static const char *gauge_profile_name(app_gauge_profile_t p)
 }
 
 /* Mean discharge in mA while in `power`, or -1 before any sample. */
+/* On USB (or other outside power). A full battery on the charger reads about
+ * 0 mA and can dip slightly negative, so "current >= 0" is not enough. */
+static bool on_external_power(const host_state_t *state)
+{
+    return state->battery_ok && state->battery.current_ma > EXTERNAL_POWER_MIN_MA;
+}
+
 static long mean_drain(const host_state_t *state, app_power_t power)
 {
     return state->drain_polls[power] ? (long)(state->drain_sum[power] / state->drain_polls[power]) : -1L;
@@ -808,7 +817,7 @@ static void pocket_grace_tick(host_state_t *state)
     if (!state->pocket_grace || --state->pocket_grace) {
         return;
     }
-    if (!state->battery_ok || state->battery.current_ma >= 0) {
+    if (!state->battery_ok || on_external_power(state)) {
         return;   /* On USB: stay up. */
     }
     ++s_pocket_log.resleeps;
@@ -840,7 +849,7 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
     }
     /* On USB power stay reachable for installs and the stats page. A held
      * button would wake us at once, so wait for its release. */
-    if (!state->battery_ok || state->battery.current_ma >= 0 || gpio_get_level(POCKET_BUTTON_GPIO) == 0) {
+    if (!state->battery_ok || on_external_power(state) || gpio_get_level(POCKET_BUTTON_GPIO) == 0) {
         return;
     }
     if (!state->pocket_deep_failed) {
@@ -1171,7 +1180,7 @@ static void update(void *value)
 static bool clock_mode(host_state_t *state, pet_clock_t *out)
 {
 #if defined(RAYLIB_LITE_GAME_NATIVE)
-    if (!state->battery_ok || state->battery.current_ma < 0) {
+    if (!on_external_power(state)) {
         return false;   /* On battery: dark screen (and pocket mode) instead. */
     }
     const time_t now = time(NULL);

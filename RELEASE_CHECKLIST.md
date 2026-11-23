@@ -27,15 +27,15 @@ All commands run from the workspace root
       zh-CN and en device presentations.
 - [x] **Firmware bundle** from main 3cab7e0 + docs (includes the
       Interaction module detection fix, MODULE LIGHTS, the battery gauge
-      profile fix and deep-sleep pocket mode with tap-to-wake):
-      `build/pixel_pal-system-update.irisfw`, 1,337,987 bytes, SHA-256
-      `b8c98e8fb01954695189cf8cb6dd3610d443e129f7e886d6ac820ccda2e32189`,
+      profile fix, deep-sleep pocket mode with tap-to-wake, and USB detection that holds at full charge):
+      `build/pixel_pal-system-update.irisfw`, 1,337,980 bytes, SHA-256
+      `79444f43f119641feb6646d95f4360c4d81ec5cd8f7e15eaea77183f96f0eee4`,
       `project_version` **1.0.0**. No compiler warnings (CMake
       component-validation warnings only). The board runs the same code from
       the feat/deep-sleep branch plus the sleep-test endpoint, now removed.
-- [x] **Upload ZIP** `build/pixelmate-v1.0.0-ideas.zip`, 1,564,113 bytes,
+- [x] **Upload ZIP** `build/pixelmate-v1.0.0-ideas.zip`, 1,564,057 bytes,
       22 files, SHA-256
-      `f851da6dd6861f457265212c34c4bcf005adb361fe9d075199b90c476649f73d`.
+      `7b9880c199e36feb5d2ce97d0a75ef777dfe8fbb925a21fbdb881c906f9ee037`.
       `project validate` on the host says `valid`, version 1.0.0.
 
 ## Before uploading
