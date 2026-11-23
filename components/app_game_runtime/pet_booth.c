@@ -3,7 +3,6 @@
  * GIF recording, review and gallery. Also the cabinet's attract screen and the
  * store's filter swatches. Pixels come from booth_media (runtime-owned). */
 #include <stdio.h>
-#include <string.h>
 #include "private/pet_screens.h"
 #include "../app_game/include/app_game_layout.h"
 
@@ -59,63 +58,11 @@ static void film_colors(float level, Color out[APP_PHOTO_COLORS])
     }
 }
 
-/* Straight into the frame: each picture row is expanded once into a screen
- * row, then copied to its px screen rows. A dithered 128x128 feed has
- * thousands of color runs, and one DrawRectangle each was the booth's main
- * drawing cost. Same pixels as the rectangles (opaque palettes, no camera
- * or scissor in use here); false when there is no frame to write to. */
-static bool blit_photo(const uint8_t *data, int bits, int w, int h, int x0, int y0, int px,
-                       const Color pal[APP_PHOTO_COLORS])
-{
-    enum { MAX_ROW = 512 };
-    static uint16_t row[MAX_ROW];
-    int fw = 0, fh = 0;
-    size_t stride = 0;
-    uint16_t *fb = raylib_lite_raylib_get_framebuffer(&fw, &fh, &stride);
-    if (!fb || px <= 0 || w * px > MAX_ROW) {
-        return false;
-    }
-    uint16_t lut[APP_PHOTO_COLORS];
-    for (int i = 0; i < APP_PHOTO_COLORS; ++i) {
-        if (pal[i].a != 255) {
-            return false;   /* Blending: leave it to DrawRectangle. */
-        }
-        lut[i] = (uint16_t)(((pal[i].r & 0xF8U) << 8) | ((pal[i].g & 0xFCU) << 3) | (pal[i].b >> 3));
-    }
-    const int span = w * px;
-    const int cx0 = x0 < 0 ? 0 : x0, cx1 = x0 + span > fw ? fw : x0 + span;
-    if (cx0 >= cx1) {
-        return true;   /* Off screen (a page sliding away). */
-    }
-    for (int y = 0; y < h; ++y) {
-        const int ty0 = y0 + y * px;
-        if (ty0 + px <= 0 || ty0 >= fh) {
-            continue;
-        }
-        uint16_t *out = row;
-        for (int x = 0; x < w; ++x) {
-            const uint16_t c = lut[index_at(data, bits, y * w + x) & 15U];
-            for (int k = 0; k < px; ++k) {
-                *out++ = c;
-            }
-        }
-        for (int k = 0; k < px; ++k) {
-            const int ty = ty0 + k;
-            if (ty >= 0 && ty < fh) {
-                memcpy(fb + (size_t)ty * stride + cx0, row + (cx0 - x0), (size_t)(cx1 - cx0) * sizeof(uint16_t));
-            }
-        }
-    }
-    return true;
-}
-
-/* One rectangle per horizontal run of equal indices: the fallback. */
+/* One rectangle per horizontal run of equal indices keeps this to a few
+ * hundred draw calls per frame instead of thousands. */
 static void draw_photo(const uint8_t *data, int bits, int w, int h, int x0, int y0, int px,
                        const Color pal[APP_PHOTO_COLORS])
 {
-    if (blit_photo(data, bits, w, h, x0, y0, px, pal)) {
-        return;
-    }
     for (int y = 0; y < h; ++y) {
         int start = 0;
         uint8_t cur = index_at(data, bits, y * w);
