@@ -92,8 +92,22 @@ mark("10_feed")
 next_page()
 wait(30)
 mark("11_arcade")
+# Each game: tap its cabinet (these points hit the square and the round
+# cabinets), look, then EXIT (also a point inside both layouts' button).
+for name, x in (("14_slots", 100), ("15_stack", 240), ("16_grid", 380)):
+    tap(x, 260, 40)
+    mark(name)
+    tap(110, 100, 30)
+drag(240, 400, 240, 200, settle=30)   # Second row of cabinets.
+for name, x in (("17_bits", 100), ("18_says", 240), ("19_hilo", 380)):
+    tap(x, 260, 40)
+    mark(name)
+    tap(110, 100, 30)
 next_page()
 mark("12_tools")
+tap(110, 170, 30)                     # First tool (sensors).
+mark("20_tool")
+tap(110, 100, 30)                     # BACK
 next_page()
 wait(30)
 mark("13_booth")

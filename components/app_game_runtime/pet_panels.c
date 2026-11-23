@@ -442,7 +442,7 @@ static void draw_store(const draw_ctx_t *d, int oy)
     }
     const int pages = (count + APP_STORE_PER_PAGE - 1) / APP_STORE_PER_PAGE;
     /* Round: the bottom of the circle is narrow, so many pages pack closer. */
-    const int step = app_layout_round && pages > 7 ? 16 : 24, size = step == 24 ? 10 : 8;
+    const int step = app_layout_round && pages > 5 ? 16 : 24, size = step == 24 ? 10 : 8;
     const int x0 = 240 - (pages - 1) * step / 2 - size / 2;
     for (int p = 0; p < pages; ++p) {
         if (p == s->store_page) {

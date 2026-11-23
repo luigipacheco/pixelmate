@@ -40,7 +40,7 @@ typedef struct {
     float scale;
 } app_eye_anchor_t;
 
-static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay, int arcade)
+static inline app_eye_anchor_t app_eye_anchor_table(int screen, int overlay, int arcade)
 {
     switch (overlay) {
     case 1: return (app_eye_anchor_t) {240, 412, 0.4f};    /* menu: peeking below */
@@ -55,14 +55,18 @@ static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay, int arcad
     switch (screen) {
     case 0: return (app_eye_anchor_t) {240, 236, 1.0f};    /* home */
     case 2: return (app_eye_anchor_t) {240, 150, 0.62f};   /* feed */
-    case 4: return (app_eye_anchor_t) {420, 92, 0.22f};    /* tools: a lab assistant in the corner */
-    case 5: return (app_eye_anchor_t) {416, 92, 0.22f};    /* booth: peeking over the viewfinder */
+    case 4: return app_layout_round ? (app_eye_anchor_t) {370, 108, 0.2f}    /* tools: a lab assistant */
+                                    : (app_eye_anchor_t) {420, 92, 0.22f};   /* ...in the corner */
+    case 5: return app_layout_round ? (app_eye_anchor_t) {370, 108, 0.2f}    /* booth: peeking */
+                                    : (app_eye_anchor_t) {416, 92, 0.22f};   /* over the viewfinder */
     case 3:                                                 /* arcade */
         switch (arcade) {
         /* app_arcade_t order: slots, stack, grid, bit flip, says, HI-LO. */
         case 1: return (app_eye_anchor_t) {240, 98, 0.42f};    /* slots */
-        case 2: return (app_eye_anchor_t) {420, 92, 0.24f};    /* stack: peeking at the tower */
-        case 3: return (app_eye_anchor_t) {426, 340, 0.26f};   /* grid: watching from the side */
+        case 2: return app_layout_round ? (app_eye_anchor_t) {370, 104, 0.22f}   /* stack: peeking */
+                                        : (app_eye_anchor_t) {420, 92, 0.24f};   /* at the tower */
+        case 3: return app_layout_round ? (app_eye_anchor_t) {416, 248, 0.22f}   /* grid: watching */
+                                        : (app_eye_anchor_t) {426, 340, 0.26f};  /* from the side */
         case 4: return (app_eye_anchor_t) {240, 96, 0.4f};     /* bit flip */
         case 5: return (app_eye_anchor_t) {240, 104, 0.5f};    /* says: the eyes show the colors */
         case 6: return (app_eye_anchor_t) {240, 104, 0.46f};   /* HI-LO */
@@ -72,15 +76,40 @@ static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay, int arcad
     }
 }
 
+/* Where the eyes sit and how big. Round screens: in the arcade (lobby and the
+ * games with eyes on top) the eyes shrink and drop a little so they clear the
+ * step and spark counters, which sit lower there; Bit Flip's go to the side of
+ * its TARGET; on TOOLS the corner they used is outside the glass and no other
+ * spot is free in every tool, so they hide. */
+static inline app_eye_anchor_t app_eye_anchor(int screen, int overlay, int arcade)
+{
+    app_eye_anchor_t a = app_eye_anchor_table(screen, overlay, arcade);
+    if (app_layout_round && overlay == 0) {
+        if (screen == 3 && arcade == 4) {
+            a = (app_eye_anchor_t) {382, 120, 0.18f};
+        } else if (screen == 3 && arcade != 2 && arcade != 3) {
+            a.cy += 10.0f;
+            a.scale *= 0.75f;
+        } else if (screen == 4) {
+            a = (app_eye_anchor_t) {240, 414, 0.0f};
+        }
+    }
+    return a;
+}
+
 /* Arcade lobby: three cabinets side by side. */
 static inline app_rect_t app_arcade_cabinet_rect(int i)
 {
+    if (app_layout_round) {   /* Shorter, inside the circle. */
+        return (app_rect_t) {(int16_t)(52 + i * 128), 140, 120, 224};
+    }
     return (app_rect_t) {(int16_t)(16 + i * 152), 152, 144, 280};
 }
 /* Leaves a game, back to the cabinets (left of the eyes, under the top bar). */
 static inline app_rect_t app_arcade_exit_rect(void)
 {
-    return (app_rect_t) {12, 72, 104, 44};
+    return app_layout_round ? (app_rect_t) {76, 92, 100, 40}
+                            : (app_rect_t) {12, 72, 104, 44};
 }
 
 /* Clock mode on Home: small eyes on top, the time under them. */
@@ -102,24 +131,31 @@ static inline app_rect_t app_home_eyes_rect(void)
 
 static inline app_rect_t app_feed_item_rect(int i)
 {
+    if (app_layout_round) {
+        return (app_rect_t) {(int16_t)(58 + i * 124), 252, 116, 132};
+    }
     return (app_rect_t) {(int16_t)(24 + i * 148), 266, 136, 160};
 }
 
 static inline app_rect_t app_cards_deal_rect(void)
 {
-    return (app_rect_t) {130, 362, 220, 64};
+    return app_layout_round ? (app_rect_t) {140, 344, 200, 56}
+                            : (app_rect_t) {130, 362, 220, 64};
 }
 static inline app_rect_t app_cards_hi_rect(void)
 {
-    return (app_rect_t) {24, 362, 140, 64};
+    return app_layout_round ? (app_rect_t) {66, 344, 114, 56}
+                            : (app_rect_t) {24, 362, 140, 64};
 }
 static inline app_rect_t app_cards_cash_rect(void)
 {
-    return (app_rect_t) {176, 362, 128, 64};
+    return app_layout_round ? (app_rect_t) {186, 344, 108, 56}
+                            : (app_rect_t) {176, 362, 128, 64};
 }
 static inline app_rect_t app_cards_lo_rect(void)
 {
-    return (app_rect_t) {316, 362, 140, 64};
+    return app_layout_round ? (app_rect_t) {300, 344, 114, 56}
+                            : (app_rect_t) {316, 362, 140, 64};
 }
 static inline app_rect_t app_cards_slot_rect(int slot)
 {
@@ -142,7 +178,9 @@ static inline app_rect_t app_slots_button_rect(void)
 }
 
 /* Spark Grid: 5x5 tiles, a hint column/row, and a PLAY/CASH button. */
-enum { APP_GRID_CELL = 52, APP_GRID_X = 52, APP_GRID_Y = 126 };
+#define APP_GRID_CELL (app_layout_round ? 42 : 52)
+#define APP_GRID_X (app_layout_round ? 104 : 52)
+#define APP_GRID_Y (app_layout_round ? 138 : 126)
 static inline app_rect_t app_grid_tile_rect(int tile)
 {
     return (app_rect_t) {(int16_t)(APP_GRID_X + (tile % 5) * APP_GRID_CELL),
@@ -150,12 +188,16 @@ static inline app_rect_t app_grid_tile_rect(int tile)
 }
 static inline app_rect_t app_grid_button_rect(void)
 {
-    return (app_rect_t) {382, 126, 88, 64};
+    return app_layout_round ? (app_rect_t) {150, 402, 180, 40}
+                            : (app_rect_t) {382, 126, 88, 64};
 }
 
 /* Bit Flip: 8 switches (128 on the left) and the PLAY button. */
 static inline app_rect_t app_bits_switch_rect(int i)
 {
+    if (app_layout_round) {
+        return (app_rect_t) {(int16_t)(42 + i * 50), 262, 46, 84};
+    }
     return (app_rect_t) {(int16_t)(16 + i * 56), 262, 52, 92};
 }
 static inline app_rect_t app_bits_button_rect(void)
@@ -168,32 +210,41 @@ static inline app_rect_t app_bits_button_rect(void)
  * three buttons: GIF | SNAP | ROLL, or BACK | - | DEL. */
 static inline app_rect_t app_booth_lens_rect(void)
 {
-    return (app_rect_t) {12, 70, 110, 44};
+    return app_layout_round ? (app_rect_t) {56, 132, 96, 40}
+                            : (app_rect_t) {12, 70, 110, 44};
 }
 /* Film chip under the lens chip: B&W or COLOR (once COLOR FILM is owned). */
 /* Webcam ON AIR chip, right of the label, above the next-look arrow. */
 static inline app_rect_t app_booth_air_rect(void)
 {
-    return (app_rect_t) {376, 122, 92, 46};
+    return app_layout_round ? (app_rect_t) {336, 132, 88, 40}
+                            : (app_rect_t) {376, 122, 92, 46};
 }
 static inline app_rect_t app_booth_film_rect(void)
 {
-    return (app_rect_t) {12, 122, 84, 46};
+    return app_layout_round ? (app_rect_t) {56, 180, 80, 40}
+                            : (app_rect_t) {12, 122, 84, 46};
 }
 static inline app_rect_t app_booth_view_rect(void)
 {
-    return (app_rect_t) {112, 120, 256, 256};
+    return app_layout_round ? (app_rect_t) {144, 132, 192, 192}
+                            : (app_rect_t) {112, 120, 256, 256};
 }
 static inline app_rect_t app_booth_prev_rect(void)
 {
-    return (app_rect_t) {8, 176, 100, 144};
+    return app_layout_round ? (app_rect_t) {40, 228, 96, 96}
+                            : (app_rect_t) {8, 176, 100, 144};
 }
 static inline app_rect_t app_booth_next_rect(void)
 {
-    return (app_rect_t) {372, 176, 100, 144};
+    return app_layout_round ? (app_rect_t) {344, 228, 96, 96}
+                            : (app_rect_t) {372, 176, 100, 144};
 }
 static inline app_rect_t app_booth_button_rect(int i)
 {
+    if (app_layout_round) {
+        return (app_rect_t) {(int16_t)(76 + i * 112), 344, 104, 48};
+    }
     return (app_rect_t) {(int16_t)(16 + i * 152), 388, 144, 56};
 }
 /* Locked booth: the teaser's button to the store. */
@@ -206,6 +257,9 @@ static inline app_rect_t app_booth_unlock_rect(void)
  * of them while waiting. */
 static inline app_rect_t app_says_pad_rect(int i)
 {
+    if (app_layout_round) {
+        return (app_rect_t) {(int16_t)(76 + (i % 2) * 168), (int16_t)(160 + (i / 2) * 112), 160, 104};
+    }
     return (app_rect_t) {(int16_t)(48 + (i % 2) * 196), (int16_t)(176 + (i / 2) * 128), 188, 120};
 }
 static inline app_rect_t app_says_button_rect(void)
@@ -213,7 +267,10 @@ static inline app_rect_t app_says_button_rect(void)
     return (app_rect_t) {140, 270, 200, 64};
 }
 /* Spark Stack: a 12x12 cell tower; tap anywhere below the top bar to drop. */
-enum { APP_STACK_CELL = 30, APP_STACK_X = 60, APP_STACK_BOTTOM = 438, APP_STACK_ROW_H = 24 };
+#define APP_STACK_CELL (app_layout_round ? 26 : 30)
+#define APP_STACK_X (app_layout_round ? 84 : 60)
+#define APP_STACK_BOTTOM (app_layout_round ? 394 : 438)
+#define APP_STACK_ROW_H (app_layout_round ? 22 : 24)
 static inline app_rect_t app_stack_button_rect(void)
 {
     return (app_rect_t) {140, 250, 200, 64};
@@ -223,19 +280,29 @@ static inline app_rect_t app_stack_button_rect(void)
  * top-left and up to three buttons along the bottom. */
 static inline app_rect_t app_tools_cell_rect(int i)
 {
+    if (app_layout_round) {
+        return (app_rect_t) {(int16_t)(64 + (i % 3) * 120), (int16_t)(124 + (i / 3) * 88), 112, 80};
+    }
     return (app_rect_t) {(int16_t)(20 + (i % 3) * 148), (int16_t)(126 + (i / 3) * 102), 140, 94};
 }
 static inline app_rect_t app_tools_back_rect(void)
 {
-    return (app_rect_t) {12, 64, 104, 42};
+    return app_layout_round ? (app_rect_t) {76, 92, 100, 40}
+                            : (app_rect_t) {12, 64, 104, 42};
 }
 static inline app_rect_t app_tools_button_rect(int i)
 {
+    if (app_layout_round) {
+        return (app_rect_t) {(int16_t)(76 + i * 112), 352, 104, 48};
+    }
     return (app_rect_t) {(int16_t)(16 + i * 152), 388, 144, 52};
 }
 /* IR remote: a 2x3 grid of buttons. */
 static inline app_rect_t app_tools_ir_rect(int i)
 {
+    if (app_layout_round) {
+        return (app_rect_t) {(int16_t)(60 + (i % 2) * 184), (int16_t)(126 + (i / 2) * 78), 176, 66};
+    }
     return (app_rect_t) {(int16_t)(40 + (i % 2) * 210), (int16_t)(130 + (i / 2) * 84), 190, 70};
 }
 

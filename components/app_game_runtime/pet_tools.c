@@ -13,7 +13,11 @@ static const char *const NAMES[APP_TOOL_COUNT] = {
     "", "SENSORS", "STEP CAL", "COMPASS", "LEVEL", "SEISMO", "WI-FI", "IR REMOTE", "GUARD", "LIGHT",
 };
 
-enum { GRAPH_X = 24, GRAPH_Y = 150, GRAPH_W = 432, GRAPH_H = 200 };
+/* Graph area; round screens: narrower, inside the circle. */
+#define GRAPH_X (app_layout_round ? 64 : 24)
+#define GRAPH_Y 150
+#define GRAPH_W (app_layout_round ? 352 : 432)
+#define GRAPH_H (app_layout_round ? 176 : 200)
 
 /* ---- Helpers ------------------------------------------------------- */
 
@@ -73,7 +77,8 @@ static const pet_tool_sample_t *latest(const draw_ctx_t *d)
 static void title(const draw_ctx_t *d, int ox, const char *text)
 {
     screens_button(d, app_tools_back_rect(), ox, 0, "BACK", 2, d->dim, false);
-    px_text_center(text, 260 + ox, 74, 3, d->color, d->gap);
+    /* Round: right of BACK, under the step and spark counters. */
+    px_text_center(text, (app_layout_round ? 300 : 260) + ox, app_layout_round ? 102 : 74, 3, d->color, d->gap);
 }
 
 static void button(const draw_ctx_t *d, int ox, int i, const char *label, bool on)
@@ -144,10 +149,16 @@ static void draw_list(const draw_ctx_t *d, int ox)
     char text[24];
     const int level = 1 + t->xp / APP_TOOLS_XP_PER_LEVEL;
     snprintf(text, sizeof(text), "TOOLS  BITSY LV %d", level);
-    px_text(text, 24 + ox, 72, 3, d->color, d->gap);
     const int frac = t->xp % APP_TOOLS_XP_PER_LEVEL;
-    DrawRectangle(24 + ox, 104, 300, 8, d->dim);
-    DrawRectangle(24 + ox, 104, 300 * frac / APP_TOOLS_XP_PER_LEVEL, 8, d->accent);
+    if (app_layout_round) {   /* Centred under the counters, above the grid. */
+        px_text_center(text, 240 + ox, 86, 3, d->color, d->gap);
+        DrawRectangle(140 + ox, 112, 200, 6, d->dim);
+        DrawRectangle(140 + ox, 112, 200 * frac / APP_TOOLS_XP_PER_LEVEL, 6, d->accent);
+    } else {
+        px_text(text, 24 + ox, 72, 3, d->color, d->gap);
+        DrawRectangle(24 + ox, 104, 300, 8, d->dim);
+        DrawRectangle(24 + ox, 104, 300 * frac / APP_TOOLS_XP_PER_LEVEL, 8, d->accent);
+    }
     for (int i = 0; i < APP_TOOL_COUNT - 1; ++i) {
         const app_rect_t r = app_tools_cell_rect(i);
         const int tool = i + 1;
@@ -259,8 +270,9 @@ static void draw_compass(const draw_ctx_t *d, int ox)
         const int w = (int)(dev > 400.0f ? 400.0f : dev);
         snprintf(text, sizeof(text), "%.0f", dev);
         px_text_center(text, 240 + ox, 170, 8, dev > 120.0f ? WARN : d->color, d->gap);
-        DrawRectangle(40 + ox, 280, 400, 24, d->dim);
-        DrawRectangle(40 + ox, 280, w, 24, dev > 120.0f ? WARN : d->accent);
+        const int bx = app_layout_round ? 80 : 40, bw = app_layout_round ? 320 : 400;
+        DrawRectangle(bx + ox, 280, bw, 24, d->dim);
+        DrawRectangle(bx + ox, 280, w * bw / 400, 24, dev > 120.0f ? WARN : d->accent);
         note(d, ox, 330, "MOVE NEAR METAL: IT BEEPS FASTER");
         note(d, ox, 420, "TAP FOR THE COMPASS");
         return;
@@ -344,18 +356,19 @@ static void draw_wifi(const draw_ctx_t *d, int ox)
     }
     for (int i = 0; i < v->ap_count && i < PET_TOOL_APS; ++i) {
         const pet_tool_ap_t *ap = &v->aps[i];
-        const int y = 124 + i * 32;
+        const int y = (app_layout_round ? 144 : 124) + i * 32;
         const int bars = ap->rssi > -55 ? 4 : ap->rssi > -67 ? 3 : ap->rssi > -77 ? 2 : 1;
         for (int b = 0; b < 4; ++b) {
-            DrawRectangle(28 + ox + b * 7, y + 18 - b * 5, 5, 4 + b * 5, b < bars ? d->accent : d->dim);
+            DrawRectangle((app_layout_round ? 64 : 28) + ox + b * 7, y + 18 - b * 5, 5, 4 + b * 5,
+                          b < bars ? d->accent : d->dim);
         }
         snprintf(text, sizeof(text), "%.16s", ap->ssid[0] ? ap->ssid : "(HIDDEN)");
         for (char *c = text; *c; ++c) {
             if (*c >= 'a' && *c <= 'z') *c = (char)(*c - 32);
         }
-        px_text(text, 66 + ox, y + 4, 2, ap->open ? d->accent : d->color, false);
+        px_text(text, (app_layout_round ? 102 : 66) + ox, y + 4, 2, ap->open ? d->accent : d->color, false);
         snprintf(text, sizeof(text), "%d", ap->rssi);
-        px_text(text, 420 + ox - px_text_width(text, 2), y + 4, 2, d->dim, false);
+        px_text(text, (app_layout_round ? 410 : 420) + ox - px_text_width(text, 2), y + 4, 2, d->dim, false);
     }
     button(d, ox, 1, "SCAN", v->ap_count < 0);
 }
