@@ -1,6 +1,6 @@
 # PixelMate v1.0.0: Mosaico Ideas release checklist
 
-Prepared 2026-11-22. `release/v1` is merged into main and the upload ZIP is
+Prepared 2026-11-22, refreshed the same night for deep-sleep pocket mode. `release/v1` is merged into main and the upload ZIP is
 built and validated from main. Nothing has been uploaded, nothing was installed
 on the board, and no `account login` was run.
 
@@ -25,16 +25,17 @@ All commands run from the workspace root
       9 covers (cover + screens 01-08), About as a resource (it is shown in
       the README), license Apache-2.0 (LICENSE and NOTICE are in the repo),
       zh-CN and en device presentations.
-- [x] **Firmware bundle** from main (includes the sturdier Interaction
-      module detection, the MODULE LIGHTS setting and the battery gauge
-      profile fix):
-      `build/pixel_pal-system-update.irisfw`, 1,322,446 bytes, SHA-256
-      `25e3ce0cc0b074fa636e0a1acabec085718694c5684a169134c70c0a47a18ea6`,
+- [x] **Firmware bundle** from main 3cab7e0 + docs (includes the
+      Interaction module detection fix, MODULE LIGHTS, the battery gauge
+      profile fix and deep-sleep pocket mode with tap-to-wake):
+      `build/pixel_pal-system-update.irisfw`, 1,337,987 bytes, SHA-256
+      `b8c98e8fb01954695189cf8cb6dd3610d443e129f7e886d6ac820ccda2e32189`,
       `project_version` **1.0.0**. No compiler warnings (CMake
-      component-validation warnings only). Not installed on the board.
-- [x] **Upload ZIP** `build/pixelmate-v1.0.0-ideas.zip`, 1,548,068 bytes,
+      component-validation warnings only). The board runs the same code from
+      the feat/deep-sleep branch plus the sleep-test endpoint, now removed.
+- [x] **Upload ZIP** `build/pixelmate-v1.0.0-ideas.zip`, 1,564,113 bytes,
       22 files, SHA-256
-      `df6b10c921a9a66ee6477fd4303e21b08ec4adb6a16c668e91d95f5bea189668`.
+      `f6a0f4b6a868ac93f65fb45f5c6f3dd191db349eeb6c334df9c131db4dd75a9f`.
       `project validate` on the host says `valid`, version 1.0.0.
 
 ## Before uploading

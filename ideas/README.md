@@ -18,7 +18,7 @@ Made by **Luis Pacheco**: [www.luigipacheco.com](https://www.luigipacheco.com)
 | | |
 |---|---|
 | ![Bitsy](screens/01_home.png) | **Bitsy** reacts to everything: blinks, follows your finger, gets happy, sleepy, hungry, surprised or grumpy. Tap the eyes to pet it. |
-| ![Steps](screens/02_steps.png) | **Steps ring** with today's progress, your all-time total and Bitsy's health (5 hearts). The BMI270's own step counter keeps counting while the screen sleeps. |
+| ![Steps](screens/02_steps.png) | **Steps ring** with today's progress, your all-time total and Bitsy's health (5 hearts). The BMI270's own step counter keeps counting while the screen sleeps, even in deep sleep. |
 | ![Arcade](screens/03_arcade.png) | **Arcade**: six pixel cabinets in two rows (Spark Slots, Spark Stack, Spark Grid / Bit Flip, Bitsy Says, HI-LO), each with an attract-mode demo. Buy them in order with sparks, then play for more. |
 | ![Spark Grid](screens/04_grid.png) | **Spark Grid**: a 5×5 logic puzzle. Row and column hints tell you the totals and how many duds hide in each line. Flip x2 and x3 tiles to multiply your score, CASH to bank it, and clear boards to climb from LV 1 to LV 5. |
 | ![Bitsy Says](screens/05_says.png) | **Bitsy Says**: Bitsy's eyes take the color of each pad as it flashes a growing sequence. Repeat it back. |
@@ -94,16 +94,21 @@ keys work as arcade buttons.
 - **Low-energy:** after 20 s without a touch Bitsy dozes and the screen dims;
   at 30 s it turns off. Steps keep counting. Tap the screen or press the AI
   button to wake it.
-- **Pocket mode:** on battery, a few seconds after the screen goes dark Wi-Fi
-  stops and the app naps to save power while the step counter keeps counting.
-  Press the AI button to wake Bitsy.
+- **Pocket mode:** on battery, press the AI button (or just let the screen go
+  dark) and a few seconds later Bitsy goes into **deep sleep**: screen, Wi-Fi
+  and processor off, while the step sensor keeps counting on its own. **Tap
+  the screen** to wake it: the board restarts in a few seconds and adds every
+  step you walked. If you don't touch it again within 8 seconds it goes back
+  to sleep, so a bump in your pocket costs almost nothing. Plugging in USB
+  doesn't wake it; tap first.
 - **TAP STEPS** (Settings, off by default): an accessibility mode for people
   who can't walk. Every 10 pats on Bitsy count as one step, with no daily cap.
 - **Stats web page** on your network (`http://pixelmate.local`): today's
   steps, food, health, a 7-day chart, your streak, sparks, battery and the
   photo gallery.
 - **Settings** in the pull-down menu: volume, daily goal (1000 to 30000),
-  Wi-Fi, screen sleep, brightness, TAP STEPS, About and reset.
+  Wi-Fi, screen sleep, brightness, TAP STEPS, MODULE LIGHTS (the Interaction
+  module's mood glow), About and reset.
 
 ![About](screens/09_about.png)
 
@@ -112,7 +117,8 @@ keys work as arcade buttons.
 - ESP-Mosaico (ESP32-S31) with its 480×480 touch screen, BMI270 IMU and speaker.
 - Optional: a camera module in the left slot, for the photo booth and webcam.
 - Optional: the Interaction module in the right slot, for IR, motion and light.
-- Battery recommended: PixelMate shows the charge, dims and sleeps to save power.
+- Battery recommended: PixelMate shows the charge, dims, and deep-sleeps in your
+  pocket to save power.
 
 ## Getting started
 
@@ -134,12 +140,14 @@ keys work as arcade buttons.
 - Anyone on your Wi-Fi network can open the stats page and photo gallery; the
   webcam always needs the code shown on the screen.
 - Version 1.0.0 is a one-person project, developed on one ESP-Mosaico board
-  (with an SC101IOT camera module) and in the host simulator. Checked on the
-  board: step counting with the screen off, saving, battery readout, dimming
-  and sleep, Wi-Fi with the stats page and daily health, sounds, and the photo
-  booth with hot-plugging. The TOOLS page and Interaction module support are
-  the newest parts and have had the least time on real hardware; the Wi-Fi
-  setup hotspot has not been tried from a phone yet, and the OV3640 camera is
+  (with an SC101IOT camera module and the Interaction module) and in the host
+  simulator. Checked on the board: step counting with the screen off, saving,
+  battery readout, dimming and sleep, pocket deep sleep with tap-to-wake and
+  steps counted while asleep, Wi-Fi with the stats page and daily health,
+  sounds, the photo booth with hot-plugging, and Interaction module detection.
+  Still to measure: real-world battery life in pocket mode. The TOOLS page is
+  the newest part and has had the least time on real hardware; the Wi-Fi setup
+  hotspot has not been tried from a phone yet, and the OV3640 camera is
   supported but untested. Feedback is welcome.
 
 ## Coming next

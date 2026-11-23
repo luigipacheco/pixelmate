@@ -10,5 +10,9 @@ First public release of PixelMate, with Bitsy the walking pixel pet.
 - Photo booth for the camera module: three lenses, COLOR FILM, twelve looks,
   GIFs, a web gallery and a Wi-Fi webcam.
 - TOOLS page with sensor apps, plus Interaction module support.
-- Clock mode on USB power, pocket mode on battery, TAP STEPS accessibility
-  mode, 8-bit sounds, Wi-Fi setup hotspot and a stats web page.
+- Pocket mode: on battery Bitsy deep-sleeps while the step sensor keeps
+  counting; tap the screen to wake it and collect the steps.
+- Clock mode on USB power, TAP STEPS accessibility mode, MODULE LIGHTS
+  setting, 8-bit sounds, Wi-Fi setup hotspot and a stats web page.
+- The battery gauge gets its 80 mAh profile back by itself after the battery
+  runs flat, so the charge reads right without a trip to Vibe Mode.
