@@ -17,6 +17,10 @@ enum { APP_MAGNETOMETERS = 2 };
 /** Power up and start the magnetometers; returns how many answered. */
 int app_sensors_hw_mag_start(void);
 
+/** Put both magnetometers into suspend (about 1 uA each) before a deep sleep.
+ *  They keep that state while the rail stays on; mag_start wakes them. */
+void app_sensors_hw_mag_suspend(void);
+
 /** Latest raw field of magnetometer `index` (x, y, z). */
 esp_err_t app_sensors_hw_mag_read(int index, int16_t xyz[3]);
 

@@ -64,6 +64,16 @@ int app_sensors_hw_mag_start(void)
     return found;
 }
 
+void app_sensors_hw_mag_suspend(void)
+{
+    for (int i = 0; i < APP_MAGNETOMETERS; ++i) {
+        if (s_dev[i]) {
+            (void)write_reg(s_dev[i], REG_POWER, 0x00);   /* Power control off: suspend. */
+            s_ok[i] = false;
+        }
+    }
+}
+
 esp_err_t app_sensors_hw_mag_read(int index, int16_t xyz[3])
 {
     if (index < 0 || index >= APP_MAGNETOMETERS || !xyz) {

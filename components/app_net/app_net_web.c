@@ -19,9 +19,10 @@ enum {
     TZ_MIN = -14 * 60,    /* JavaScript offsets span UTC+14 .. UTC-12. */
     TZ_MAX = 12 * 60,
     QUERY_MAX = 48,
+    SLEEP_JSON_MAX = 640,
     HTTPD_STACK = 6144,
     HTTPD_SOCKETS = 5,    /* Leaves lwIP sockets for captive DNS and ESP-Iris TCP. */
-    HTTPD_ROUTES = 16,    /* Stats, time zone and gallery routes, with room to grow. */
+    HTTPD_ROUTES = 20,    /* Stats, time zone and gallery routes, with room to grow. */
 };
 
 static SemaphoreHandle_t s_json_lock;
@@ -30,6 +31,7 @@ static portMUX_TYPE s_tz_lock = portMUX_INITIALIZER_UNLOCKED;
 static int s_tz_minutes;
 static bool s_tz_pending;
 static httpd_handle_t s_server;
+static char s_sleep_json[SLEEP_JSON_MAX] = "{\"valid\":0}";
 
 static const char PAGE[] =
     "<!doctype html><html><head><meta charset=utf-8>"
@@ -115,6 +117,36 @@ bool app_net_take_timezone(int *minutes_west)
     return pending;
 }
 
+esp_err_t app_net_publish_sleep(const char *json)
+{
+    if (!json || strlen(json) >= sizeof(s_sleep_json)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (!s_json_lock && !(s_json_lock = xSemaphoreCreateMutex())) {
+        return ESP_ERR_NO_MEM;
+    }
+    xSemaphoreTake(s_json_lock, portMAX_DELAY);
+    strcpy(s_sleep_json, json);
+    xSemaphoreGive(s_json_lock);
+    return ESP_OK;
+}
+
+static esp_err_t get_sleep(httpd_req_t *req)
+{
+    char *copy = malloc(SLEEP_JSON_MAX);
+    if (!copy) {
+        return httpd_resp_send_500(req);
+    }
+    xSemaphoreTake(s_json_lock, portMAX_DELAY);
+    memcpy(copy, s_sleep_json, sizeof(s_sleep_json));
+    xSemaphoreGive(s_json_lock);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    const esp_err_t err = httpd_resp_sendstr(req, copy);
+    free(copy);
+    return err;
+}
+
 static esp_err_t get_page(httpd_req_t *req)
 {
     if (app_net_setup_active()) {
@@ -186,6 +218,7 @@ esp_err_t app_net_web_start(void)
         {.uri = "/", .method = HTTP_GET, .handler = get_page},
         {.uri = "/api/stats", .method = HTTP_GET, .handler = get_stats},
         {.uri = "/api/tz", .method = HTTP_POST, .handler = post_tz},
+        {.uri = "/api/sleep", .method = HTTP_GET, .handler = get_sleep},
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         err = httpd_register_uri_handler(s_server, &routes[i]);

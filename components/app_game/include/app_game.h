@@ -735,6 +735,9 @@ void app_game_add_accel(app_game_handle_t handle, float x_g, float y_g, float z_
 void app_game_set_sensor_steps(app_game_handle_t handle, uint32_t cumulative);
 /** Credit steps counted elsewhere (debug or another source). */
 void app_game_add_steps(app_game_handle_t handle, uint32_t steps);
+/** Steps the step sensor counted while the chip was in deep sleep (pocket
+ *  mode): credited like sensor steps, STEP CAL included. */
+void app_game_add_sensor_delta(app_game_handle_t handle, uint32_t delta);
 /** Set the local calendar day (days since epoch); a new day resets steps_today.
  * Values <= 0 mean "clock unknown" and are ignored. */
 void app_game_set_day(app_game_handle_t handle, int32_t day);

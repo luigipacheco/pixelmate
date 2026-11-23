@@ -73,6 +73,9 @@ int app_net_scan_results(app_net_ap_t *out, int max);
  * JavaScript getTimezoneOffset(). Returns true once per new value. */
 bool app_net_take_timezone(int *minutes_west);
 
+/** Replace the JSON served at GET /api/sleep (what the last deep sleep did). */
+esp_err_t app_net_publish_sleep(const char *json);
+
 #ifdef __cplusplus
 }
 #endif

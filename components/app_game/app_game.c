@@ -1705,6 +1705,14 @@ void app_game_set_sensor_steps(app_game_handle_t g, uint32_t cumulative)
     }
     const uint32_t delta = cumulative - g->sensor_last;
     g->sensor_last = cumulative;
+    app_game_add_sensor_delta(g, delta);
+}
+
+void app_game_add_sensor_delta(app_game_handle_t g, uint32_t delta)
+{
+    if (!g || delta == 0) {
+        return;
+    }
     g->raw_steps += delta;
     if (g->tools.cal_phase == APP_CAL_WALKING) {
         g->tools.cal_measured = (uint16_t)(g->raw_steps - g->cal_start);
