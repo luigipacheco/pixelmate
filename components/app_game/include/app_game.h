@@ -5,6 +5,7 @@
 /* Filter ids (app_photo_filter_t) are shared with the photo codec. Relative
  * path: the Host simulator compiles sources without component include paths. */
 #include "../../app_photo/include/app_photo.h"
+#include "app_acts.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -641,6 +642,7 @@ typedef struct {
     app_stack_snapshot_t stack;
     uint8_t cue;                /**< app_cue_t of the newest cue... */
     uint8_t cue_seq;            /**< ...bumped (wraps) whenever a cue fires. */
+    app_act_snapshot_t act;     /**< The act (data-driven behaviour) playing, if any. */
     uint32_t save_seq;          /**< Increments whenever persistent data changes. */
 } app_game_snapshot_t;
 
@@ -773,6 +775,17 @@ void app_game_module_key(app_game_handle_t handle, bool right);
 void app_game_update(app_game_handle_t handle);
 
 app_game_snapshot_t app_game_read(app_game_handle_t handle);
+/** Replace the pack of acts (invalid ones are skipped). Stops an act that is playing. */
+void app_game_set_acts(app_game_handle_t handle, const app_act_t *acts, int count);
+/** Copy the current pack; returns how many acts were written. */
+int app_game_get_acts(app_game_handle_t handle, app_act_t *out, int max);
+/** Tell the model the time: a minutes counter that only grows (minutes since
+ *  1970 once the clock is set) for cooldowns, and the local minute of the day
+ *  (0..1439, or -1 while the clock is unknown) for time-of-day acts. */
+void app_game_set_clock(app_game_handle_t handle, uint32_t minutes, int minute_of_day);
+/** Remember that act `id` last played at `minutes` (restores cooldowns after a restart). */
+void app_game_mark_act_played(app_game_handle_t handle, uint16_t id, uint32_t minutes);
+
 /** Return and clear accumulated APP_EVENT_* bits. */
 uint32_t app_game_take_events(app_game_handle_t handle);
 /** Food table entry, or NULL when index is out of range. */

@@ -65,7 +65,13 @@ static struct {
     sfx_t deferred;            /* Cue that arrived while the codec was reopening. */
     uint8_t deferred_ticks;
     uint8_t cue_seq;           /* Last arcade cue played (snapshot.cue_seq). */
+    uint8_t act_seq;           /* Last act step heard (snapshot.act.seq). */
 } s_sfx;
+
+/* Sounds an act step may ask for, 1..APP_ACT_SOUNDS (app_acts.h). */
+static const sfx_t ACT_SOUNDS[APP_ACT_SOUNDS + 1] = {
+    SFX_NONE, SFX_PET, SFX_SPARK, SFX_TAP, SFX_WAKE, SFX_WIN, SFX_COINS, SFX_ZAP, SFX_BUZZ, SFX_FED, SFX_GOAL,
+};
 
 static void load_sounds(void)
 {
@@ -272,6 +278,7 @@ void app_sfx_update(uint32_t events, const app_game_snapshot_t *snapshot)
          * SETTINGS event would otherwise click, so chime instead. */
         s_sfx.started = true;
         s_sfx.level = snapshot->sound;
+        s_sfx.act_seq = snapshot->act.seq;
         remember(snapshot);
         if (audio_wanted(snapshot)) {
             open_audio();
@@ -303,7 +310,13 @@ void app_sfx_update(uint32_t events, const app_game_snapshot_t *snapshot)
     }
     sfx_t follow;
     uint8_t delay;
-    const sfx_t now = pick(events, snapshot, &follow, &delay);
+    sfx_t now = pick(events, snapshot, &follow, &delay);
+    if (snapshot->act.seq != s_sfx.act_seq) {   /* An act step started: its sound, if any. */
+        s_sfx.act_seq = snapshot->act.seq;
+        if (snapshot->act.active && snapshot->act.now.sound && snapshot->act.now.sound <= APP_ACT_SOUNDS) {
+            now = ACT_SOUNDS[snapshot->act.now.sound];
+        }
+    }
     remember(snapshot);
     /* Screen off (or sound off): nothing at all, and no stale sting later. */
     if (s_sfx.level == APP_SOUND_OFF || snapshot->power == APP_POWER_DOZE) {

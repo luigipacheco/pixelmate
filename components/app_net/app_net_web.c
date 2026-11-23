@@ -22,7 +22,7 @@ enum {
     SLEEP_JSON_MAX = 640,
     HTTPD_STACK = 6144,
     HTTPD_SOCKETS = 5,    /* Leaves lwIP sockets for captive DNS and ESP-Iris TCP. */
-    HTTPD_ROUTES = 20,    /* Stats, time zone and gallery routes, with room to grow. */
+    HTTPD_ROUTES = 24,    /* Stats, time zone, gallery and brain routes, with room to grow. */
 };
 
 static SemaphoreHandle_t s_json_lock;
@@ -233,6 +233,10 @@ esp_err_t app_net_web_start(void)
     err = app_net_photos_register(s_server);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "photo gallery: %s", esp_err_to_name(err));
+    }
+    err = app_net_brain_register(s_server);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "brain routes: %s", esp_err_to_name(err));
     }
     return ESP_OK;
 }
