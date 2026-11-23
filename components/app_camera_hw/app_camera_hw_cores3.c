@@ -280,6 +280,15 @@ static void worker(void *arg)
 
 /* ---- API ------------------------------------------------------------- */
 
+/* Read by the StackChan LCD presenter (a weak default there says false):
+ * while the camera streams, drawing and the LCD transfer take turns so the
+ * camera's DMA gets its share of PSRAM. */
+bool stackchan_camera_streaming(void);
+bool stackchan_camera_streaming(void)
+{
+    return atomic_load(&s_mode) == APP_CAMERA_MODE_STREAM;
+}
+
 void app_camera_hw_set_mode(app_camera_mode_t mode)
 {
     if (atomic_exchange(&s_mode, (int)mode) == (int)mode) {

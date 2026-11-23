@@ -76,6 +76,18 @@ static raylib_lite_result_t get_info(void *ctx, raylib_lite_video_info_t *out)
     return RAYLIB_LITE_OK;
 }
 
+/* The camera's DMA writes its frames into PSRAM too. With the game drawing
+ * on one core while the sender reads on the other, it loses every frame, so
+ * while the camera streams the two take turns (the camera driver overrides
+ * this). */
+bool stackchan_camera_streaming(void);
+__attribute__((weak)) bool stackchan_camera_streaming(void)
+{
+    return false;
+}
+
+static raylib_lite_result_t wait_idle(cores3_video_t *video, uint32_t timeout_ms);
+
 static void release_frame(cores3_video_t *video, int index)
 {
     portENTER_CRITICAL(&video->lock);
@@ -93,6 +105,8 @@ static raylib_lite_result_t acquire(void *ctx, raylib_lite_frame_t *out)
     if (video->acquired >= 0) return RAYLIB_LITE_INVALID_STATE;
     /* Waits while both frames are queued or sending: the game then runs at
      * the panel's pace instead of drawing frames nobody will see. */
+    if (stackchan_camera_streaming() && wait_idle(video, CORES3_ACQUIRE_WAIT_MS) != RAYLIB_LITE_OK)
+        return RAYLIB_LITE_BUSY;   /* Take turns with the camera's DMA. */
     if (xSemaphoreTake(video->free_frames, pdMS_TO_TICKS(CORES3_ACQUIRE_WAIT_MS)) != pdTRUE)
         return RAYLIB_LITE_BUSY;
     int index = -1;
