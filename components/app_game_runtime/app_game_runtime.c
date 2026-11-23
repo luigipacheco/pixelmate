@@ -43,10 +43,13 @@ static const char *TAG = "pixel_pal";
 
 /* What pocket mode did, kept across a software restart (RTC memory) so a
  * stuck wake can be diagnosed afterwards: logged at boot and in /api/stats. */
-#define POCKET_LOG_MAGIC 0x504B4C31U
+#define POCKET_LOG_MAGIC 0x504B4C32U
+#define POCKET_GRACE_TICKS (8 * GAME_TICK_HZ)   /* A pocket wake nobody follows up: back to sleep. */
 typedef struct {
     uint32_t magic;
     uint32_t sleeps, timer_wakes, poll_wakes, button_wakes, stuck_restarts;
+    uint32_t sleep_s, sleep_mah;   /* Deep sleep: time asleep and charge used (not charging). */
+    uint32_t resleeps;             /* Woke, nobody touched it: straight back to sleep. */
 } pocket_log_t;
 static RTC_NOINIT_ATTR pocket_log_t s_pocket_log;
 static volatile uint32_t s_frames_drawn;     /* Frames submitted (render). */
@@ -151,6 +154,7 @@ typedef struct {
     uint32_t pocket_ticks;        /* Ticks the screen has been dark (pocket mode countdown). */
     bool pocket_radio_off;        /* Pocket mode suspended Wi-Fi. */
     uint16_t pocket_after;        /* Dark ticks before pocket mode (shorter after the AI button). */
+    uint16_t pocket_grace;        /* After a pocket wake: ticks left for a touch before sleeping again. */
     uint8_t ai_down_ticks;        /* AI button held this many ticks (debounce). */
     bool ai_swallow;              /* Ignore the AI button until it is released. */
     bool ai_ready;                /* GPIO input enabled. */
@@ -384,6 +388,13 @@ static void publish_sleep_report(host_state_t *state)
     if (!app_sleep_hw_report(&r)) {
         return;
     }
+    /* Charge used while asleep, for the sleep current (this boot's wake only,
+     * and only when it was not charging meanwhile). */
+    if (esp_reset_reason() == ESP_RST_DEEPSLEEP && r.woke && r.mah_before
+            && state->battery.remaining_mah <= r.mah_before) {
+        s_pocket_log.sleep_s += r.slept_s;
+        s_pocket_log.sleep_mah += (uint32_t)(r.mah_before - state->battery.remaining_mah);
+    }
     char alive[64] = "";
     size_t used = 0;
     for (int i = 0; i < app_sleep_probe_count && used + 6 < sizeof(alive); ++i) {
@@ -555,7 +566,7 @@ static int build_stats_json(const host_state_t *state, const app_game_snapshot_t
                       "],\"power_mv\":%u,\"power_ma\":%d,\"power_avg_ma\":%d,\"power_mah\":%u,"
                       "\"power_full_mah\":%u,\"power_design_mah\":%u,\"gauge_profile\":\"%s\","
                       "\"power_tte_min\":%u,\"drain_ma\":[%ld,%ld,%ld],"
-                      "\"pocket\":[%lu,%lu,%lu,%lu,%lu]}",
+                      "\"pocket\":[%lu,%lu,%lu,%lu,%lu],\"pocket_sleep\":[%lu,%lu,%lu]}",
                       state->battery_ok ? b->voltage_mv : 0U, state->battery_ok ? b->current_ma : 0,
                       state->battery_ok ? b->avg_current_ma : 0, state->battery_ok ? b->remaining_mah : 0U,
                       state->battery_ok ? b->full_mah : 0U, state->battery_ok ? b->design_mah : 0U,
@@ -565,7 +576,8 @@ static int build_stats_json(const host_state_t *state, const app_game_snapshot_t
                       mean_drain(state, APP_POWER_DOZE),
                       (unsigned long)s_pocket_log.sleeps, (unsigned long)s_pocket_log.timer_wakes,
                       (unsigned long)s_pocket_log.poll_wakes, (unsigned long)s_pocket_log.button_wakes,
-                      (unsigned long)s_pocket_log.stuck_restarts);
+                      (unsigned long)s_pocket_log.stuck_restarts, (unsigned long)s_pocket_log.sleep_s,
+                      (unsigned long)s_pocket_log.sleep_mah, (unsigned long)s_pocket_log.resleeps);
     }
     return n > 0 && (size_t)n < cap ? n : -1;
 }
@@ -655,6 +667,7 @@ static int initialize(void *value, const char *asset_root)
         ++s_pocket_log.timer_wakes;   /* Deep-sleep wakes (touch or backstop timer). */
         app_game_add_sensor_delta(state->game, slept_steps);
         ESP_LOGI(TAG, "pocket: woke from deep sleep, %lu steps counted while asleep", (unsigned long)slept_steps);
+        state->pocket_grace = POCKET_GRACE_TICKS;
     }
     load_timezone();
 #else
@@ -698,6 +711,11 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
             if (before.power != APP_POWER_AWAKE && before.pointer_down != event->pressed) {
                 ESP_LOGI(TAG, "touch %s at %ld,%ld while screen %s", event->pressed ? "down" : "up",
                          (long)event->x, (long)event->y, before.power == APP_POWER_DIM ? "dim" : "off");
+            }
+#endif
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+            if (event->pressed) {
+                state->pocket_grace = 0;   /* Someone is using it: stay awake. */
             }
 #endif
             app_game_set_pointer(state->game, event->x, event->y, event->pressed);
@@ -832,6 +850,22 @@ static void pocket_deep_sleep(host_state_t *state)
     const esp_err_t err = app_sleep_hw_enter(&request);
     ESP_LOGE(TAG, "pocket: deep sleep did not start (%s): dozing instead", esp_err_to_name(err));
     (void)app_net_suspend(false);   /* Sound reopens on its own at the next cue. */
+}
+
+/* A pocket wake (a tap, maybe just the pocket) that nobody follows up with
+ * another touch puts the pet straight back into pocket mode. */
+static void pocket_grace_tick(host_state_t *state)
+{
+    if (!state->pocket_grace || --state->pocket_grace) {
+        return;
+    }
+    if (!state->battery_ok || state->battery.current_ma >= 0) {
+        return;   /* On USB: stay up. */
+    }
+    ++s_pocket_log.resleeps;
+    ESP_LOGI(TAG, "pocket: woke but untouched, back to sleep");
+    app_game_sleep(state->game);
+    state->pocket_after = POCKET_SOON_TICKS;
 }
 
 static void pocket_resume_radio(host_state_t *state)
@@ -1155,6 +1189,7 @@ static void update(void *value)
     host_state_t *state = value;
 #if defined(RAYLIB_LITE_GAME_NATIVE)
     poll_ai_button(state);
+    pocket_grace_tick(state);
     poll_sensor(state);
     poll_day(state);
     poll_battery(state);
