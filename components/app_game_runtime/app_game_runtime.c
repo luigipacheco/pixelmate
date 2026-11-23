@@ -137,6 +137,7 @@ typedef struct {
     bool sensor_ready;
     uint8_t sensor_attempts;
     uint32_t sensor_timer, day_timer, battery_timer;
+    bool pocket_deep_failed;      /* Deep sleep refused once: use the doze. */
     app_battery_reading_t battery;     /* Last gauge reading, valid when battery_ok. */
     bool battery_ok;
     /* Discharge current per model power state since boot (mA, summed per poll),
@@ -649,6 +650,12 @@ static int initialize(void *value, const char *asset_root)
     state->logged_power = -1;
     load_save(state);
     pocket_log_init();
+    uint32_t slept_steps = 0;
+    if (app_sleep_hw_take_steps(&slept_steps)) {
+        ++s_pocket_log.timer_wakes;   /* Deep-sleep wakes (touch or backstop timer). */
+        app_game_add_sensor_delta(state->game, slept_steps);
+        ESP_LOGI(TAG, "pocket: woke from deep sleep, %lu steps counted while asleep", (unsigned long)slept_steps);
+    }
     load_timezone();
 #else
     app_game_set_battery(state->game, HOST_BATTERY_PCT, false);
@@ -759,21 +766,64 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
 
 #if defined(RAYLIB_LITE_GAME_NATIVE)
 /* ---- Pocket mode --------------------------------------------------------
- * Once the screen has been dark a few seconds on battery, stop Wi-Fi and
- * light-sleep the chip. Nothing reboots, so the BMI270 keeps counting steps
- * on its own; the panel keeps its black frame (no panel commands: those
- * raced the board's frame task before). The AI button wakes the pet; a timer wakes it briefly to read steps, settle the day and save. */
+ * Once the screen has been dark a few seconds on battery, save and send the
+ * chip to deep sleep: the panel goes to Deep Standby, the 3.3 V rail stays on
+ * so the BMI270 keeps counting steps and the touch controller can wake us. A
+ * tap on the screen restarts the chip (the AI button cannot wake it: held at
+ * boot it starts Vibe Mode); the steps counted meanwhile are read before the
+ * board re-inits the sensor and credited at boot. A long backstop timer wakes
+ * it if a tap never comes through. If deep sleep cannot start, the old deep
+ * doze (game loop napping, AI button polled) takes over. */
 enum {
     POCKET_AFTER_TICKS = 90,           /* 3 s of dark screen first. */
     POCKET_NAP_MS = 1000,              /* Deep doze: one game tick a second. */
     POCKET_POLL_MS = 20,               /* AI button check while napping. */
     POCKET_WATCH_MS = 3000,            /* No new frame this long after waking: restart. */
     POCKET_SOON_TICKS = 30,            /* After the AI button: pocket mode in 1 s. */
+    POCKET_BACKSTOP_S = 12 * 60 * 60,  /* Deep sleep backstop wake (a tap wakes it sooner). */
 };
 #define POCKET_BUTTON_GPIO GPIO_NUM_7  /* AI button, active low: the only wake key. */
 
 
 
+
+/* Save, credit the last steps and deep-sleep until a tap. */
+static void pocket_deep_sleep(host_state_t *state)
+{
+    uint32_t raw = 0;
+    const bool have_steps = app_pedometer_hw_read(&raw) == ESP_OK;
+    if (have_steps) {
+        app_game_set_sensor_steps(state->game, raw);   /* Credit what is counted so far. */
+    }
+    if (state->save_ready) {   /* The wake is a restart: save first. */
+        app_game_record_t record;
+        app_game_export(state->game, &record);
+        const uint64_t now = now_ms();
+        if (raylib_lite_save_request(&state->save, &record, now) == RAYLIB_LITE_OK
+                && raylib_lite_save_flush(&state->save, now, true) == RAYLIB_LITE_OK) {
+            state->saved_seq = app_game_read(state->game).save_seq;
+        }
+    }
+    app_sfx_close();
+    if (app_interact_hw_present()) {
+        const uint8_t dark[APP_INTERACT_LEDS][3] = {{0}};
+        (void)app_interact_hw_leds(dark);
+    }
+    const app_sleep_request_t request = {
+        .seconds = POCKET_BACKSTOP_S,
+        .touch_wake = true,
+        .mask = APP_SLEEP_STEP_PANEL | APP_SLEEP_STEP_HOLD_RAIL | (have_steps ? APP_SLEEP_STEP_CAPTURE : 0),
+        .steps = raw,
+        .remaining_mah = state->battery_ok ? state->battery.remaining_mah : 0,
+        .voltage_mv = state->battery_ok ? state->battery.voltage_mv : 0,
+    };
+    ++s_pocket_log.sleeps;
+    (void)app_net_suspend(true);
+    ESP_LOGI(TAG, "pocket: deep sleep (tap to wake), %lu steps so far", (unsigned long)raw);
+    const esp_err_t err = app_sleep_hw_enter(&request);
+    ESP_LOGE(TAG, "pocket: deep sleep did not start (%s): dozing instead", esp_err_to_name(err));
+    (void)app_net_suspend(false);   /* Sound reopens on its own at the next cue. */
+}
 
 static void pocket_resume_radio(host_state_t *state)
 {
@@ -800,6 +850,10 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
      * button would wake us at once, so wait for its release. */
     if (!state->battery_ok || state->battery.current_ma >= 0 || gpio_get_level(POCKET_BUTTON_GPIO) == 0) {
         return;
+    }
+    if (!state->pocket_deep_failed) {
+        pocket_deep_sleep(state);   /* Returns only if deep sleep could not start. */
+        state->pocket_deep_failed = true;
     }
     if (!state->pocket_radio_off && app_net_suspend(true) == ESP_OK) {
         state->pocket_radio_off = true;

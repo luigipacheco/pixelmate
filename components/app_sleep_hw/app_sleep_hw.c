@@ -66,6 +66,7 @@ typedef struct {
     int64_t slept_at_s;                /* Wall clock (RTC backed) when we went down. */
     uint16_t alive_rail_off;
     bool v1_0;
+    bool steps_taken;                  /* Slept steps already credited. */
     app_sleep_report_t report;
 } sleep_record_t;
 
@@ -381,17 +382,15 @@ ESP_SYSTEM_INIT_FN(app_sleep_capture, SECONDARY, BIT(0), 250)
         .mask = armed.request.mask,
     };
     report.woke = report.reset_reason == ESP_RST_DEEPSLEEP;
-    if (report.woke && plain) {
+    if (armed.request.touch_wake) {
+        rtc_gpio_deinit(TOUCH_INT_GPIO);   /* Back to a normal pad for the touch driver. */
+    }
+    if (report.woke) {
         report.wake_causes = esp_sleep_get_wakeup_causes();
         const int64_t slept = wall_seconds() - armed.slept_at_s;
         report.slept_s = slept > 0 ? (uint32_t)slept : 0;
-    } else if (report.woke) {
-        report.wake_causes = esp_sleep_get_wakeup_causes();
-        const int64_t slept = wall_seconds() - armed.slept_at_s;
-        report.slept_s = slept > 0 ? (uint32_t)slept : 0;
-        if (armed.request.touch_wake) {
-            rtc_gpio_deinit(TOUCH_INT_GPIO);   /* Back to a normal pad for the touch driver. */
-        }
+    }
+    if (report.woke && !plain) {
         /* First with the rail as the sleep left it; when nothing answers and
          * the rail was cut, power it (the board does the same next) and retry. */
         report.imu_answered_rail_off = armed.request.rail_off && imu_snapshot(armed.v1_0, &report);
@@ -405,9 +404,31 @@ ESP_SYSTEM_INIT_FN(app_sleep_capture, SECONDARY, BIT(0), 250)
             (void)imu_snapshot(armed.v1_0, &report);
         }
     }
+    if ((armed.request.mask & APP_SLEEP_STEP_HOLD_RAIL) && !armed.request.rail_off) {
+        /* Release the rail pin's hold, still driving it on, so the board can
+         * take it over without the rail (and the step sensor) blinking off. */
+        gpio_set_level(RAIL_GPIO, RAIL_ON);
+        gpio_set_direction(RAIL_GPIO, GPIO_MODE_OUTPUT);
+        gpio_hold_dis(RAIL_GPIO);
+    }
     s_record.report = report;
     s_record.magic = RECORD_REPORT;
     return ESP_OK;
+}
+
+bool app_sleep_hw_take_steps(uint32_t *delta)
+{
+    if (s_record.magic != RECORD_REPORT || s_record.steps_taken || !s_record.report.woke
+            || s_record.report.steps_at_wake < 0) {
+        return false;
+    }
+    s_record.steps_taken = true;
+    /* The sensor register holds the low 16 bits of its count. */
+    const uint32_t d = ((uint32_t)s_record.report.steps_at_wake - s_record.report.steps_before) & 0xFFFFU;
+    if (delta) {
+        *delta = d;
+    }
+    return true;
 }
 
 bool app_sleep_hw_report(app_sleep_report_t *out)

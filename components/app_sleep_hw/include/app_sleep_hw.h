@@ -64,6 +64,10 @@ extern const int app_sleep_probe_count;
  * when the sleep could not start. */
 esp_err_t app_sleep_hw_enter(const app_sleep_request_t *request);
 
+/** Steps the BMI270 counted during the deep sleep this boot woke from, once
+ *  per wake (later restarts return false). */
+bool app_sleep_hw_take_steps(uint32_t *delta);
+
 /** The result of the last sleep attempt, captured early in this boot (kept
  * across software restarts, lost on power-off). When that record is gone, a
  * breadcrumb written to flash before sleeping still reports the attempt (as
