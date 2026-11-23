@@ -85,16 +85,22 @@ static void draw_menu(const draw_ctx_t *d, int oy)
 {
     const app_game_snapshot_t *s = d->snap;
     DrawRectangle(0, oy, APP_VIEW_W, APP_MENU_H, PANEL_BG);
-    DrawRectangle(0, oy + APP_MENU_H - 4, APP_VIEW_W, 4, d->color);
+    if (app_layout_round) {
+        DrawRectangle(40, oy + APP_MENU_H - 4, APP_VIEW_W - 80, 4, d->color);   /* Inside the circle. */
+    } else {
+        DrawRectangle(0, oy + APP_MENU_H - 4, APP_VIEW_W, 4, d->color);
+    }
 
     /* Status row: battery (left), SLEEP (center); sparks are drawn on top (right). */
+    /* Round: battery on the band under SLEEP, left of the sparks. */
+    const int bx = app_hud_left(), by = app_layout_round ? app_hud_y() + 2 : 22;
     if (s->battery_pct >= 0) {
         char pct[8];
-        px_battery(18, oy + 22, s->battery_pct, s->battery_charging, d->color, d->accent);
+        px_battery(bx, oy + by, s->battery_pct, s->battery_charging, d->color, d->accent);
         snprintf(pct, sizeof(pct), "%d%%", s->battery_pct);
-        px_text(pct, 60, oy + 23, 2, d->color, false);
+        px_text(pct, bx + 42, oy + by + 1, 2, d->color, false);
     } else {
-        px_text("NO BATT", 18, oy + 23, 2, d->dim, false);
+        px_text("NO BATT", bx, oy + by + 1, 2, d->dim, false);
     }
     screens_button(d, app_menu_sleep_rect(), 0, oy, "SLEEP", 3, d->color, false);
 
@@ -121,7 +127,7 @@ static void draw_menu(const draw_ctx_t *d, int oy)
         snprintf(text, sizeof(text), "%s IN %lu STEPS", next->name,
                  (unsigned long)(next->cost - s->sparks) * APP_STEPS_PER_SPARK);
     }
-    px_text_center(text, 240, oy + 326, 2, d->accent, false);
+    px_text_center(text, 240, oy + (app_layout_round ? 334 : 326), 2, d->accent, false);
     draw_grabber(oy + APP_MENU_H - 18, d->dim);
 }
 
@@ -130,8 +136,8 @@ static void draw_menu(const draw_ctx_t *d, int oy)
 static void draw_header(const draw_ctx_t *d, int oy, const char *title)
 {
     DrawRectangle(0, oy, APP_VIEW_W, APP_VIEW_H, PANEL_BG);
-    screens_button(d, app_panel_back_rect(), 0, oy, "BACK", 3, d->dim, false);
-    px_text_center(title, 240, oy + 20, 3, d->color, d->gap);
+    screens_button(d, app_panel_back_rect(), 0, oy, "BACK", app_layout_round ? 2 : 3, d->dim, false);
+    px_text_center(title, 240, oy + app_panel_title_y(), 3, d->color, d->gap);
 }
 
 /* ---- About: the credits page under Settings ------------------------- */
@@ -239,7 +245,7 @@ static void draw_style(const draw_ctx_t *d, int oy)
     static const char *const names[APP_PIXEL_COUNT] = {"CHUNKY", "FINE", "SMOOTH"};
     const app_game_snapshot_t *s = d->snap;
     draw_header(d, oy, "STYLE");
-    px_text_center("PIXELS", 240, oy + 262, 2, d->dim, false);
+    px_text_center("PIXELS", 240, oy + app_style_label_y(0), 2, d->dim, false);
     for (int i = 0; i < APP_PIXEL_COUNT; ++i) {
         const app_rect_t r = app_style_pixel_rect(i);
         const bool owned = s->owned & APP_OWN_STYLE_BIT(i);
@@ -249,7 +255,7 @@ static void draw_style(const draw_ctx_t *d, int oy)
             draw_lock(r.x + r.w - 26, r.y + oy + 4, d->accent);
         }
     }
-    px_text_center("COLOR", 240, oy + 350, 2, d->dim, false);
+    px_text_center("COLOR", 240, oy + app_style_label_y(1), 2, d->dim, false);
     for (int i = 0; i < APP_COLOR_COUNT; ++i) {
         const app_rect_t r = app_style_color_rect(i);
         const bool owned = s->owned & APP_OWN_COLOR_BIT(i);
@@ -435,12 +441,14 @@ static void draw_store(const draw_ctx_t *d, int oy)
         draw_status(d, item, r, oy);
     }
     const int pages = (count + APP_STORE_PER_PAGE - 1) / APP_STORE_PER_PAGE;
-    const int x0 = 240 - (pages - 1) * 12 - 5;
+    /* Round: the bottom of the circle is narrow, so many pages pack closer. */
+    const int step = app_layout_round && pages > 7 ? 16 : 24, size = step == 24 ? 10 : 8;
+    const int x0 = 240 - (pages - 1) * step / 2 - size / 2;
     for (int p = 0; p < pages; ++p) {
         if (p == s->store_page) {
-            DrawRectangle(x0 + p * 24 - 2, oy + APP_DOTS_Y - 2, 14, 14, d->color);
+            DrawRectangle(x0 + p * step - 2, oy + APP_DOTS_Y - 2, size + 4, size + 4, d->color);
         } else {
-            DrawRectangle(x0 + p * 24, oy + APP_DOTS_Y, 10, 10, d->dim);
+            DrawRectangle(x0 + p * step, oy + APP_DOTS_Y, size, size, d->dim);
         }
     }
 }

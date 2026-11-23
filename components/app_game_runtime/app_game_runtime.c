@@ -11,6 +11,7 @@
 #include "../app_game/include/app_game.h"
 #include "private/booth_media.h"
 #include "private/game_config.h"
+#include <stdlib.h>
 #include "private/pet_view.h"
 #include "raylib_lite_raylib.h"
 
@@ -658,7 +659,14 @@ static int initialize(void *value, const char *asset_root)
 #else
     const bool no_module = false;
 #endif
-    const app_game_config_t config = {GAME_WIDTH, GAME_HEIGHT, seed, desk, no_module};
+#if defined(APP_ROUND_SCREEN)
+    const bool round_screen = true;    /* Set by the build for round boards. */
+#elif defined(RAYLIB_LITE_GAME_NATIVE)
+    const bool round_screen = false;
+#else
+    const bool round_screen = getenv("PIXELMATE_ROUND") != NULL;   /* Host: preview the round layout. */
+#endif
+    const app_game_config_t config = {GAME_WIDTH, GAME_HEIGHT, seed, desk, no_module, round_screen};
     if (app_game_create(&config, &state->game) != APP_GAME_OK) {
         return -1;
     }

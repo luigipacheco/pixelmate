@@ -523,7 +523,9 @@ typedef struct {
     const char *blurb;     /**< One short upper-case line. */
 } app_store_item_t;
 
-enum { APP_STORE_PER_PAGE = 4 };
+extern bool app_layout_round;   /* Round screen layout (app_game_layout.h). */
+/** Store rows per page: 4, or 3 in the wide middle band of a round screen. */
+#define APP_STORE_PER_PAGE (app_layout_round ? 3 : 4)
 
 /* Ownership bit layout in app_game_snapshot_t.owned. */
 #define APP_OWN_COLOR_BIT(i) (1UL << (i))
@@ -759,6 +761,8 @@ typedef struct {
                             face earn a spark. */
     bool no_module;    /**< The board has no Interaction module slot: no MODULE
                             LIGHTS setting. */
+    bool round_screen; /**< Round glass: the layout keeps clear of the corners
+                            (sets app_layout_round, app_game_layout.h). */
 } app_game_config_t;
 
 enum { APP_DESK_PETS_PER_SPARK = 3 };

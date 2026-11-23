@@ -31,7 +31,8 @@ get_filename_component(PIXELMATE_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(PIXELMATE_PART_KINDS CAMERA INTERACT NECK NET PEDOMETER POWER RTC SENSORS SLEEP)
 
 # Features: DESK_PET (nobody walks with it: pats earn sparks, no step UI),
-# POCKET_MODE (sleep in a pocket, AI button on GPIO7: ESP-Mosaico only).
+# POCKET_MODE (sleep in a pocket, AI button on GPIO7: ESP-Mosaico only),
+# ROUND_SCREEN (round glass: the layout keeps clear of the corners).
 
 macro(pixelmate_part kind driver)
     if(NOT "${kind}" IN_LIST PIXELMATE_PART_KINDS)

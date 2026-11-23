@@ -6,11 +6,12 @@
 
 typedef struct sw_video sw_video_t;
 
-/* The square game is scaled to this side and centred on the round glass.
- * 328 is the largest square (multiple of 8) whose corners stay inside the
- * 468-pixel circle; bigger shows Bitsy larger but the circle clips corners. */
+/* Side of the game on the panel, centred on the round glass. 480 = 1:1,
+ * crisp pixel art (the round layout keeps the corners empty). 328 would fit
+ * the whole square inside the circle, but nearest-neighbour scaling drops
+ * every third row and column of the pixel art. A multiple of 8. */
 #ifndef SW_VIEW_SIDE
-#define SW_VIEW_SIDE 328U
+#define SW_VIEW_SIDE 480U
 #endif
 
 /** Power must be up (sw_power_init) first. */

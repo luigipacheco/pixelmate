@@ -5,6 +5,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* Round screens (boards with pixelmate_feature(ROUND_SCREEN), e.g. the M5
+ * StopWatch): the glass is a circle of radius APP_ROUND_R around the view's
+ * centre, so corners are not visible. Set once by app_game_create() from
+ * app_game_config_t.round_screen; layout functions below pick round positions
+ * from it. Square boards keep the original layout. */
+extern bool app_layout_round;
+enum { APP_ROUND_R = 233 };
+
 typedef struct {
     int16_t x, y, w, h;
 } app_rect_t;
@@ -235,31 +243,32 @@ static inline app_rect_t app_tools_ir_rect(int i)
  * battery readout (left), SLEEP (center) and the spark counter (right). */
 static inline app_rect_t app_menu_sleep_rect(void)
 {
-    return (app_rect_t) {176, 8, 128, 44};
+    /* Round: the narrow top of the glass holds SLEEP alone. */
+    return app_layout_round ? (app_rect_t) {190, 12, 100, 38} : (app_rect_t) {176, 8, 128, 44};
 }
 static inline app_rect_t app_menu_store_rect(void)
 {
-    return (app_rect_t) {40, 64, 400, 66};
+    return app_layout_round ? (app_rect_t) {64, 88, 352, 62} : (app_rect_t) {40, 64, 400, 66};
 }
 static inline app_rect_t app_menu_style_rect(void)
 {
-    return (app_rect_t) {40, 142, 400, 66};
+    return app_layout_round ? (app_rect_t) {64, 160, 352, 62} : (app_rect_t) {40, 142, 400, 66};
 }
 static inline app_rect_t app_menu_settings_rect(void)
 {
-    return (app_rect_t) {40, 220, 400, 66};
+    return app_layout_round ? (app_rect_t) {64, 232, 352, 62} : (app_rect_t) {40, 220, 400, 66};
 }
 
 /* Network line under the menu buttons: opens the Wi-Fi panel. */
 static inline app_rect_t app_menu_wifi_rect(void)
 {
-    return (app_rect_t) {40, 290, 400, 30};
+    return app_layout_round ? (app_rect_t) {64, 300, 352, 28} : (app_rect_t) {40, 290, 400, 30};
 }
 
 /* Wi-Fi panel: one action button (SET UP / STOP / CHANGE WIFI). */
 static inline app_rect_t app_wifi_action_rect(void)
 {
-    return (app_rect_t) {100, 376, 280, 64};
+    return app_layout_round ? (app_rect_t) {120, 360, 240, 56} : (app_rect_t) {100, 376, 280, 64};
 }
 
 /* Daily goal panel. */
@@ -275,24 +284,58 @@ static inline app_rect_t app_goal_plus_rect(void)
 /* Shared by the style and store panels. */
 static inline app_rect_t app_panel_back_rect(void)
 {
-    return (app_rect_t) {12, 8, 116, 44};
+    /* Round: under the title, on the first band wide enough for it. */
+    return app_layout_round ? (app_rect_t) {100, 50, 104, 36} : (app_rect_t) {12, 8, 116, 44};
+}
+
+/* Y of panel titles and of the HUD counters (steps, sparks). Round: the title
+ * alone in the narrow top, the counters on the wider band under it. */
+static inline int app_panel_title_y(void)
+{
+    return app_layout_round ? 18 : 20;
+}
+static inline int app_hud_y(void)
+{
+    return app_layout_round ? 56 : 18;
+}
+/* Left and right edges for HUD items. */
+static inline int app_hud_left(void)
+{
+    return app_layout_round ? 104 : 18;
+}
+static inline int app_hud_right(void)
+{
+    return app_layout_round ? 376 : 462;
 }
 
 static inline app_rect_t app_style_pixel_rect(int i)
 {
+    if (app_layout_round) {
+        return (app_rect_t) {(int16_t)(56 + i * 128), 248, 120, 48};
+    }
     return (app_rect_t) {(int16_t)(24 + i * 148), 284, 136, 52};
 }
 static inline app_rect_t app_style_color_rect(int i)
 {
+    if (app_layout_round) {   /* Two rows of three: the bottom of the circle is narrow. */
+        return (app_rect_t) {(int16_t)(132 + (i % 3) * 76), (int16_t)(322 + (i / 3) * 62), 64, 52};
+    }
     return (app_rect_t) {(int16_t)(24 + i * 74), 372, 64, 56};
+}
+/* Y of the style panel's PIXELS and COLOR labels. */
+static inline int app_style_label_y(int which)
+{
+    return app_layout_round ? (which ? 302 : 226) : (which ? 350 : 262);
 }
 static inline app_rect_t app_store_row_rect(int row)
 {
-    return (app_rect_t) {16, (int16_t)(68 + row * 92), 448, 84};
+    /* Round: three rows in the wide middle band of the circle. */
+    return app_layout_round ? (app_rect_t) {56, (int16_t)(100 + row * 80), 368, 74}
+                            : (app_rect_t) {16, (int16_t)(68 + row * 92), 448, 84};
 }
 
-/* Settings: same row geometry as the store, 4 rows per page. */
-enum { APP_SETTINGS_PER_PAGE = 4 };
+/* Settings: same row geometry as the store, 4 rows per page (3 round). */
+#define APP_SETTINGS_PER_PAGE (app_layout_round ? 3 : 4)
 static inline app_rect_t app_settings_row_rect(int row)
 {
     return app_store_row_rect(row);

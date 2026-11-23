@@ -355,6 +355,8 @@ static void fresh_pet(app_game_handle_t g)
     pedometer_reset(&g->pedometer);
 }
 
+bool app_layout_round;
+
 app_game_err_t app_game_create(const app_game_config_t *config, app_game_handle_t *ret_handle)
 {
     if (!ret_handle) {
@@ -368,6 +370,7 @@ app_game_err_t app_game_create(const app_game_config_t *config, app_game_handle_
     if (!g) {
         return APP_GAME_NO_MEMORY;
     }
+    app_layout_round = config->round_screen;
     g->config = *config;
     g->battery_pct = -1;
     g->clock_minute = -1;

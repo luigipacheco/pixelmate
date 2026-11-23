@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 /* M5Stack StopWatch display: CO5300 AMOLED over QSPI, driven as a 480x480
  * memory (M5GFX's Panel_StopWatch: the round glass shows a 468-pixel circle,
- * 6 columns in, rows 0..467). The game's square 480x480 surface is scaled down
- * to SW_VIEW_SIDE and centred on the glass, so its corners stay inside the
- * circle; the rest of the panel is painted black once.
+ * 6 columns in, rows 0..467). The game's square 480x480 surface is centred on
+ * the glass: 1:1 by default (crisp pixels; the game keeps its own layout clear
+ * of the corners, pixelmate_feature(ROUND_SCREEN)), or scaled down to
+ * SW_VIEW_SIDE. Panel pixels outside the view are painted black once.
  *
  * Two logical frames live in PSRAM: the game draws one while a sender task
  * (CPU 0) pushes the other through esp_display_present, which owns the DMA
@@ -40,8 +41,12 @@
  * writes want x on a multiple of 4). */
 #define GLASS_CX 240U
 #define GLASS_CY 234U
-#define VIEW_X0 (GLASS_CX - SW_VIEW_SIDE / 2U)
-#define VIEW_Y0 (GLASS_CY - SW_VIEW_SIDE / 2U)
+#define VIEW_X0 ((int)GLASS_CX - (int)SW_VIEW_SIDE / 2)
+#define VIEW_Y0 ((int)GLASS_CY - (int)SW_VIEW_SIDE / 2)
+/* View rows above the panel's top edge (1:1: the game's top 6 rows, blank on
+ * a round layout). */
+#define VIEW_SKIP (VIEW_Y0 < 0 ? -VIEW_Y0 : 0)
+_Static_assert(VIEW_X0 >= 0 && VIEW_X0 % 4 == 0, "view x on a multiple of 4");
 _Static_assert(SW_VIEW_SIDE % 8U == 0U && SW_VIEW_SIDE <= LCD_SIZE, "view side: a multiple of 8, at most 480");
 
 /* M5GFX Panel_StopWatch init list (MIT, M5Stack), plus RGB565 (0x3A). */
@@ -146,9 +151,15 @@ static void fill_black(const sw_video_t *video, const uint16_t *frame, uint16_t 
     memset(out, 0, (size_t)rows * LCD_SIZE * sizeof(uint16_t));
 }
 
-/* Nearest-neighbour reduction of the 480x480 game to the view square. */
+/* The view's rows from `top` (after VIEW_SKIP): straight copies at 1:1,
+ * nearest-neighbour reduction otherwise. */
 static void fill_view(const sw_video_t *video, const uint16_t *frame, uint16_t *out, uint16_t top, uint16_t rows)
 {
+    top = (uint16_t)(top + VIEW_SKIP);
+    if (SW_VIEW_SIDE == LCD_SIZE) {
+        memcpy(out, frame + (size_t)top * LCD_SIZE, (size_t)rows * LCD_SIZE * sizeof(uint16_t));
+        return;
+    }
     for (uint16_t r = 0; r < rows; ++r) {
         const uint16_t *src = frame + (size_t)video->src_index[top + r] * LCD_SIZE;
         uint16_t *dst = out + (size_t)r * SW_VIEW_SIDE;
@@ -213,7 +224,8 @@ static esp_err_t send_frame(sw_video_t *video, const uint16_t *frame)
         if (err != ESP_OK) return err;
         video->cleared = true;
     }
-    return send_area(video, frame, VIEW_X0, VIEW_Y0, SW_VIEW_SIDE, SW_VIEW_SIDE, fill_view, false);
+    return send_area(video, frame, (uint16_t)VIEW_X0, (uint16_t)(VIEW_Y0 + VIEW_SKIP), SW_VIEW_SIDE,
+                     (uint16_t)(SW_VIEW_SIDE - VIEW_SKIP), fill_view, false);
 }
 
 static void sender(void *arg)
@@ -374,16 +386,15 @@ raylib_lite_result_t sw_video_open(sw_video_t **out)
     if (err != ESP_OK) return result_from_esp(err);
     if (xTaskCreatePinnedToCore(sender, "sw_lcd", SENDER_STACK, video, SENDER_PRIORITY, &video->sender, 0) != pdPASS)
         return RAYLIB_LITE_NO_MEMORY;
-    ESP_LOGI(TAG, "CO5300 over QSPI at %u MHz: game scaled to %u px at (%u,%u), %u frames",
-             (unsigned)(LCD_PCLK_HZ / 1000000U), (unsigned)SW_VIEW_SIDE, (unsigned)VIEW_X0, (unsigned)VIEW_Y0,
-             (unsigned)FRAMES);
+    ESP_LOGI(TAG, "CO5300 over QSPI at %u MHz: game %u px at (%d,%d), %u frames",
+             (unsigned)(LCD_PCLK_HZ / 1000000U), (unsigned)SW_VIEW_SIDE, VIEW_X0, VIEW_Y0, (unsigned)FRAMES);
     *out = video;
     return RAYLIB_LITE_OK;
 }
 
 bool sw_video_map_touch(int32_t *x, int32_t *y)
 {
-    int32_t vx = *x - (int32_t)VIEW_X0, vy = *y - (int32_t)VIEW_Y0;
+    int32_t vx = *x - VIEW_X0, vy = *y - VIEW_Y0;
     vx = vx < 0 ? 0 : (vx >= (int32_t)SW_VIEW_SIDE ? (int32_t)SW_VIEW_SIDE - 1 : vx);
     vy = vy < 0 ? 0 : (vy >= (int32_t)SW_VIEW_SIDE ? (int32_t)SW_VIEW_SIDE - 1 : vy);
     *x = vx * (int32_t)LCD_SIZE / (int32_t)SW_VIEW_SIDE;

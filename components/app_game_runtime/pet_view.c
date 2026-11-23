@@ -743,20 +743,24 @@ static void draw_crt(const pet_view_t *v, const draw_ctx_t *d)
 static void draw_steps_counter(const pet_view_t *v, const draw_ctx_t *d)
 {
     char text[16];
+    const int x0 = app_hud_left(), y0 = app_hud_y();
     if (!d->snap->desk) {   /* A desk pet is never walked. */
-        px_icon(PX_ICON_SHOE, 18, 18, 3, d->color, d->accent, d->gap);
+        px_icon(PX_ICON_SHOE, x0, y0, 3, d->color, d->accent, d->gap);
         snprintf(text, sizeof(text), "%lu", (unsigned long)(v->steps_shown + 0.5f));
-        px_text(text, 50, 18, 3, d->color, d->gap);
+        px_text(text, x0 + 32, y0, 3, d->color, d->gap);
     }
-    /* Grabber: pull down from here for the menu. */
-    DrawRectangle(216, 6, 48, 4, d->dim);
-    DrawRectangle(228, 14, 24, 4, d->dim);
-    /* Battery only when it matters: low (blinking) or charging. */
+    /* Grabber: pull down from here for the menu (round: clear of the rim). */
+    const int gy = app_layout_round ? 14 : 6;
+    DrawRectangle(216, gy, 48, 4, d->dim);
+    DrawRectangle(228, gy + 8, 24, 4, d->dim);
+    /* Battery only when it matters: low (blinking) or charging. Round: under
+     * the grabber, between the counters. */
     const app_game_snapshot_t *s = d->snap;
     if (s->battery_pct >= 0) {
         const bool low = s->battery_pct <= APP_LOW_BATTERY_PCT && !s->battery_charging;
         if (s->battery_charging || (low && (v->t / 15U) % 2U)) {
-            px_battery(296, 22, s->battery_pct, s->battery_charging, d->color, d->accent);
+            px_battery(app_layout_round ? 224 : 296, app_layout_round ? 34 : 22, s->battery_pct,
+                       s->battery_charging, d->color, d->accent);
         }
     }
 }
@@ -769,12 +773,13 @@ static void draw_sparks_counter(const pet_view_t *v, const draw_ctx_t *d)
     const bool flash = v->spark_flash && ((v->t / 3U) & 1U);
     const Color c = flash ? WARN : d->color;
     snprintf(text, sizeof(text), "%lu", (unsigned long)(v->sparks_shown + 0.5f));
-    const int bolt_x = APP_VIEW_W - 18 - 6 * scale;
-    px_icon(PX_ICON_BOLT, bolt_x, 18 - (scale - 3) * 3, scale, flash ? WARN : d->accent, c, d->gap);
-    px_text(text, bolt_x - 8 - px_text_width(text, scale), 18 - (scale - 3) * 3, scale, c, d->gap);
+    const int bolt_x = app_hud_right() - 6 * scale, y = app_hud_y() - (scale - 3) * 3;
+    px_icon(PX_ICON_BOLT, bolt_x, y, scale, flash ? WARN : d->accent, c, d->gap);
+    px_text(text, bolt_x - 8 - px_text_width(text, scale), y, scale, c, d->gap);
     if (d->snap->dev_mode) {
         /* Under the counter, clear of panel titles. */
-        px_text("DEV", APP_VIEW_W - 18 - px_text_width("DEV", 2), 48, 2, (v->t / 15U) % 2U ? WARN : d->accent, false);
+        px_text("DEV", app_hud_right() - px_text_width("DEV", 2), app_hud_y() + 30, 2,
+                (v->t / 15U) % 2U ? WARN : d->accent, false);
     }
 }
 
