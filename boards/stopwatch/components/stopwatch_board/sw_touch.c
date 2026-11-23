@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 /* StopWatch touch: CST820 at 0x15 (CST816S register layout, as M5GFX drives
- * it). It reports 0..233 across the round glass, half the panel's 468 visible
- * pixels, and the glass starts 6 columns into the 480-wide panel memory
- * (M5GFX: touch range 0..233, panel 468x468 at offset 6,0). Some units carry
+ * it). Measured on a unit (taps at the centre and four edges: 251,243 /
+ * 248,23 / 229,446 / 26,241 / 458,249) it reports glass pixels directly,
+ * 0..~466 on both axes, x to the right and y down: not M5GFX's 0..233. The
+ * edge taps centre on (242, 234), the panel's glass centre, so the values are
+ * panel pixels as they are. Some units carry
  * a two-finger CST9217 at 0x5A instead; that one is not supported yet.
  * Coordinates come out in panel pixels; sw_video maps them onto the game. */
 #include "sw_touch.h"
@@ -15,9 +17,9 @@
 #define CST820_ADDR 0x15
 #define CST9217_ADDR 0x5A
 #define TIMEOUT_MS 20
-#define RAW_SPAN 234      /* Raw 0..233. */
-#define GLASS 468         /* Visible pixels. */
-#define GLASS_X0 6        /* First visible column of the 480-wide memory. */
+#define RAW_SPAN 1        /* Raw units per glass pixel (1:1, measured). */
+#define GLASS 1
+#define GLASS_X0 0        /* Edge taps centre on panel column ~240: x is already in panel columns. */
 #define PANEL 480
 
 static i2c_master_dev_handle_t s_touch;
