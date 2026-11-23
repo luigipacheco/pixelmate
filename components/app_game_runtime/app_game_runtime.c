@@ -158,8 +158,6 @@ typedef struct {
     uint8_t ai_down_ticks;        /* AI button held this many ticks (debounce). */
     bool ai_swallow;              /* Ignore the AI button until it is released. */
     bool ai_ready;                /* GPIO input enabled. */
-    app_net_sleep_test_t sleep_test;   /* Deep-sleep experiment waiting to start. */
-    uint8_t sleep_countdown;      /* Ticks until it starts (0 = none). */
     bool sleep_reported;          /* The last test's result is on /api/sleep. */
 #endif
 } host_state_t;
@@ -326,55 +324,6 @@ static void poll_sensor(host_state_t *state)
     if (app_pedometer_hw_read(&steps) == ESP_OK) {
         app_game_set_sensor_steps(state->game, steps);
     }
-}
-
-/* ---- Deep-sleep experiment (POST /api/sleeptest, result on /api/sleep) ---- */
-
-enum { SLEEP_START_TICKS = 45 };   /* 1.5 s: let the HTTP reply leave first. */
-
-static void poll_sleep_test(host_state_t *state)
-{
-    if (state->sleep_countdown == 0) {
-        if (app_net_take_sleep_test(&state->sleep_test)) {
-            state->sleep_countdown = SLEEP_START_TICKS;
-        }
-        return;
-    }
-    if (--state->sleep_countdown > 0) {
-        return;
-    }
-    if (state->save_ready) {   /* The wake is a restart: save first. */
-        app_game_record_t record;
-        app_game_export(state->game, &record);
-        const uint64_t now = now_ms();
-        if (raylib_lite_save_request(&state->save, &record, now) == RAYLIB_LITE_OK
-                && raylib_lite_save_flush(&state->save, now, true) == RAYLIB_LITE_OK) {
-            state->saved_seq = app_game_read(state->game).save_seq;
-        }
-    }
-    app_sfx_close();
-    if (app_interact_hw_present()) {
-        const uint8_t dark[APP_INTERACT_LEDS][3] = {{0}};
-        (void)app_interact_hw_leds(dark);
-    }
-    app_sleep_request_t request = {
-        .seconds = state->sleep_test.seconds,
-        .rail_off = state->sleep_test.rail_off,
-        .touch_wake = state->sleep_test.touch_wake,
-        .plain = state->sleep_test.plain,
-        .mask = state->sleep_test.mask,
-        .remaining_mah = state->battery_ok ? state->battery.remaining_mah : 0,
-        .voltage_mv = state->battery_ok ? state->battery.voltage_mv : 0,
-    };
-    (void)app_pedometer_hw_read(&request.steps);
-    if (state->sleep_test.imu_low_power && !state->sleep_test.plain) {
-        const esp_err_t err = app_pedometer_hw_low_power();
-        ESP_LOGI(TAG, "sleep test: IMU low power: %s", esp_err_to_name(err));
-    }
-    (void)app_net_suspend(true);
-    const esp_err_t err = app_sleep_hw_enter(&request);
-    ESP_LOGE(TAG, "sleep test did not start: %s", esp_err_to_name(err));
-    (void)app_net_suspend(false);
 }
 
 /* Once the gauge has a reading after a restart: publish what the last sleep did. */
@@ -1195,7 +1144,6 @@ static void update(void *value)
     poll_battery(state);
     poll_net(state);
     publish_sleep_report(state);
-    poll_sleep_test(state);
 #endif
     app_game_update(state->game);
     const Color pet = px_color(app_game_read(state->game).color_index);

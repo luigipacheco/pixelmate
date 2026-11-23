@@ -73,21 +73,7 @@ int app_net_scan_results(app_net_ap_t *out, int max);
  * JavaScript getTimezoneOffset(). Returns true once per new value. */
 bool app_net_take_timezone(int *minutes_west);
 
-/** Deep-sleep experiment, asked for with
- * POST /api/sleeptest?sec=600&rail=0&touch=0&lp=0 (see app_sleep_hw). */
-typedef struct {
-    uint32_t seconds;     /**< Timer wake. */
-    bool rail_off;        /**< rail=0: cut the switched 3.3 V rail. */
-    bool touch_wake;      /**< touch=1: also wake on a touch (rail on only). */
-    bool imu_low_power;   /**< lp=1: gyroscope off, accelerometer low power. */
-    bool plain;           /**< plain=1: timer wake only (same as mask=0). */
-    uint8_t mask;         /**< mask=: 1 panel standby, 2 hold rail pin, 4 hold shutdown pin, 8 wake capture (default 15). */
-} app_net_sleep_test_t;
-
-/** Take a pending sleep test. Returns true once per request. */
-bool app_net_take_sleep_test(app_net_sleep_test_t *out);
-
-/** Replace the JSON served at GET /api/sleep (the last test's result). */
+/** Replace the JSON served at GET /api/sleep (what the last deep sleep did). */
 esp_err_t app_net_publish_sleep(const char *json);
 
 #ifdef __cplusplus

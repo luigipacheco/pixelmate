@@ -20,8 +20,6 @@ enum {
     TZ_MAX = 12 * 60,
     QUERY_MAX = 48,
     SLEEP_JSON_MAX = 640,
-    SLEEP_MIN_S = 5,
-    SLEEP_MAX_S = 12 * 60 * 60,
     HTTPD_STACK = 6144,
     HTTPD_SOCKETS = 5,    /* Leaves lwIP sockets for captive DNS and ESP-Iris TCP. */
     HTTPD_ROUTES = 20,    /* Stats, time zone and gallery routes, with room to grow. */
@@ -34,8 +32,6 @@ static int s_tz_minutes;
 static bool s_tz_pending;
 static httpd_handle_t s_server;
 static char s_sleep_json[SLEEP_JSON_MAX] = "{\"valid\":0}";
-static app_net_sleep_test_t s_sleep_test;
-static bool s_sleep_pending;
 
 static const char PAGE[] =
     "<!doctype html><html><head><meta charset=utf-8>"
@@ -135,19 +131,6 @@ esp_err_t app_net_publish_sleep(const char *json)
     return ESP_OK;
 }
 
-bool app_net_take_sleep_test(app_net_sleep_test_t *out)
-{
-    bool pending;
-    portENTER_CRITICAL(&s_tz_lock);
-    pending = s_sleep_pending;
-    if (pending && out) {
-        *out = s_sleep_test;
-    }
-    s_sleep_pending = false;
-    portEXIT_CRITICAL(&s_tz_lock);
-    return pending;
-}
-
 static esp_err_t get_sleep(httpd_req_t *req)
 {
     char *copy = malloc(SLEEP_JSON_MAX);
@@ -162,43 +145,6 @@ static esp_err_t get_sleep(httpd_req_t *req)
     const esp_err_t err = httpd_resp_sendstr(req, copy);
     free(copy);
     return err;
-}
-
-static long query_number(const char *query, const char *key, long fallback)
-{
-    char value[12];
-    if (httpd_query_key_value(query, key, value, sizeof(value)) != ESP_OK) {
-        return fallback;
-    }
-    char *end = NULL;
-    const long number = strtol(value, &end, 10);
-    return end == value || *end ? fallback : number;
-}
-
-/* Experiment: the pet goes into deep sleep about a second after the reply. */
-static esp_err_t post_sleeptest(httpd_req_t *req)
-{
-    char query[QUERY_MAX] = "";
-    (void)httpd_req_get_url_query_str(req, query, sizeof(query));
-    const long seconds = query_number(query, "sec", 60);
-    if (seconds < SLEEP_MIN_S || seconds > SLEEP_MAX_S) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "sec out of range");
-    }
-    const app_net_sleep_test_t test = {
-        .seconds = (uint32_t)seconds,
-        .rail_off = query_number(query, "rail", 1) == 0,
-        .touch_wake = query_number(query, "touch", 0) != 0,
-        .imu_low_power = query_number(query, "lp", 0) != 0,
-        .plain = query_number(query, "plain", 0) != 0,
-        .mask = (uint8_t)(query_number(query, "plain", 0) != 0 ? 0 : (query_number(query, "mask", 15) & 15)),
-    };
-    portENTER_CRITICAL(&s_tz_lock);
-    s_sleep_test = test;
-    s_sleep_pending = true;
-    portEXIT_CRITICAL(&s_tz_lock);
-    ESP_LOGW(TAG, "sleep test asked: %ld s, rail %s, mask %u", seconds, test.rail_off ? "off" : "on",
-             test.mask);
-    return httpd_resp_sendstr(req, "sleeping");
 }
 
 static esp_err_t get_page(httpd_req_t *req)
@@ -273,7 +219,6 @@ esp_err_t app_net_web_start(void)
         {.uri = "/api/stats", .method = HTTP_GET, .handler = get_stats},
         {.uri = "/api/tz", .method = HTTP_POST, .handler = post_tz},
         {.uri = "/api/sleep", .method = HTTP_GET, .handler = get_sleep},
-        {.uri = "/api/sleeptest", .method = HTTP_POST, .handler = post_sleeptest},
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         err = httpd_register_uri_handler(s_server, &routes[i]);
