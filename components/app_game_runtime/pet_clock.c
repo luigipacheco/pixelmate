@@ -52,14 +52,16 @@ void screens_draw_clock(const draw_ctx_t *d, const pet_clock_t *t)
         px_text("Z", 262 + ox, DIGITS_Y - 10 + oy - (t->second % 3) * 4, 2, d->dim, false);
     }
 
-    /* Today's walk: steps and a goal bar. */
+    /* Today's walk: steps and a goal bar (a desk pet is never walked). */
     const app_game_snapshot_t *s = d->snap;
-    snprintf(text, sizeof(text), "%lu STEPS", (unsigned long)s->steps_today);
-    px_text_center(text, 240 + ox, 316 + oy, 3, d->color, false);
-    const int bar = 240, done = s->step_goal ? (int)((uint64_t)bar * (s->steps_today > s->step_goal
-                                                                       ? s->step_goal : s->steps_today) / s->step_goal) : 0;
-    DrawRectangle(120 + ox, 350 + oy, bar, 8, d->dim);
-    DrawRectangle(120 + ox, 350 + oy, done, 8, s->steps_today >= s->step_goal ? d->accent : d->color);
+    if (!s->desk) {
+        snprintf(text, sizeof(text), "%lu STEPS", (unsigned long)s->steps_today);
+        px_text_center(text, 240 + ox, 316 + oy, 3, d->color, false);
+        const int bar = 240, done = s->step_goal ? (int)((uint64_t)bar * (s->steps_today > s->step_goal
+                                                                           ? s->step_goal : s->steps_today) / s->step_goal) : 0;
+        DrawRectangle(120 + ox, 350 + oy, bar, 8, d->dim);
+        DrawRectangle(120 + ox, 350 + oy, done, 8, s->steps_today >= s->step_goal ? d->accent : d->color);
+    }
     if (s->battery_pct >= 0) {
         snprintf(text, sizeof(text), "%s %d%%", s->battery_charging ? "CHARGING" : "POWER", s->battery_pct);
         px_text_center(text, 240 + ox, 380 + oy, 2, d->dim, false);

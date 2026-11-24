@@ -17,6 +17,7 @@ typedef struct {
     uint16_t time_to_empty_min;  /**< 0xFFFF while not discharging or unread. */
     uint16_t remaining_mah;      /**< RemainingCapacity; 0 if unread. */
     uint16_t full_mah;           /**< FullChargeCapacity; 0 if unread. */
+    bool external_power;         /**< A supply is connected (USB); false when the driver cannot tell. */
     uint16_t design_mah;         /**< DesignCapacity (80 once the profile is loaded); 0 if unread. */
 } app_battery_reading_t;
 
@@ -30,9 +31,10 @@ typedef enum {
     APP_GAUGE_PROFILE_FAILED,    /**< Could not load; readings use gauge defaults. */
 } app_gauge_profile_t;
 
-/** Read the BQ27220 fuel gauge on the shared I2C bus (address 0x55). The first
- *  call starts a one-shot profile check; until it finishes this returns
- *  ESP_ERR_NOT_FINISHED. */
+/** Read the battery: the BQ27220 fuel gauge on the ESP-Mosaico (I2C 0x55; the
+ *  first call starts a one-shot profile check and until it finishes this
+ *  returns ESP_ERR_NOT_FINISHED), the INA226 monitor on the Stack-chan body
+ *  (I2C 0x41, percent estimated). */
 esp_err_t app_power_hw_battery(app_battery_reading_t *reading);
 
 /** Where the gauge's battery profile stands. */

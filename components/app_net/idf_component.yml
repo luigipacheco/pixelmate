@@ -1,0 +1,4 @@
+dependencies:
+  # The ESP-Mosaico build also gets mDNS through ESP-Iris; the Stack-chan build
+  # has no Iris, so the dependency is stated here.
+  espressif/mdns: "^1.12.0"

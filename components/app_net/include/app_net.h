@@ -54,6 +54,9 @@ esp_err_t app_net_set_low_latency(bool on);
  * setup hotspot runs. Call from one task (the game loop). */
 esp_err_t app_net_suspend(bool suspend);
 
+/** True once after each internet time (SNTP) sync of the system clock. */
+bool app_net_take_time_sync(void);
+
 /** One access point from a scan (TOOLS: WI-FI). */
 typedef struct {
     char ssid[33];

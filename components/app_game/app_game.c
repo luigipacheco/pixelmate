@@ -48,7 +48,7 @@ enum {
 
 static const uint16_t s_sleep_s[APP_SLEEP_OPTIONS] = {15, 30, 60, 120};
 static const uint8_t s_bright_pct[APP_BRIGHT_OPTIONS] = {100, 80, 60};
-enum { DEFAULT_SLEEP_IDX = 1, DEFAULT_BRIGHT_IDX = 0, SETTINGS_PAGES = 3, RESET_ROW = 8 };
+enum { DEFAULT_SLEEP_IDX = 1, DEFAULT_BRIGHT_IDX = 0 };
 /* Volume order when tapping SOUND: off, low, mid, high. */
 static const app_sound_t s_sound_cycle[APP_SOUND_COUNT] = {
     APP_SOUND_OFF, APP_SOUND_LOW, APP_SOUND_MID, APP_SOUND_HIGH,
@@ -153,6 +153,10 @@ struct app_game {
     app_power_t power;
     uint32_t screen_idle_ticks;   /* Touch-free ticks; steps do not reset it. */
     bool swallow_touch;           /* The touch that woke the screen does nothing else. */
+    bool keep_awake;              /* External supply: no idle dimming or dozing. */
+    bool clock;                   /* Clock mode is showing. */
+    int16_t clock_minute;         /* Local minute of the day, -1 = unknown. */
+    uint32_t clock_idle_ticks;    /* Untouched ticks on Home while clock mode is possible. */
     uint32_t pointer_still_ticks; /* Ticks since the last pointer sample while pressed. */
     int8_t battery_pct;
     bool battery_charging;
@@ -178,6 +182,7 @@ struct app_game {
     uint32_t idle_ticks, walk_ticks, snack_timer, happy_timer;
     app_mood_t reaction;
     uint16_t reaction_ticks, pet_cooldown;
+    uint8_t desk_pets;            /* Desk pet: pats toward the next spark (not saved). */
     app_mood_t mood;
 
     pedometer_t pedometer;
@@ -407,7 +412,7 @@ static void fire_cue(app_game_handle_t g, uint8_t cue);
 
 static void credit_steps(app_game_handle_t g, uint32_t steps)
 {
-    if (!steps) {
+    if (!steps || g->config.desk) {   /* A desk pet is never walked. */
         return;
     }
     if ((g->anims_on & (1U << APP_ANIM_DANCE))
@@ -485,6 +490,7 @@ static void fresh_pet(app_game_handle_t g)
     g->walk_ticks = WALK_MOOD_TICKS;
     g->snack_timer = g->happy_timer = 0;
     g->reaction_ticks = g->pet_cooldown = 0;
+    g->desk_pets = 0;
     g->mood = APP_MOOD_IDLE;
     g->cards.view.best_streak = 0;
     cards_init(&g->cards, g->cards.rng);
@@ -504,6 +510,8 @@ static void fresh_pet(app_game_handle_t g)
     pedometer_reset(&g->pedometer);
 }
 
+bool app_layout_round;
+
 app_game_err_t app_game_create(const app_game_config_t *config, app_game_handle_t *ret_handle)
 {
     if (!ret_handle) {
@@ -517,8 +525,10 @@ app_game_err_t app_game_create(const app_game_config_t *config, app_game_handle_
     if (!g) {
         return APP_GAME_NO_MEMORY;
     }
+    app_layout_round = config->round_screen;
     g->config = *config;
     g->battery_pct = -1;
+    g->clock_minute = -1;
     cards_init(&g->cards, config->seed);
     slots_init(&g->slots, config->seed ^ 0xa5a5a5a5U);
     grid_init(&g->grid, config->seed ^ 0x5a5a5a5aU);
@@ -598,6 +608,9 @@ static void set_screen(app_game_handle_t g, app_screen_t screen)
 static void go_screen(app_game_handle_t g, int delta)
 {
     int next = (int)g->screen + delta;
+    if (g->config.desk && next == APP_SCREEN_STEPS) {
+        next += delta;   /* A desk pet has no Steps page. */
+    }
     if (next < 0 || next > last_screen(g)) {
         return;
     }
@@ -620,8 +633,16 @@ static void tap_home(app_game_handle_t g, int32_t x, int32_t y)
         fire_cue(g, APP_CUE_LOVE);
         react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS * 2);
     }
+    if (g->config.desk) {
+        /* Desk pet: pats are its sparks (steps are never credited, so TAP
+         * STEPS has nothing to add here). */
+        if (++g->desk_pets >= APP_DESK_PETS_PER_SPARK) {
+            g->desk_pets = 0;
+            ++g->sparks;
+            g->events |= APP_EVENT_SPARK;
+        }
     /* TAP STEPS (Settings): every APP_TAPS_PER_STEP pats count as one step. */
-    if (g->tap_steps && ++g->tap_pats >= APP_TAPS_PER_STEP) {
+    } else if (g->tap_steps && ++g->tap_pats >= APP_TAPS_PER_STEP) {
         g->tap_pats = 0;
         ++g->tap_steps_today;
         credit_steps(g, 1);
@@ -729,6 +750,20 @@ static void tap_tools(app_game_handle_t g, int32_t x, int32_t y);
 static void handle_tap(app_game_handle_t g, int32_t x, int32_t y);
 static int settings_rows(const struct app_game *g);
 
+/* Rows a board leaves out: a desk pet has no step goal or TAP STEPS, a board
+ * without the Interaction module slot has no MODULE LIGHTS. */
+static uint16_t settings_hidden(const struct app_game *g)
+{
+    uint16_t hidden = 0;
+    if (g->config.desk) {
+        hidden |= (uint16_t)((1U << APP_SETTINGS_ROW_GOAL) | (1U << APP_SETTINGS_ROW_TAP_STEPS));
+    }
+    if (g->config.no_module) {
+        hidden |= (uint16_t)(1U << APP_SETTINGS_ROW_MODULE_LIGHTS);
+    }
+    return hidden;
+}
+
 static void set_arcade(app_game_handle_t g, app_arcade_t arcade)
 {
     if (g->arcade != arcade) {
@@ -789,6 +824,11 @@ static void update_power(app_game_handle_t g)
         set_power(g, APP_POWER_AWAKE);
         return;
     }
+    if (g->keep_awake) {
+        g->screen_idle_ticks = 0;
+        set_power(g, APP_POWER_AWAKE);
+        return;
+    }
     ++g->screen_idle_ticks;
     const uint32_t doze_at = doze_after_ticks(g);
     const uint32_t dim_at = doze_at * 2U / 3U;   /* Dim for the last third. */
@@ -797,6 +837,24 @@ static void update_power(app_game_handle_t g)
     } else if (g->screen_idle_ticks >= dim_at) {
         set_power(g, APP_POWER_DIM);
     }
+}
+
+/* Clock mode: a pet kept awake on its charger shows the time once Home has
+ * been left alone for a while. */
+static void update_clock(app_game_handle_t g)
+{
+    const bool possible = g->keep_awake && g->power == APP_POWER_AWAKE && g->screen == APP_SCREEN_HOME
+                          && g->overlay == APP_OVERLAY_NONE && !g->fainted && g->clock_minute >= 0
+                          && !g->pointer_down;
+    if (!possible) {
+        g->clock = false;
+        g->clock_idle_ticks = 0;
+        return;
+    }
+    if (g->clock_idle_ticks < APP_CLOCK_AFTER_S * TICKS_PER_SECOND) {
+        ++g->clock_idle_ticks;
+    }
+    g->clock = g->clock_idle_ticks >= APP_CLOCK_AFTER_S * TICKS_PER_SECOND;
 }
 
 static uint32_t item_bit(const app_store_item_t *item)
@@ -1043,11 +1101,11 @@ static void tap_settings(app_game_handle_t g, int32_t x, int32_t y)
         return;
     }
     for (int row = 0; row < APP_SETTINGS_PER_PAGE; ++row) {
-        const int index = g->settings_page * APP_SETTINGS_PER_PAGE + row;
-        if (index >= settings_rows(g) || !app_rect_hit(app_settings_row_rect(row), x, y)) {
+        const int slot = g->settings_page * APP_SETTINGS_PER_PAGE + row;
+        if (slot >= settings_rows(g) || !app_rect_hit(app_settings_row_rect(row), x, y)) {
             continue;
         }
-        switch (index) {
+        switch (app_settings_row_index(settings_hidden(g), slot)) {
         case APP_SETTINGS_ROWS: dev_mode_off(g); return;
         case 0: {
             int at = 0;
@@ -1074,9 +1132,10 @@ static void tap_settings(app_game_handle_t g, int32_t x, int32_t y)
 
 static bool on_reset_row(const struct app_game *g, int32_t x, int32_t y)
 {
+    const int slot = app_settings_row_count(settings_hidden(g), false) - 1;   /* RESET PET is last. */
     return g->overlay == APP_OVERLAY_SETTINGS
-           && g->settings_page == RESET_ROW / APP_SETTINGS_PER_PAGE
-           && app_rect_hit(app_settings_row_rect(RESET_ROW % APP_SETTINGS_PER_PAGE), x, y);
+           && g->settings_page == slot / APP_SETTINGS_PER_PAGE
+           && app_rect_hit(app_settings_row_rect(slot % APP_SETTINGS_PER_PAGE), x, y);
 }
 
 static void update_reset(app_game_handle_t g)
@@ -1357,7 +1416,8 @@ static void dev_mode_on(app_game_handle_t g)
     g->sparks = APP_DEV_SPARKS;
     fire_cue(g, APP_CUE_DEV_ON);
     react(g, APP_MOOD_HAPPY, REACT_GOAL_TICKS);
-    g->settings_page = (uint8_t)(APP_SETTINGS_ROWS / APP_SETTINGS_PER_PAGE);   /* Show its row. */
+    g->settings_page = (uint8_t)(app_settings_row_count(settings_hidden(g), false)
+                                 / APP_SETTINGS_PER_PAGE);   /* Show its row. */
     set_overlay(g, APP_OVERLAY_SETTINGS);
     g->events |= APP_EVENT_SETTINGS;
 }
@@ -1400,7 +1460,7 @@ static void konami_input(app_game_handle_t g, konami_t input)
 
 static int settings_rows(const struct app_game *g)
 {
-    return APP_SETTINGS_ROWS + (g->dev_mode ? 1 : 0);
+    return app_settings_row_count(settings_hidden(g), g->dev_mode);
 }
 
 /* ---- TOOLS -------------------------------------------------------- */
@@ -1781,6 +1841,12 @@ void app_game_set_pointer(app_game_handle_t g, int32_t x, int32_t y, bool presse
             g->swallow_touch = true;
             return;
         }
+        if (g->clock) {
+            g->clock = false;         /* Back to the face; the tap does nothing else. */
+            g->clock_idle_ticks = 0;
+            g->swallow_touch = true;
+            return;
+        }
         g->screen_idle_ticks = 0;
         if (g->mood == APP_MOOD_SLEEPY) {
             react(g, APP_MOOD_SURPRISED, REACT_SURPRISE_TICKS);
@@ -1883,6 +1949,24 @@ void app_game_add_sensor_delta(app_game_handle_t g, uint32_t delta)
     const uint32_t scaled = delta * pct + g->cal_remainder;
     g->cal_remainder = (uint16_t)(scaled % 100U);
     credit_steps(g, scaled / 100U);
+}
+
+void app_game_set_clock(app_game_handle_t g, int minute_of_day)
+{
+    if (g) {
+        g->clock_minute = (int16_t)(minute_of_day < 0 ? -1 : minute_of_day % (24 * 60));
+    }
+}
+
+void app_game_set_keep_awake(app_game_handle_t g, bool on)
+{
+    if (!g || g->keep_awake == on) {
+        return;
+    }
+    g->keep_awake = on;
+    if (on) {
+        wake(g);   /* Plugging in wakes a sleeping screen. */
+    }
 }
 
 void app_game_add_steps(app_game_handle_t g, uint32_t steps)
@@ -2002,9 +2086,11 @@ void app_game_set_day(app_game_handle_t g, int32_t day)
     if (g->day > 0) {
         /* Settle the day that ended, then every day the pet went unwalked. */
         const int32_t missed = day - g->day - 1;
-        int hp = g->hp + (g->fed_today ? 1 : -1) - (missed > APP_HP_MAX ? APP_HP_MAX : missed);
-        hp = hp < 0 ? 0 : (hp > APP_HP_MAX ? APP_HP_MAX : hp);
-        g->hp = (uint8_t)hp;
+        if (!g->config.desk) {   /* A desk pet's health is paused: it cannot be walked. */
+            int hp = g->hp + (g->fed_today ? 1 : -1) - (missed > APP_HP_MAX ? APP_HP_MAX : missed);
+            hp = hp < 0 ? 0 : (hp > APP_HP_MAX ? APP_HP_MAX : hp);
+            g->hp = (uint8_t)hp;
+        }
         /* Skipped days are unfed and more recent, so they break the streak. */
         g->fed_streak = (g->fed_today && missed == 0) ? (uint16_t)(g->fed_streak + 1) : 0;
         /* History: yesterday first, then a zero for each skipped day. */
@@ -2165,6 +2251,7 @@ void app_game_update(app_game_handle_t g)
     decay_stats(g);
     update_booth(g);
     update_power(g);
+    update_clock(g);
     update_reset(g);
     update_grid_hold(g);
     /* Easter egg timers. */
@@ -2260,6 +2347,8 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .power = g->power,
         .battery_pct = g->battery_pct,
         .battery_charging = g->battery_charging,
+        .clock = g->clock,
+        .clock_minute = g->clock_minute,
         .mood = g->mood,
         .owned = g->owned,
         .filters_owned = g->filters_owned,
@@ -2273,6 +2362,8 @@ app_game_snapshot_t app_game_read(app_game_handle_t g)
         .module_lights = !g->lights_off,
         .tap_steps_today = g->tap_steps_today,
         .dev_mode = g->dev_mode,
+        .desk = g->config.desk,
+        .settings_hidden = settings_hidden(g),
         .konami_pos = g->konami_pos,
         .pats = g->pats,
         .love_eyes = (g->eggs & APP_EGG_LOVE) != 0,
@@ -2357,7 +2448,7 @@ int app_game_get_acts(app_game_handle_t g, app_act_t *out, int max)
     return n;
 }
 
-void app_game_set_clock(app_game_handle_t g, uint32_t minutes, int minute_of_day)
+void app_game_set_act_clock(app_game_handle_t g, uint32_t minutes, int minute_of_day)
 {
     if (!g) {
         return;
@@ -2496,7 +2587,7 @@ void app_game_import(app_game_handle_t g, const app_game_record_t *r)
     g->friendship = r->friendship > FRIENDSHIP_MAX ? FRIENDSHIP_MAX : r->friendship;
     g->snack = r->hunger > STAT_MAX ? STAT_MAX : r->hunger;
     g->hp = r->hp > APP_HP_MAX ? APP_HP_MAX : r->hp;
-    g->fainted = r->fainted && g->hp == 0;
+    g->fainted = r->fainted && g->hp == 0 && !g->config.desk;   /* Only walking revives. */
     g->fed_today = r->fed_today != 0;
     memcpy(g->history, r->history, sizeof(g->history));
     g->fed_streak = r->fed_streak;

@@ -81,6 +81,9 @@ typedef struct {
     float crt_t;              /* 0..1 CRT power-on when a cabinet opens, >= 1 idle. */
     uint8_t prev_slot_stopped;  /* Reel-stop bits seen last tick. */
     uint8_t prev_hp;            /* Health seen last tick, for day-change floaters. */
+    int16_t prev_clock_minute;  /* Minute shown last tick in clock mode, -1 = none. */
+    uint8_t clock_changed;      /* Bit per time digit (bit 0 = leftmost) that just changed. */
+    float clock_pop;            /* 0..1 drop-in of the changed digits, >= 1 idle. */
     float steps_shown, sparks_shown, ring_shown;
     uint32_t prev_sparks;
     uint16_t spark_pulse, spark_flash;

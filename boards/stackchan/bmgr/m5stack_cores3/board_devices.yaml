@@ -1,0 +1,156 @@
+# Devices Configuration
+devices:
+  - name: gpio_expander
+    chip: aw9523
+    type: gpio_expander
+    version: default
+    dependencies:
+      espressif/esp_io_expander_aw9523: "*"
+    config:
+      max_pins: 16
+      # When the level of pin1 and pin5 of the IO expansion chip is set to 0,
+      # the device can be powered by the Grove interface or the DC power interface,
+      # but at this time, using SD card and LCD simultaneously may cause a crash issue.
+      output_io_mask: [0, 1, 2, 4, 5, 8, 9, 10, 11]
+      output_io_level_mask: [0, 0, 0, 0, 0, 0, 0, 0, 0]
+      input_io_mask: NULL
+    peripherals:
+      - i2c_name: i2c_master
+        i2c_addr: [0xb0]
+
+  - name: axp2101_power_manager
+    type: power_ctrl
+    sub_type: custom
+    depends_on: gpio_expander
+    peripherals:
+      - name: i2c_master
+    config:
+      frequency: 400000
+      i2c_addr: 0x34
+
+  - name: audio_dac
+    chip: aw88298
+    type: audio_codec
+    power_ctrl_device: axp2101_power_manager
+    config:
+      adc_enabled: false
+      dac_enabled: true
+      sys_cfg:
+        no_mclk: true
+
+    peripherals:
+      - i2s_name: i2s_audio_out
+      - i2c_name: i2c_master
+        address: 0x6c
+        frequency: 400000
+
+  - name: audio_adc
+    chip: es7210
+    type: audio_codec
+    power_ctrl_device: axp2101_power_manager
+    config:
+      adc_enabled: true
+      sys_cfg:
+        no_mclk: true
+      adc_cfg:
+        # Codec_dev 2.0 label order is LSB to MSB: MIC1, MIC2, MIC3, MIC4.
+        label: [FL, FR, RE, NA]
+
+    # Power amplifier configuration
+    peripherals:
+      - i2s_name: i2s_audio_in
+      - i2c_name: i2c_master
+        address: 0x80
+        frequency: 400000
+
+  # SD Card Configuration, it is recommended not to use it with LCD
+  # Using them simultaneously may cause SD card mount failure or program crashes due to SPI resource conflicts
+  # - name: fs_sdcard
+  #   type: fs_fat
+  #   sub_type: spi
+  #   config:
+  #     sub_config:
+  #       cs_gpio_num: 4
+  #       frequency: SDMMC_FREQ_DEFAULT
+  #   peripherals:
+  #     - name: spi_master
+
+  - name: display_lcd
+    chip: ili9341
+    type: display_lcd
+    sub_type: spi
+    power_ctrl_device: axp2101_power_manager
+    version: default
+    dependencies:
+      espressif/esp_lcd_ili9341: "*"
+    config:
+      mirror_x: false
+      mirror_y: false
+      x_max: 320
+      y_max: 240
+      invert_color: true  # Need to invert color for M5Stack CoreS3 LCD
+      io_spi_config:
+        cs_gpio_num: 3
+        dc_gpio_num: 35
+        spi_mode: 0
+        pclk_hz: 40000000
+        flags:
+          sio_mode: true
+
+      lcd_panel_config:
+        reset_gpio_num: -1
+        rgb_ele_order: LCD_RGB_ELEMENT_ORDER_BGR
+        bits_per_pixel: 16
+        flags:
+          reset_active_high: true
+    peripherals:
+      - spi_name: spi_master
+
+  # Touch Panel Configuration
+  - name: lcd_touch
+    chip: ft5x06
+    type: lcd_touch
+    sub_type: i2c
+    power_ctrl_device: axp2101_power_manager
+    version: default
+    dependencies:
+      espressif/esp_lcd_touch_ft5x06: "^1.0.0"
+    config:
+      io_i2c_config:
+        lcd_cmd_bits: 8
+        scl_speed_hz: 400000
+
+      touch_config:
+        x_max: 320
+        y_max: 240
+    peripherals:
+      - i2c_name: i2c_master
+        i2c_addr: [0x70]  # FT5x06 8-bit I2C address, from 7-bit 0x38
+
+  - name: camera
+    type: camera
+    sub_type: dvp
+    version: default
+    power_ctrl_device: axp2101_power_manager
+    config:
+      dvp_config:
+        reset_io: -1
+        pwdn_io: -1
+        vsync_io: 46
+        de_io: 38
+        pclk_io: 45
+        xclk_io: -1
+        xclk_freq: 20000000
+        data_width: CAM_CTLR_DATA_WIDTH_8
+        data_io:
+          data_io_0: 39
+          data_io_1: 40
+          data_io_2: 41
+          data_io_3: 42
+          data_io_4: 15
+          data_io_5: 16
+          data_io_6: 48
+          data_io_7: 47
+    peripherals:
+      - i2c_name: i2c_master
+        frequency: 100000

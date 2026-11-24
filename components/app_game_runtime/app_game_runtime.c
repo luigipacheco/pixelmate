@@ -11,6 +11,7 @@
 #include "../app_game/include/app_game.h"
 #include "private/booth_media.h"
 #include "private/game_config.h"
+#include <stdlib.h>
 #include "private/pet_diary.h"
 #include "private/pet_view.h"
 #include "raylib_lite_raylib.h"
@@ -18,9 +19,11 @@
 #if defined(RAYLIB_LITE_GAME_NATIVE)
 #include <stdlib.h>
 #include <time.h>
+#include "app_neck_hw.h"
 #include "app_net.h"
 #include "app_pedometer_hw.h"
 #include "app_power_hw.h"
+#include "app_rtc_hw.h"
 #include "app_sensors_hw.h"
 #include "app_interact_hw.h"
 #include "app_sleep_hw.h"
@@ -38,6 +41,7 @@
 #include "esp_timer.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "private/pet_head.h"
 #include "raylib_lite_clock.h"
 #include "raylib_lite_save.h"
 
@@ -99,6 +103,9 @@ enum {
     GAME_ACTION_DEBUG_DAY = 0,    /* Host: left key ends the simulated day. */
     GAME_ACTION_DEBUG_CAMERA = 1, /* Host: right key unplugs/replugs the camera. */
     GAME_ACTION_DEBUG_STEPS = 2,
+    GAME_ACTION_DEBUG_MODULE = 7, /* Host: replay action 7 plugs/unplugs a pretend interaction module. */
+    GAME_ACTION_DEBUG_CLOCK = 10, /* Host: replay action 10 keeps the pet awake (desk pet on USB) at 10:08
+                                   * for the awake clock, then adds a minute per press. */
     GAME_ACTION_DEBUG_UNLOCK = 9, /* Host: replay action 9 owns everything (screenshots). */
     GAME_ACTION_DEBUG_USB = 8,    /* Host: replay action 8 toggles pretend USB power. */
     DEBUG_STEPS = 50,
@@ -113,6 +120,7 @@ typedef struct {
     pet_view_t view;
     booth_media_t media;          /* Photo booth pixels; the view reads them. */
     bool debug_key_down, debug_day_down, debug_camera_down;
+    int host_clock;               /* Host: pretend minute of the day, 0 = not started. */
     bool host_usb;                /* Host: action 8 pretends USB power (clock mode). */
     int clock_drawn_second;       /* Clock mode: second last drawn, -1 none. */
     int8_t new_year_cued;         /* New Year chime already played (weekday + 1). */
@@ -157,6 +165,8 @@ typedef struct {
     char stats_json[STATS_JSON_MAX];   /* Instance-owned buffer for /api/stats. */
     uint32_t pocket_ticks;        /* Ticks the screen has been dark (pocket mode countdown). */
     bool pocket_radio_off;        /* Pocket mode suspended Wi-Fi. */
+    pet_head_t head;              /* Head pose for boards with a neck (StackChan). */
+    uint32_t clock_timer;
     uint16_t pocket_after;        /* Dark ticks before pocket mode (shorter after the AI button). */
     uint16_t pocket_grace;        /* After a pocket wake: ticks left for a touch before sleeping again. */
     uint8_t ai_down_ticks;        /* AI button held this many ticks (debounce). */
@@ -409,10 +419,17 @@ static void poll_battery(host_state_t *state)
     state->battery_ok = err == ESP_OK;
     if (!state->battery_ok) {
         app_game_set_battery(state->game, -1, false);
+#if defined(APP_DESK_PET)
+        app_game_set_keep_awake(state->game, false);
+#endif
         return;
     }
     state->battery = battery;
     app_game_set_battery(state->game, battery.percent, battery.current_ma > CHARGING_MIN_MA);
+#if defined(APP_DESK_PET)
+    /* A desk pet on its charger stays awake: it is there to be looked at. */
+    app_game_set_keep_awake(state->game, battery.external_power);
+#endif
     const app_power_t power = app_game_read(state->game).power;
     if (battery.current_ma < 0 && (unsigned)power < POWER_STATES) {
         state->drain_sum[power] += (uint32_t)(-battery.current_ma);
@@ -459,6 +476,18 @@ static void poll_day(host_state_t *state)
         ESP_LOGI(TAG, "clock valid: %04d-%02d-%02d", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
     }
     app_game_set_day(state->game, days_from_civil(local.tm_year + 1900, local.tm_mon + 1, local.tm_mday));
+}
+
+/* Clock mode's time: local minute of the day, once a second. */
+static void poll_clock(host_state_t *state)
+{
+    if (state->clock_timer++ % GAME_TICK_HZ) {
+        return;
+    }
+    const time_t now = time(NULL);
+    struct tm local;
+    const bool valid = now >= VALID_EPOCH && localtime_r(&now, &local);
+    app_game_set_clock(state->game, valid ? local.tm_hour * 60 + local.tm_min : -1);
 }
 
 /* ---- Wi-Fi, timezone and stats --------------------------------------- */
@@ -508,14 +537,15 @@ static int build_stats_json(const host_state_t *state, const app_game_snapshot_t
                      "{\"steps_today\":%lu,\"goal\":%lu,\"food_need\":%lu,\"fed_today\":%s,"
                      "\"fullness\":%u,\"hp\":%u,\"hp_max\":%d,\"fainted\":%s,\"streak\":%u,"
                      "\"steps_total\":%lu,\"sparks\":%lu,\"friendship\":%u,\"mood\":\"%s\","
-                     "\"battery\":%d,\"charging\":%s,\"clock\":%s,\"tick\":%lu,\"power\":%d,\"history\":[",
+                     "\"battery\":%d,\"charging\":%s,\"clock\":%s,\"tick\":%lu,\"power\":%d,\"desk\":%s,"
+                     "\"pats\":%u,\"history\":[",
                      (unsigned long)s->steps_today, (unsigned long)s->step_goal,
                      (unsigned long)s->food_need, s->fed_today ? "true" : "false", s->hunger, s->hp,
                      APP_HP_MAX, s->fainted ? "true" : "false", s->fed_streak,
                      (unsigned long)s->steps_total, (unsigned long)s->sparks, s->friendship,
                      moods[s->mood < APP_MOOD_COUNT ? s->mood : 0], s->battery_pct,
                      s->battery_charging ? "true" : "false", s->day > 0 ? "true" : "false",
-                     (unsigned long)s->tick, (int)s->power);
+                     (unsigned long)s->tick, (int)s->power, s->desk ? "true" : "false", s->pats);
     for (int i = 0; i < APP_HISTORY_DAYS && n > 0 && (size_t)n < cap; ++i) {
         n += snprintf(out + n, cap - (size_t)n, "%s%lu", i ? "," : "", (unsigned long)s->history[i]);
     }
@@ -567,6 +597,13 @@ static void poll_net(host_state_t *state)
         return;
     }
     int minutes_west = 0;
+    if (app_net_take_time_sync()) {
+        /* Internet time arrived: keep it in the battery-backed clock, where there is one. */
+        const esp_err_t stored = app_rtc_hw_store();
+        if (stored != ESP_ERR_NOT_SUPPORTED) {
+            ESP_LOGI(TAG, "time synced; real-time clock %s", stored == ESP_OK ? "updated" : "not updated");
+        }
+    }
     if (app_net_take_timezone(&minutes_west)) {
         apply_timezone(minutes_west);
         save_timezone(minutes_west);
@@ -658,13 +695,13 @@ static void brain_clock(host_state_t *state, uint32_t tick)
     const time_t now = time(NULL);
     struct tm local;
     if (now >= VALID_EPOCH && localtime_r(&now, &local)) {
-        app_game_set_clock(state->game, (uint32_t)(now / 60), local.tm_hour * 60 + local.tm_min);
+        app_game_set_act_clock(state->game, (uint32_t)(now / 60), local.tm_hour * 60 + local.tm_min);
     } else {
-        app_game_set_clock(state->game, (uint32_t)(now_ms() / 60000U) + 1U, -1);
+        app_game_set_act_clock(state->game, (uint32_t)(now_ms() / 60000U) + 1U, -1);
     }
 #else
     const uint32_t minutes = tick / (60U * GAME_TICK_HZ);
-    app_game_set_clock(state->game, (uint32_t)HOST_EPOCH_S / 60U + minutes, (int)((10U * 60U + 41U + minutes) % 1440U));
+    app_game_set_act_clock(state->game, (uint32_t)HOST_EPOCH_S / 60U + minutes, (int)((10U * 60U + 41U + minutes) % 1440U));
 #endif
 }
 
@@ -835,7 +872,7 @@ static void brain_tick(host_state_t *state, uint32_t events, const app_game_snap
 #endif
 }
 
-#if defined(RAYLIB_LITE_GAME_NATIVE)
+#if defined(RAYLIB_LITE_GAME_NATIVE) && defined(APP_POCKET_MODE)
 /* Before a pocket deep sleep: close the open walk and pat counts. */
 static void brain_before_sleep(host_state_t *state)
 {
@@ -860,7 +897,24 @@ static int initialize(void *value, const char *asset_root)
 #endif
     state->clock_drawn_second = -1;
     state->mag_found = -1;
-    const app_game_config_t config = {GAME_WIDTH, GAME_HEIGHT, seed};
+#if defined(APP_DESK_PET)
+    const bool desk = true;    /* Set by the build for boards nobody walks with. */
+#else
+    const bool desk = false;
+#endif
+#if defined(RAYLIB_LITE_GAME_NATIVE) && !defined(PIXELMATE_HAS_INTERACT)
+    const bool no_module = true;   /* This board has no Interaction module slot. */
+#else
+    const bool no_module = false;
+#endif
+#if defined(APP_ROUND_SCREEN)
+    const bool round_screen = true;    /* Set by the build for round boards. */
+#elif defined(RAYLIB_LITE_GAME_NATIVE)
+    const bool round_screen = false;
+#else
+    const bool round_screen = getenv("PIXELMATE_ROUND") != NULL;   /* Host: preview the round layout. */
+#endif
+    const app_game_config_t config = {GAME_WIDTH, GAME_HEIGHT, seed, desk, no_module, round_screen};
     if (app_game_create(&config, &state->game) != APP_GAME_OK) {
         return -1;
     }
@@ -869,14 +923,25 @@ static int initialize(void *value, const char *asset_root)
     load_save(state);
     pocket_log_init();
     uint32_t slept_steps = 0;
-    if (app_sleep_hw_take_steps(&slept_steps)) {
+    const bool pocket_woke = app_sleep_hw_take_steps(&slept_steps);
+    if (pocket_woke) {
         ++s_pocket_log.timer_wakes;   /* Deep-sleep wakes (touch or backstop timer). */
         app_game_add_sensor_delta(state->game, slept_steps);
         ESP_LOGI(TAG, "pocket: woke from deep sleep, %lu steps counted while asleep", (unsigned long)slept_steps);
-        state->pocket_grace = POCKET_GRACE_TICKS;
+        /* A wake by the sleep button is on purpose; a touch or the backstop
+         * timer may not be, so those go back to sleep unless touched. */
+        app_sleep_report_t wake = {0};
+        const bool by_button = app_sleep_hw_report(&wake) && !wake.touch_wake
+                               && (wake.wake_causes & BIT(ESP_SLEEP_WAKEUP_EXT1));
+        state->pocket_grace = by_button ? 0 : POCKET_GRACE_TICKS;
     }
     load_timezone();
-    brain_start(state, state->pocket_grace != 0, slept_steps);
+    if (time(NULL) < VALID_EPOCH && app_rtc_hw_load() == ESP_OK) {
+        ESP_LOGI(TAG, "clock set from the board's real-time clock");
+    }
+    brain_start(state, pocket_woke, slept_steps);   /* After the clock: the diary stamps its entries. */
+    pet_head_init(&state->head, seed);
+    app_neck_hw_start();          /* Does nothing on boards without a neck. */
 #else
     app_game_set_battery(state->game, HOST_BATTERY_PCT, false);
     app_game_set_network(state->game, APP_NET_NO_CONFIG, 0);   /* First run: nothing saved. */
@@ -958,8 +1023,13 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
             }
             state->debug_camera_down = event->pressed;
         }
-        if (event->code == 7 && event->pressed) {
+        if (event->code == GAME_ACTION_DEBUG_MODULE && event->pressed) {
             state->host_module = !state->host_module;   /* Host: pretend module. */
+        }
+        if (event->code == GAME_ACTION_DEBUG_CLOCK && event->pressed) {
+            state->host_clock = state->host_clock ? state->host_clock + 1 : 10 * 60 + 8;
+            app_game_set_keep_awake(state->game, true);
+            app_game_set_clock(state->game, state->host_clock);
         }
         if (event->code == GAME_ACTION_DEBUG_USB && event->pressed) {
             state->host_usb = !state->host_usb;
@@ -1008,8 +1078,13 @@ enum {
     POCKET_SOON_TICKS = 30,            /* After the AI button: pocket mode in 1 s. */
     POCKET_BACKSTOP_S = 12 * 60 * 60,  /* Deep sleep backstop wake (a tap wakes it sooner). */
 };
+#if defined(PIXELMATE_SLEEP_BUTTON_GPIO)
+#define POCKET_BUTTON_GPIO ((gpio_num_t)PIXELMATE_SLEEP_BUTTON_GPIO)   /* The board's sleep button. */
+#else
 #define POCKET_BUTTON_GPIO GPIO_NUM_7  /* AI button, active low: the only wake key. */
+#endif
 
+#if defined(APP_POCKET_MODE)
 
 
 
@@ -1131,9 +1206,7 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
     }
     ++s_pocket_log.timer_wakes;
 }
-#endif
 
-#if defined(RAYLIB_LITE_GAME_NATIVE)
 /* The engine does not report the AI button on this board, so read it here:
  * a press puts the pet to sleep (pocket mode follows a second later on
  * battery), and a press while asleep wakes it, on battery or USB. */
@@ -1165,6 +1238,62 @@ static void poll_ai_button(host_state_t *state)
         state->pocket_after = POCKET_SOON_TICKS;
     }
 }
+#else
+/* Pocket mode and the AI button are the ESP-Mosaico's (see CMakeLists.txt):
+ * on the StackChan GPIO7 is the neck-servo line, so it is never read here. */
+static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s)
+{
+    (void)state;
+    (void)s;
+}
+
+#if defined(PIXELMATE_SLEEP_BUTTON_GPIO)
+/* The board's sleep button (pixelmate_setting(SLEEP_BUTTON_GPIO ...), active
+ * low, e.g. the StopWatch's KEYA): a press puts the pet to sleep, a press
+ * while asleep wakes it, like the Mosaico's AI button without pocket mode. */
+static void poll_ai_button(host_state_t *state)
+{
+    if (!state->ai_ready) {
+        const gpio_config_t button = {
+            .pin_bit_mask = 1ULL << PIXELMATE_SLEEP_BUTTON_GPIO,
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_ENABLE,
+        };
+        gpio_config(&button);
+        state->ai_ready = true;
+    }
+    if (gpio_get_level(PIXELMATE_SLEEP_BUTTON_GPIO) != 0) {
+        state->ai_down_ticks = 0;
+        state->ai_swallow = false;
+        return;
+    }
+    if (state->ai_down_ticks < UINT8_MAX) {
+        ++state->ai_down_ticks;
+    }
+    if (state->ai_down_ticks != 2 || state->ai_swallow) {
+        return;   /* Debounced: act once per press. */
+    }
+    state->ai_swallow = true;
+    if (app_game_read(state->game).power == APP_POWER_DOZE) {
+        ESP_LOGI(TAG, "sleep button: wake");
+        app_game_wake(state->game);
+    } else {
+        ESP_LOGI(TAG, "sleep button: sleep");
+        app_game_sleep(state->game);
+    }
+}
+#else
+static void poll_ai_button(host_state_t *state)
+{
+    (void)state;
+}
+#endif
+
+static void pocket_grace_tick(host_state_t *state)
+{
+    (void)state;
+}
+#endif
 #endif
 
 /* Interaction module readings for the TOOLS sample. */
@@ -1401,6 +1530,7 @@ static void update(void *value)
     pocket_grace_tick(state);
     poll_sensor(state);
     poll_day(state);
+    poll_clock(state);
     poll_battery(state);
     poll_net(state);
     publish_sleep_report(state);
@@ -1423,6 +1553,10 @@ static void update(void *value)
     }
     maybe_save(state, events);
     app_sfx_update(events, &snapshot);
+    /* Neck: asleep the head goes home and the servos let go. */
+    pet_head_update(&state->head, &snapshot, events);
+    app_neck_hw_aim(state->head.pan, state->head.tilt);
+    app_neck_hw_rest(snapshot.power == APP_POWER_DOZE);
     pocket_maybe_sleep(state, &snapshot);
 #endif
 }

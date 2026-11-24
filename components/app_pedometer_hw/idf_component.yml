@@ -1,0 +1,4 @@
+dependencies:
+  # Bosch BMI270 API (the same one the ESP-Mosaico board adapter uses); the
+  # bmi270 driver needs it directly.
+  espressif2022/bmi270: "^1.1.0~2"

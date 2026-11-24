@@ -1,0 +1,14 @@
+# Start only the display and touch at boot. The board profile in
+# ../bmgr/m5stack_cores3 stays authoritative for pins and chips.
+devices:
+  # The speaker starts when the game opens its audio device, not before
+  # (components/stackchan_board/cores3_audio_codec.c).
+  - name: audio_dac
+    init_skip: true
+  # Microphones and camera are not used yet. The camera shares the internal
+  # I2C bus with touch, IMU and the power chip, so it stays off until the
+  # photo booth is ported.
+  - name: audio_adc
+    init_skip: true
+  - name: camera
+    init_skip: true

@@ -1,6 +1,8 @@
 dependencies:
   idf: ">=6.2"
-  # Same camera stack as esp-mosaico-bsp's mosaico_module_camera (OV3640 driver,
-  # SCCB and /dev/video2 for DVP).
+  # Camera stack (sensor drivers, SCCB and the /dev/video2 DVP device): the
+  # Mosaico's slot camera and the CoreS3's built-in GC0308 both go through it.
   espressif/esp_video:
     version: "^2.4.1"
+    rules:
+      - if: "target in [esp32s31, esp32s3]"

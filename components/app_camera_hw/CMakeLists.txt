@@ -1,3 +1,25 @@
+# One interface (include/app_camera_hw.h), a driver per board
+# (boards/<name>/board.cmake: pixelmate_part(CAMERA ...)):
+# - mosaico_slot: the ESP-Mosaico's left-slot camera module, hardware JPEG (below).
+# - gc0308: the GC0308 built into the M5Stack CoreS3 (StackChan), through the
+#   Board Manager "camera" device.
+# - none: reports "no camera", which hides the photo booth.
+idf_build_get_property(part PIXELMATE_CAMERA)
+if(part STREQUAL "gc0308")
+    idf_component_register(SRCS "app_camera_hw_gc0308.c"
+        INCLUDE_DIRS "include"
+        REQUIRES app_photo
+        PRIV_REQUIRES esp_video esp_board_manager freertos log)
+    return()
+elseif(part STREQUAL "none")
+    idf_component_register(SRCS "app_camera_hw_none.c"
+        INCLUDE_DIRS "include"
+        REQUIRES app_photo)
+    return()
+elseif(NOT part STREQUAL "mosaico_slot")
+    message(FATAL_ERROR "app_camera_hw: PIXELMATE_CAMERA is '${part}'; expected mosaico_slot, gc0308 or none.")
+endif()
+
 idf_component_register(SRCS "app_camera_hw.c"
     INCLUDE_DIRS "include"
     REQUIRES app_photo

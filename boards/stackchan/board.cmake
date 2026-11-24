@@ -1,0 +1,12 @@
+# M5Stack StackChan (CoreS3 head, ESP32-S3): a desk pet with a pan/tilt neck.
+pixelmate_name("STACK-CHAN")
+pixelmate_part(CAMERA gc0308)
+pixelmate_part(INTERACT none)
+pixelmate_part(NECK scs0009)
+pixelmate_part(NET plain)
+pixelmate_part(PEDOMETER none)
+pixelmate_part(POWER ina226)
+pixelmate_part(RTC bm8563)
+pixelmate_part(SENSORS none)
+pixelmate_part(SLEEP none)
+pixelmate_feature(DESK_PET)

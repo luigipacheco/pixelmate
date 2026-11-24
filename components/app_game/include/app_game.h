@@ -107,6 +107,41 @@ enum {
     APP_RESET_HOLD_S = 3,        /**< Hold RESET PET this long to start over. */
 };
 
+/* Desk pet (a board nobody walks with): the Steps page is skipped, so the
+ * page dots count one fewer. Shared by the model and the view. */
+static inline int app_screen_page(bool desk, int screen)
+{
+    return desk && screen > APP_SCREEN_STEPS ? screen - 1 : screen;
+}
+
+/* Settings rows as shown, in order. Index = the full row list (0 SOUND ..
+ * APP_SETTINGS_ROWS - 1 RESET PET, APP_SETTINGS_ROWS = the DEV MODE row);
+ * `hidden` has a bit per row index the board leaves out (app_settings_hidden). */
+enum {
+    APP_SETTINGS_ROW_GOAL = 1,
+    APP_SETTINGS_ROW_TAP_STEPS = 5,
+    APP_SETTINGS_ROW_MODULE_LIGHTS = 7,
+};
+
+static inline int app_settings_row_count(uint16_t hidden, bool dev_mode)
+{
+    int rows = dev_mode ? 1 : 0;
+    for (int i = 0; i < APP_SETTINGS_ROWS; ++i) {
+        rows += (hidden >> i) & 1U ? 0 : 1;
+    }
+    return rows;
+}
+
+static inline int app_settings_row_index(uint16_t hidden, int slot)
+{
+    for (int i = 0; i < APP_SETTINGS_ROWS; ++i) {
+        if (!((hidden >> i) & 1U) && slot-- == 0) {
+            return i;
+        }
+    }
+    return APP_SETTINGS_ROWS + slot;   /* Past the last row: the DEV MODE row. */
+}
+
 #define APP_VERSION "1.0.0"
 #define APP_AUTHOR "LUIS PACHECO"
 #define APP_AUTHOR_URL "WWW.LUIGIPACHECO.COM"
@@ -489,7 +524,9 @@ typedef struct {
     const char *blurb;     /**< One short upper-case line. */
 } app_store_item_t;
 
-enum { APP_STORE_PER_PAGE = 4 };
+extern bool app_layout_round;   /* Round screen layout (app_game_layout.h). */
+/** Store rows per page: 4, or 3 in the wide middle band of a round screen. */
+#define APP_STORE_PER_PAGE (app_layout_round ? 3 : 4)
 
 /* Ownership bit layout in app_game_snapshot_t.owned. */
 #define APP_OWN_COLOR_BIT(i) (1UL << (i))
@@ -590,6 +627,8 @@ typedef struct {
     app_power_t power;
     int8_t battery_pct;         /**< 0..100, or -1 when unknown. */
     bool battery_charging;
+    bool clock;                 /**< Clock mode: Home shows the time under small eyes. */
+    int16_t clock_minute;       /**< Local minute of the day, 0..1439; -1 = clock not set. */
     app_mood_t mood;
     uint32_t owned;             /**< APP_OWN_*_BIT flags. */
     uint16_t filters_owned;     /**< APP_OWN_FILTER_BIT flags; NONE always set. */
@@ -603,6 +642,8 @@ typedef struct {
     bool module_lights;         /**< Interaction module mood LEDs on (Settings). */
     uint32_t tap_steps_today;   /**< Steps credited by pats today. */
     bool dev_mode;              /**< DEV MODE on (sandbox: infinite sparks, nothing kept). */
+    bool desk;                  /**< Desk pet: no Steps page or step counters. */
+    uint16_t settings_hidden;   /**< Settings rows this board leaves out (bit per row). */
     uint8_t konami_pos;         /**< Konami inputs entered so far on the About page. */
     uint16_t pats;              /**< Lifetime pats (stops at APP_LOVE_PATS). */
     bool love_eyes;             /**< LOVE EYES unlocked: hearts when happy. */
@@ -716,7 +757,18 @@ typedef struct {
     uint16_t width;    /**< Viewport width in pixels, 1..65535. */
     uint16_t height;   /**< Viewport height in pixels, 1..65535. */
     uint32_t seed;     /**< Card shuffle seed; 0 selects a fixed default. */
+    bool desk;         /**< Desk pet (a board nobody walks with): steps are never
+                            credited, daily health is paused (no hearts lost, no
+                            fainting) and every APP_DESK_PETS_PER_SPARK pats on the
+                            face earn a spark. */
+    bool no_module;    /**< The board has no Interaction module slot: no MODULE
+                            LIGHTS setting. */
+    bool round_screen; /**< Round glass: the layout keeps clear of the corners
+                            (sets app_layout_round, app_game_layout.h). */
 } app_game_config_t;
+
+enum { APP_DESK_PETS_PER_SPARK = 3 };
+enum { APP_CLOCK_AFTER_S = 12 };   /**< Untouched seconds on Home before clock mode. */
 
 /** Create a caller-owned model with a fresh pet; clears *out_handle on failure. */
 app_game_err_t app_game_create(const app_game_config_t *config, app_game_handle_t *out_handle);
@@ -759,6 +811,15 @@ void app_game_set_booth(app_game_handle_t handle, bool camera, uint8_t photos, u
 bool app_game_take_booth_request(app_game_handle_t handle, app_booth_request_t *request);
 /** Report how the last booth request ended. */
 void app_game_booth_result(app_game_handle_t handle, app_booth_result_t result);
+/** Keep the screen on (true) while the board runs from an external supply: it
+ * neither dims nor turns off by itself, and turning this on wakes it. The
+ * menu's SLEEP still turns the screen off until the next touch. */
+void app_game_set_keep_awake(app_game_handle_t handle, bool on);
+/** Report the local time as minute of the day (0..1439); negative = not set.
+ * While the screen is kept awake (app_game_set_keep_awake) and Home has not
+ * been touched for APP_CLOCK_AFTER_S seconds, the pet shows the time (clock
+ * mode); the next touch only brings the face back. */
+void app_game_set_clock(app_game_handle_t handle, int minute_of_day);
 /** Wake the screen (button press, external event). No-op when awake. */
 void app_game_wake(app_game_handle_t handle);
 /** Put the pet to sleep now (screen off), like the menu's SLEEP. */
@@ -779,10 +840,10 @@ app_game_snapshot_t app_game_read(app_game_handle_t handle);
 void app_game_set_acts(app_game_handle_t handle, const app_act_t *acts, int count);
 /** Copy the current pack; returns how many acts were written. */
 int app_game_get_acts(app_game_handle_t handle, app_act_t *out, int max);
-/** Tell the model the time: a minutes counter that only grows (minutes since
+/** Tell the acts the time: a minutes counter that only grows (minutes since
  *  1970 once the clock is set) for cooldowns, and the local minute of the day
  *  (0..1439, or -1 while the clock is unknown) for time-of-day acts. */
-void app_game_set_clock(app_game_handle_t handle, uint32_t minutes, int minute_of_day);
+void app_game_set_act_clock(app_game_handle_t handle, uint32_t minutes, int minute_of_day);
 /** Remember that act `id` last played at `minutes` (restores cooldowns after a restart). */
 void app_game_mark_act_played(app_game_handle_t handle, uint16_t id, uint32_t minutes);
 

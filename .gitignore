@@ -52,3 +52,9 @@ Thumbs.db
 # Bitsy's brain: your pet's diary, synced locally
 bitsy_diary.jsonl
 bitsy_diary.state.json
+
+# Stack-chan build (stackchan/): resolved dependency versions, like the root one
+/stackchan/dependencies.lock
+
+# Per-board firmware projects (boards/<name>): resolved dependencies
+boards/*/dependencies.lock
