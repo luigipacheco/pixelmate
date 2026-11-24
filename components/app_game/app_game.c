@@ -506,7 +506,7 @@ static void fresh_pet(app_game_handle_t g)
     /* Keep what the runtime reported about the camera and stored photos. */
     const app_booth_snapshot_t status = g->booth.view;
     booth_init(&g->booth);
-    booth_set_status(&g->booth, status.camera, status.photos, status.gifs);
+    booth_set_status(&g->booth, status.camera, &status.roll);
     pedometer_reset(&g->pedometer);
 }
 
@@ -2016,10 +2016,10 @@ void app_game_set_camera(app_game_handle_t g, bool present)
     }
 }
 
-void app_game_set_booth(app_game_handle_t g, bool camera, uint8_t photos, uint8_t gifs)
+void app_game_set_booth(app_game_handle_t g, bool camera, const app_booth_roll_t *roll)
 {
     if (g) {
-        booth_set_status(&g->booth, camera, photos, gifs);
+        booth_set_status(&g->booth, camera, roll);
     }
 }
 

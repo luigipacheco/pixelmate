@@ -127,10 +127,14 @@ per board, see [boards/README.md](boards/README.md)):
   WEBCAM (250) adds an ON AIR chip that streams the camera over Wi-Fi to
   `http://<board-ip>:81/cam?k=<code>` (MJPEG, code shown on screen, new each time);
   PLAIN is free, DITHER, SCANLINES, GAME-GREEN, HALFTONE, THERMAL, ASCII
-  and EYE STICKERS are sold (50-150). Photos keep the pet's palette. Up to 12
-  photos and 2 GIFs are kept in NVS (HI RES photos fill it sooner), and the
-  stats page links to a gallery (`/photos`) to save them as PNG/GIF. Without a
-  camera the page and its store items are hidden; what you bought stays owned.
+  and EYE STICKERS are sold (50-150). Photos keep the pet's palette. On the
+  ESP-Mosaico the roll lives on its own 4 MB `photos` partition and holds
+  photos and GIFs until it is full or has 300 items (photos kept in NVS by an
+  older firmware move there on the first boot); StackChan and StopWatch keep
+  up to 12 photos and 2 GIFs in NVS (HI RES photos fill it sooner). ROLL IS
+  FULL appears only when the store has no room. The stats page links to a
+  gallery (`/photos`) to save them as PNG/GIF. Without a camera the page and
+  its store items are hidden; what you bought stays owned.
 - Progress is saved to NVS.
 
 Swipe left/right between Home, Steps, Feed, Arcade and (with a camera) Booth. Pull down from the top

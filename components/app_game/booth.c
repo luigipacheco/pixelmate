@@ -19,9 +19,9 @@ static uint32_t bump(booth_t *b)
     return 0;
 }
 
-static uint8_t items(const booth_t *b)
+static int items(const booth_t *b)
 {
-    return (uint8_t)(b->view.photos + b->view.gifs);
+    return b->view.roll.photos + b->view.roll.gifs;
 }
 
 static void set_phase(booth_t *b, app_booth_phase_t phase)
@@ -31,7 +31,7 @@ static void set_phase(booth_t *b, app_booth_phase_t phase)
     b->view.confirm_delete = false;
 }
 
-static void request(booth_t *b, app_booth_request_kind_t kind, uint8_t frame, uint8_t index)
+static void request(booth_t *b, app_booth_request_kind_t kind, uint8_t frame, uint16_t index)
 {
     b->request = (app_booth_request_t) {
         kind, b->view.filter, b->view.res,
@@ -95,7 +95,8 @@ static uint32_t start_capture(booth_t *b, bool gif, bool fainted)
     if (fainted || !b->view.camera) {
         return APP_EVENT_BLOCKED;   /* Shakes the eyes; the view says why. */
     }
-    const bool full = gif ? b->view.gifs >= APP_BOOTH_GIFS : b->view.photos >= APP_BOOTH_PHOTOS;
+    /* Only the store knows what fits (fixed slots on NVS, space on files). */
+    const bool full = gif ? !b->view.roll.gif_room : !b->view.roll.photo_room;
     b->view.gif = gif;
     if (full) {
         set_phase(b, APP_BOOTH_REVIEW);
@@ -163,7 +164,7 @@ static uint32_t tap_live(booth_t *b, int32_t x, int32_t y, uint16_t looks, uint8
 
 static uint32_t tap_gallery(booth_t *b, int32_t x, int32_t y)
 {
-    const uint8_t count = items(b);
+    const int count = items(b);
     if (app_rect_hit(app_booth_button_rect(0), x, y)) {
         set_phase(b, APP_BOOTH_LIVE);
         return bump(b);
@@ -181,7 +182,7 @@ static uint32_t tap_gallery(booth_t *b, int32_t x, int32_t y)
     const int dir = app_rect_hit(app_booth_prev_rect(), x, y) ? -1
                     : (app_rect_hit(app_booth_next_rect(), x, y) ? 1 : 0);
     if (dir && count > 1) {
-        b->view.index = (uint8_t)((b->view.index + dir + count) % count);
+        b->view.index = (uint16_t)((b->view.index + dir + count) % count);
         return bump(b);
     }
     return 0;
@@ -252,14 +253,15 @@ uint32_t booth_update(booth_t *b)
     }
 }
 
-void booth_set_status(booth_t *b, bool camera, uint8_t photos, uint8_t gifs)
+void booth_set_status(booth_t *b, bool camera, const app_booth_roll_t *roll)
 {
     b->view.camera = camera;
-    b->view.photos = photos > APP_BOOTH_PHOTOS ? APP_BOOTH_PHOTOS : photos;
-    b->view.gifs = gifs > APP_BOOTH_GIFS ? APP_BOOTH_GIFS : gifs;
-    const uint8_t count = items(b);
+    if (roll) {
+        b->view.roll = *roll;
+    }
+    const int count = items(b);
     if (b->view.index >= count) {
-        b->view.index = count ? (uint8_t)(count - 1) : 0;
+        b->view.index = count ? (uint16_t)(count - 1) : 0;
     }
 }
 

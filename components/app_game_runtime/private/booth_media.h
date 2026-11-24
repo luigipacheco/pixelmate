@@ -33,6 +33,10 @@ typedef struct {
     int shown_index;                    /* Gallery index last loaded, -1 = reload. */
     bool shown_valid;                   /* `shown` holds that item. */
     uint32_t shown_revision;            /* Store revision when `shown` was loaded. */
+    app_booth_roll_t roll;              /* Last roll reported to the model. */
+    bool roll_valid;                    /* `roll` matches roll_revision and roll_seq. */
+    uint32_t roll_revision;             /* Store revision when `roll` was made. */
+    uint8_t roll_seq;                   /* booth.seq when `roll` was made. */
     bool store_ready;
     uint32_t fake_t;                    /* Host synthetic scene clock. */
 } booth_media_t;

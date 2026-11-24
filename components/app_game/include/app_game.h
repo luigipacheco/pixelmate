@@ -425,10 +425,18 @@ typedef enum {
 
 /* ---- Photo booth ---- */
 enum {
-    APP_BOOTH_PHOTOS = 12,       /**< Stored photo slots. */
-    APP_BOOTH_GIFS = 2,          /**< Stored GIF slots (APP_PHOTO_GIF_FRAMES each). */
     APP_CAMERA_GONE_S = 3,       /**< Booth page without a camera returns Home after this. */
 };
+
+/** The photo roll as the runtime's store reports it. The model keeps no
+ * limits of its own: the store decides what fits. */
+typedef struct {
+    uint16_t photos, gifs;           /**< Stored items. */
+    uint16_t max_photos, max_gifs;   /**< Fixed slots (StackChan, StopWatch: 12 and 2);
+                                          0 = only space and the item cap limit them (ESP-Mosaico). */
+    uint16_t free_kb;                /**< Room left for new items. */
+    bool photo_room, gif_room;       /**< A photo / GIF at the selected lens and film fits now. */
+} app_booth_roll_t;
 
 typedef enum {
     APP_BOOTH_LIVE = 0,          /**< Viewfinder; look arrows, lens chip, GIF/SNAP/ROLL. */
@@ -442,7 +450,7 @@ typedef enum {
 typedef enum {
     APP_BOOTH_RESULT_NONE = 0,   /**< Pending (saving). */
     APP_BOOTH_RESULT_SAVED,
-    APP_BOOTH_RESULT_FULL,       /**< No free slot of that kind. */
+    APP_BOOTH_RESULT_FULL,       /**< The store has no room for it. */
     APP_BOOTH_RESULT_FAILED,     /**< Camera or storage error. */
     APP_BOOTH_RESULT_DELETED,
 } app_booth_result_t;
@@ -461,7 +469,7 @@ typedef struct {
     uint8_t res;                 /**< app_photo_res_t (GIFs are capped, see app_photo.h). */
     bool color;                  /**< Color film for this capture (look permitting). */
     uint8_t frame;               /**< GIF frame 0..APP_PHOTO_GIF_FRAMES-1. */
-    uint8_t index;               /**< Gallery item for DELETE. */
+    uint16_t index;              /**< Gallery item for DELETE. */
 } app_booth_request_t;
 
 typedef struct {
@@ -475,8 +483,8 @@ typedef struct {
     bool color;                  /**< COLOR film selected (owned); B&W otherwise. GREEN and
                                       THERMAL looks always shoot B&W. */
     bool camera;                 /**< Runtime has a live camera. */
-    uint8_t photos, gifs;        /**< Stored items, reported by the runtime. */
-    uint8_t index;               /**< Gallery item shown, 0 = newest. */
+    app_booth_roll_t roll;       /**< Stored items and room, reported by the runtime. */
+    uint16_t index;              /**< Gallery item shown, 0 = newest. */
     bool confirm_delete;         /**< DEL was tapped once; tap again to delete. */
     app_booth_result_t result;   /**< Last capture/delete outcome. */
     bool unplugged;              /**< On the booth page with the camera gone. */
@@ -805,8 +813,8 @@ void app_game_set_setup_ap(app_game_handle_t handle, const char *name);
 /** Report whether a camera module is in the left slot. It adds the booth page
  * and the booth's store items; it does not change what is owned. */
 void app_game_set_camera(app_game_handle_t handle, bool present);
-/** Report the photo booth's camera and stored item counts (every tick or on change). */
-void app_game_set_booth(app_game_handle_t handle, bool camera, uint8_t photos, uint8_t gifs);
+/** Report the photo booth's camera and its roll (every tick or on change). */
+void app_game_set_booth(app_game_handle_t handle, bool camera, const app_booth_roll_t *roll);
 /** Take the booth's pending capture/delete request; false when there is none. */
 bool app_game_take_booth_request(app_game_handle_t handle, app_booth_request_t *request);
 /** Report how the last booth request ended. */

@@ -1797,7 +1797,7 @@ static int state_json(const void *value, char *output, size_t capacity)
                         "\"perfects\":%u,\"payout\":%u,\"best\":%u,\"top_left\":%u},"
                         "\"arcade\":%d,\"arcade_row\":%u,\"camera_present\":%s,\"filters_owned\":%u,"
                         "\"lenses_owned\":%u,\"booth\":{\"phase\":%d,\"filter\":%u,\"res\":%u,\"color\":%s,\"on_air\":%s,\"cam_code\":%u,\"unplugged\":%s,"
-                        "\"camera\":%s,\"photos\":%u,\"gifs\":%u,\"index\":%u,\"result\":%d,"
+                        "\"camera\":%s,\"photos\":%u,\"gifs\":%u,\"photo_room\":%s,\"gif_room\":%s,\"free_kb\":%u,\"index\":%u,\"result\":%d,"
                         "\"confirm\":%s},"
                         "\"act\":{\"active\":%s,\"id\":%u,\"step\":%u,\"ended_id\":%u,\"ended_how\":%u,\"ended_seq\":%u},\"diary\":%lu,"
                         "\"pointer_x\":%ld,\"pointer_y\":%ld,\"pointer_down\":%s,\"state_hash\":\"%08lx\"}",
@@ -1828,7 +1828,9 @@ static int state_json(const void *value, char *output, size_t capacity)
                         (int)s.arcade, s.arcade_row, s.camera_present ? "true" : "false", s.filters_owned,
                         s.lenses_owned, (int)s.booth.phase, s.booth.filter, s.booth.res, s.booth.color ? "true" : "false", s.booth.on_air ? "true" : "false", s.booth.cam_code,
                         s.booth.unplugged ? "true" : "false",
-                        s.booth.camera ? "true" : "false", s.booth.photos, s.booth.gifs, s.booth.index,
+                        s.booth.camera ? "true" : "false", s.booth.roll.photos, s.booth.roll.gifs,
+                        s.booth.roll.photo_room ? "true" : "false", s.booth.roll.gif_room ? "true" : "false",
+                        s.booth.roll.free_kb, s.booth.index,
                         (int)s.booth.result, s.booth.confirm_delete ? "true" : "false",
                         s.act.active ? "true" : "false", s.act.id, s.act.step, s.act.ended_id, s.act.ended_how,
                         s.act.ended_seq, (unsigned long)s_diary_store.total,

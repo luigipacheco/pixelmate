@@ -89,8 +89,13 @@ its event bits, advance the view, then save if due.
   are made at the lens capped to MID and saved on frame 7; DELETE removes a
   gallery item. The
   result goes back with `app_game_booth_result()`, and the camera state and
-  stored counts with `app_game_set_booth()` every tick. Saves run on the game
-  loop: a GIF (8 KB NVS write) can stall one frame. Captures store the pet's
+  the roll with `app_game_set_booth()` every tick. The roll is asked of the
+  store again only when its revision or the booth's `seq` changes: counts,
+  limits (`max_*` 0 on the ESP-Mosaico), free KB, and `app_photo_store_fits()`
+  for a photo and a GIF at the selected lens and film. The gallery's middle
+  button shows `PICS 3/12` / `GIFS 1/2` with fixed slots and `40 PICS` /
+  `5 GIFS` without. Saves run on the game loop: a GIF (8 KB write) can stall
+  one frame. Captures store the pet's
   color, so the gallery and web page keep the palette they were taken with.
 - Board buttons never reset the pet. Only the Engine's explicit reset control does.
 

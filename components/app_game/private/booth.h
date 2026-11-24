@@ -22,8 +22,8 @@ uint32_t booth_tap(booth_t *b, int32_t x, int32_t y, uint16_t filters_owned, uin
                    bool film_owned, bool fainted, uint16_t code);
 /** One 30 Hz tick; returns APP_EVENT_* bits. */
 uint32_t booth_update(booth_t *b);
-/** Runtime status: camera usable and stored item counts. */
-void booth_set_status(booth_t *b, bool camera, uint8_t photos, uint8_t gifs);
+/** Runtime status: camera usable and the roll (counts and room). */
+void booth_set_status(booth_t *b, bool camera, const app_booth_roll_t *roll);
 /** Runtime finished the last capture or delete; returns APP_EVENT_* bits. */
 uint32_t booth_result(booth_t *b, app_booth_result_t result);
 /** Select a look or lens (caller checks ownership). */

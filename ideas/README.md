@@ -52,7 +52,8 @@ photo or **GIF** for an 8-frame clip; **ROLL** browses and deletes them.
 - **Looks:** PLAIN, DITHER, SCANLINES, GAME-GREEN, HALFTONE, THERMAL, ASCII,
   GLITCH (VHS tears), EDGES (glowing outlines), POP (poster colors), MIRROR
   (symmetric selfies) and CRT (old TV stripes).
-- Up to 12 photos and 2 GIFs are kept on the board, and the stats page has a
+- The ESP-Mosaico keeps up to 300 photos and GIFs on 4 MB of its own (the
+  StackChan and StopWatch 12 photos and 2 GIFs), and the stats page has a
   gallery to save them as PNG or GIF.
 
 **Wi-Fi webcam:** buy **WEBCAM** in the store, open the booth and tap

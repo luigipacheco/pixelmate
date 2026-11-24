@@ -199,10 +199,10 @@ static void draw_live(const draw_ctx_t *d, int ox)
                    film ? (color ? d->accent : d->color) : d->dim, color);
     const bool ready = b->camera && !s->fainted;
     screens_button(d, app_booth_button_rect(0), ox, 0, "GIF", 4,
-                   ready && b->gifs < APP_BOOTH_GIFS ? d->accent : d->dim, false);
+                   ready && b->roll.gif_room ? d->accent : d->dim, false);
     screens_button(d, app_booth_button_rect(1), ox, 0, "SNAP", 4,
-                   ready && b->photos < APP_BOOTH_PHOTOS ? d->color : d->dim, ready);
-    snprintf(text, sizeof(text), "ROLL %u", (unsigned)(b->photos + b->gifs));
+                   ready && b->roll.photo_room ? d->color : d->dim, ready);
+    snprintf(text, sizeof(text), "ROLL %u", (unsigned)(b->roll.photos + b->roll.gifs));
     screens_button(d, app_booth_button_rect(2), ox, 0, text, 3, d->color, false);
 }
 
@@ -267,14 +267,14 @@ static void draw_gallery(const draw_ctx_t *d, int ox)
     const booth_media_t *m = d->view->media;
     const app_booth_snapshot_t *b = &d->snap->booth;
     const app_rect_t r = app_booth_view_rect();
-    const int count = b->photos + b->gifs;
+    const int count = b->roll.photos + b->roll.gifs;
     char text[24];
     if (!count) {
         center_text(d, "ROLL", ox, LABEL_Y, 3, d->color);
         view_message(d, ox, "NO PHOTOS YET", "SNAP ONE!", d->color);
     } else {
         const bool gif = m && m->shown_valid && m->shown.header.frames > 1;
-        snprintf(text, sizeof(text), "%s %d/%d", gif ? "GIF" : "PIC", b->index + 1, count);
+        snprintf(text, sizeof(text), "%s %d/%d", gif ? "GIF" : "PIC", (int)b->index + 1, count);
         center_text(d, text, ox, LABEL_Y, 3, d->color);
         if (m && m->shown_valid) {
             draw_stored(d, &m->shown, r.x + ox, r.y, d->view->t);
@@ -286,11 +286,21 @@ static void draw_gallery(const draw_ctx_t *d, int ox)
         screens_button(d, app_booth_button_rect(2), ox, 0, b->confirm_delete ? "SURE?" : "DELETE", 3,
                        b->confirm_delete ? WARN : d->dim, b->confirm_delete);
     }
-    /* Free slots, in the middle button's place. */
+    /* What is stored, in the middle button's place: of the fixed slots (NVS
+     * boards), or with the room left (ESP-Mosaico, limited only by space). */
     const app_rect_t mid = app_booth_button_rect(1);
-    snprintf(text, sizeof(text), "PICS %u/%d", b->photos, APP_BOOTH_PHOTOS);
+    const app_booth_roll_t *roll = &b->roll;
+    if (roll->max_photos) {
+        snprintf(text, sizeof(text), "PICS %u/%u", (unsigned)roll->photos, (unsigned)roll->max_photos);
+    } else {
+        snprintf(text, sizeof(text), "%u PICS", (unsigned)roll->photos);
+    }
     px_text_center(text, mid.x + mid.w / 2 + ox, mid.y + 8, 2, d->dim, false);
-    snprintf(text, sizeof(text), "GIFS %u/%d", b->gifs, APP_BOOTH_GIFS);
+    if (roll->max_gifs) {
+        snprintf(text, sizeof(text), "GIFS %u/%u", (unsigned)roll->gifs, (unsigned)roll->max_gifs);
+    } else {
+        snprintf(text, sizeof(text), "%u GIFS", (unsigned)roll->gifs);
+    }
     px_text_center(text, mid.x + mid.w / 2 + ox, mid.y + 32, 2, d->dim, false);
 }
 

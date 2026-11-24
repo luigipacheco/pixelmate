@@ -126,11 +126,17 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
   tap). GIF: the same countdown, then RECORD requests frames 0..7 every 4 ticks
   (`APP_BOOTH_REQ_GIF_FRAME`; the runtime saves on frame 7). ROLL opens the
   GALLERY: arrows browse (0 = newest), BACK returns, DELETE asks SURE? and then
-  sends `APP_BOOTH_REQ_DELETE`. A full kind (12 photos / 2 GIFs) goes straight
-  to REVIEW with `APP_BOOTH_RESULT_FULL`.
+  sends `APP_BOOTH_REQ_DELETE`; the position text is `PIC 3/40` (index is a
+  `uint16_t`, enough for the store's 300-item cap). The model has no limits of
+  its own: when the runtime's roll says a photo / GIF at the selected lens and
+  film does not fit (`photo_room` / `gif_room`), SNAP / GIF goes straight to
+  REVIEW with `APP_BOOTH_RESULT_FULL`; a save that then fails as full reports
+  the same.
 - The model never holds pixels. The runtime takes one request at a time with
   `app_game_take_booth_request()`, answers with `app_game_booth_result()`, and
-  reports `app_game_set_booth(camera, photos, gifs)` every tick. Without a
+  reports `app_game_set_booth(camera, &roll)` every tick (`app_booth_roll_t`:
+  counts, fixed slots or 0 for space-limited, free KB and the two room flags).
+  The roll is not saved with the pet. Without a
   camera, or while fainted, SNAP/GIF raise `APP_EVENT_BLOCKED` (the gallery
   still works). Leaving the booth (swipe, a panel, screen off, unplug) cancels a
   countdown or recording; a partial GIF is never saved. Capturing keeps the

@@ -13,9 +13,6 @@
 static const char *TAG = "booth";
 #endif
 
-_Static_assert((int)APP_PHOTO_STORE_PHOTOS == (int)APP_BOOTH_PHOTOS && (int)APP_PHOTO_STORE_GIFS == (int)APP_BOOTH_GIFS,
-               "model and store slot counts must match");
-
 enum {
     FAKE_FRAME_TICKS = 2,      /* Host: 15 synthetic frames per second. */
     NO_FILTER_YET = 0xFF,
@@ -162,15 +159,21 @@ static app_booth_result_t save_capture(booth_media_t *m)
     }
 }
 
+/* The header a capture gets: look, frame count, lens (GIFs capped) and film. */
+static app_photo_header_t capture_header(uint8_t filter, uint8_t res, bool color, uint8_t frames,
+                                         app_photo_rgb_t base)
+{
+    const uint8_t cap = color ? APP_PHOTO_GIF_MAX_RES_COLOR : APP_PHOTO_GIF_MAX_RES;
+    const uint8_t lens = frames > 1 && res > cap ? cap : res;
+    return (app_photo_header_t) {
+        .filter = filter, .frames = frames, .base = base,
+        .res = (uint8_t)(lens | (color ? APP_PHOTO_COLOR_FLAG : 0)),
+    };
+}
+
 static void begin_capture(booth_media_t *m, const app_booth_request_t *req, uint8_t frames, app_photo_rgb_t base)
 {
-    memset(&m->capture.header, 0, sizeof(m->capture.header));
-    m->capture.header.filter = req->filter;
-    m->capture.header.frames = frames;
-    m->capture.header.base = base;
-    const uint8_t cap = req->color ? APP_PHOTO_GIF_MAX_RES_COLOR : APP_PHOTO_GIF_MAX_RES;
-    const uint8_t lens = frames > 1 && req->res > cap ? cap : req->res;
-    m->capture.header.res = (uint8_t)(lens | (req->color ? APP_PHOTO_COLOR_FLAG : 0));
+    m->capture.header = capture_header(req->filter, req->res, req->color, frames, base);
 }
 
 static void serve_request(booth_media_t *m, app_game_handle_t game, app_photo_rgb_t base)
@@ -228,15 +231,44 @@ static void cache_gallery(booth_media_t *m, const app_game_snapshot_t *s)
     m->shown_valid = app_photo_store_load(s->booth.index, &m->shown) == APP_PHOTO_STORE_OK;
 }
 
+/* Ask the store about the roll again when it changes or the booth does
+ * (booth.seq moves with every look, lens, film or phase change): counts,
+ * limits, free space and whether a photo and a GIF at the selected lens and
+ * film fit. Without a store every capture is allowed, and its save then
+ * reports the failure. */
+static void refresh_roll(booth_media_t *m, const app_game_snapshot_t *s)
+{
+    const app_booth_snapshot_t *b = &s->booth;
+    const uint32_t revision = app_photo_store_revision();
+    if (m->roll_valid && m->roll_revision == revision && m->roll_seq == b->seq) {
+        return;
+    }
+    m->roll_valid = true;
+    m->roll_revision = revision;
+    m->roll_seq = b->seq;
+    const bool color = b->color && app_photo_filter_has_color(b->filter);
+    app_photo_store_usage_t use;
+    app_photo_store_usage(&use);
+    const uint32_t free_kb = use.free_bytes / 1024U;
+    const app_photo_rgb_t base = {0, 0, 0};
+    const app_photo_header_t photo = capture_header(b->filter, b->res, color, 1, base);
+    const app_photo_header_t gif = capture_header(b->filter, b->res, color, APP_PHOTO_GIF_FRAMES, base);
+    m->roll = (app_booth_roll_t) {
+        .photos = use.photos, .gifs = use.gifs,
+        .max_photos = use.max_photos, .max_gifs = use.max_gifs,
+        .free_kb = (uint16_t)(free_kb > UINT16_MAX ? UINT16_MAX : free_kb),
+        .photo_room = !m->store_ready || app_photo_store_fits(&photo),
+        .gif_room = !m->store_ready || app_photo_store_fits(&gif),
+    };
+}
+
 void booth_media_update(booth_media_t *m, app_game_handle_t game, app_photo_rgb_t base)
 {
     app_game_snapshot_t s = app_game_read(game);
     run_feed(m, &s);
     app_game_set_camera(game, m->present);
     serve_request(m, game, base);
-    app_photo_store_usage_t use;
-    app_photo_store_usage(&use);
-    app_game_set_booth(game, m->camera == BOOTH_CAMERA_LIVE && m->live_seq != 0,
-                       (uint8_t)(use.photos > 255 ? 255 : use.photos), (uint8_t)(use.gifs > 255 ? 255 : use.gifs));
+    refresh_roll(m, &s);
+    app_game_set_booth(game, m->camera == BOOTH_CAMERA_LIVE && m->live_seq != 0, &m->roll);
     cache_gallery(m, &s);
 }
