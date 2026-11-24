@@ -22,6 +22,7 @@
 #define GAUGE_CMD_AVG_CURRENT 0x14
 #define GAUGE_CMD_TIME_TO_EMPTY 0x16
 #define GAUGE_CMD_DESIGN 0x3C
+#define EXTERNAL_POWER_MIN_MA (-30)   /* Above this current: on USB (see the reading below). */
 
 #define PROFILE_MAH 80
 #define PROFILE_TASK_STACK 4096
@@ -207,7 +208,9 @@ esp_err_t app_power_hw_battery(app_battery_reading_t *reading)
     reading->percent = (uint8_t)(soc > 100 ? 100 : soc);
     reading->voltage_mv = mv;
     reading->current_ma = (int16_t)ma;
-    reading->external_power = false;   /* Not used on this board (pocket mode reads the current). */
+    /* On USB even when full: the charge current tapers to ~0 mA, while on
+     * battery the board draws well over 30 mA. */
+    reading->external_power = (int16_t)ma > EXTERNAL_POWER_MIN_MA;
     /* Extras for power measurements; a failed one is reported as unknown. */
     uint16_t avg = 0, tte = 0, rem = 0, full = 0, design = 0;
     reading->avg_current_ma = read_word(GAUGE_CMD_AVG_CURRENT, &avg) == ESP_OK ? (int16_t)avg : 0;

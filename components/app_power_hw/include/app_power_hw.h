@@ -17,7 +17,8 @@ typedef struct {
     uint16_t time_to_empty_min;  /**< 0xFFFF while not discharging or unread. */
     uint16_t remaining_mah;      /**< RemainingCapacity; 0 if unread. */
     uint16_t full_mah;           /**< FullChargeCapacity; 0 if unread. */
-    bool external_power;         /**< A supply is connected (USB); false when the driver cannot tell. */
+    bool external_power;         /**< A supply is connected (USB). Each driver decides from what its
+                                  *   chip can see: current (BQ27220, INA226) or input voltage (M5PM1). */
     uint16_t design_mah;         /**< DesignCapacity (80 once the profile is loaded); 0 if unread. */
 } app_battery_reading_t;
 

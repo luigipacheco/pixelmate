@@ -14,8 +14,8 @@ PSRAM), 1.75" round 466x466 CO5300 AMOLED with CST820 touch.
 | Steps (BMI270 0x68) | walking pet; counts on the device |
 | Clock chip (RX8130 0x32) | written: time survives power-off |
 | KEYA (G2, yellow) | sleep / wake; on battery the pet goes on to pocket mode a second later |
-| Pocket mode | deep sleep on battery with the step sensor still counting; the yellow button wakes it and the slept steps are added (checked on the device) |
-| Battery (M5PM1) | voltage, estimated percent, USB present |
+| Pocket mode | deep sleep on battery: screen, sound and the green power LED off, step sensor still counting; the yellow button wakes it and the slept steps are added (checked on the device). On USB it shows the clock instead |
+| Battery (M5PM1) | voltage, estimated percent; on USB from the input voltage (the chip measures no current) |
 | Diary, acts, brain | same as the Mosaico (`../../brain/README.md`); not tried on this board yet |
 | Not yet | magnetometer TOOLS (none on this board), KEYB (blue), vibration (the game has no haptics), the QSPI clock at M5's 80 MHz |
 

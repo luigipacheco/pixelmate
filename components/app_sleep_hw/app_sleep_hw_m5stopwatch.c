@@ -5,7 +5,9 @@
  * PIXELMATE_I2C_PORT) switches off the display power (pin 8), codec power
  * (pin 3) and speaker amplifier (pin 10) and holds the display and touch in
  * reset (pins 5 and 4); the expander keeps those outputs while the ESP32-S3
- * sleeps. The BMI270 stays powered and, in its low-power mode
+ * sleeps. The M5PM1 power chip (0x6E) switches its green LED off (PWR_CFG
+ * 0x06 bit 4, LED_EN in M5Unified's M5PM1_Class; the board's power-up sets it
+ * again on wake). The BMI270 stays powered and, in its low-power mode
  * (app_pedometer_hw_low_power), keeps counting steps. Wake-up is the sleep
  * button (PIXELMATE_SLEEP_BUTTON_GPIO, active low: EXT1) or the backstop
  * timer; the board adapter powers everything up again at boot.
@@ -36,6 +38,9 @@
 
 #define TAG "app_sleep"
 #define IOE1_ADDR 0x4F
+#define PM1_ADDR 0x6E
+#define PM1_PWR_CFG 0x06           /* Bit 4: LED_EN (the green LED). Bits 0-2: charger, 3.3 V, LDO: kept. */
+#define PM1_LED_EN 0x10
 #define IOE1_OUT_LO 0x05            /* Output levels, pins 1-8. */
 #define IOE1_OUT_HI 0x06            /* Pins 9-16. */
 #define IOE1_OFF_LO 0x9C            /* Pins 3 codec, 4 touch reset, 5 display reset, 8 display power. */
@@ -110,6 +115,14 @@ esp_err_t app_sleep_hw_enter(const app_sleep_request_t *request)
             ESP_LOGW(TAG, "expander did not answer: display stays powered");
         }
         i2c_master_bus_rm_device(ioe);
+    }
+    /* Green LED off: on all night it is the brightest thing about a sleeping watch. */
+    i2c_master_dev_handle_t pm1 = device(PM1_ADDR);
+    if (pm1) {
+        if (clear_bits(pm1, PM1_PWR_CFG, PM1_LED_EN) != ESP_OK) {
+            ESP_LOGW(TAG, "power chip did not answer: LED stays on");
+        }
+        i2c_master_bus_rm_device(pm1);
     }
 
     memset(&s_record, 0, sizeof(s_record));

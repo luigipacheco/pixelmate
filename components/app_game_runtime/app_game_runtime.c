@@ -83,8 +83,6 @@ enum {
     DAY_POLL_TICKS = 10 * GAME_TICK_HZ,
     BATTERY_POLL_TICKS = 10 * GAME_TICK_HZ,
     CHARGING_MIN_MA = 5,          /* Gauge current above this counts as charging. */
-    EXTERNAL_POWER_MIN_MA = -30,  /* Above this: on USB, even full and tapered to ~0 mA (the
-                                   * board alone draws 100+ mA from the battery while running). */
     BATTERY_LOG_POLLS = 6,        /* Log the power figures every 6th poll (1 min). */
     POWER_STATES = APP_POWER_DOZE + 1,
     VALID_EPOCH = 1700000000,     /* Earlier clocks are unsynchronized. */
@@ -395,7 +393,9 @@ static const char *gauge_profile_name(app_gauge_profile_t p)
  * 0 mA and can dip slightly negative, so "current >= 0" is not enough. */
 static bool on_external_power(const host_state_t *state)
 {
-    return state->battery_ok && state->battery.current_ma > EXTERNAL_POWER_MIN_MA;
+    /* The battery driver decides: not every board's chip measures current
+     * (the StopWatch's power chip sees only the USB input voltage). */
+    return state->battery_ok && state->battery.external_power;
 }
 
 static long mean_drain(const host_state_t *state, app_power_t power)
