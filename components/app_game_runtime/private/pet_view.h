@@ -107,9 +107,11 @@ void pet_view_tool_sample(pet_view_t *view, const app_game_snapshot_t *snapshot,
 /** TOOLS: Wi-Fi scan results (count -1 = scanning). */
 void pet_view_tool_aps(pet_view_t *view, const pet_tool_ap_t *aps, int count);
 
-/** Local time for clock mode. */
+/** Local time for clock mode, and how to show it. */
 typedef struct {
     int hour, minute, second, wday, mday, month;
+    float glow;           /**< Brightness factor; 0 means 1 (the full bedside glow). */
+    const char *footer;   /**< Bottom line; NULL = "TAP TO WAKE". */
 } pet_clock_t;
 
 /** Clock mode frame (sleeping on USB power with the time known). */

@@ -86,16 +86,21 @@ per board, see [boards/README.md](boards/README.md)):
   right half (A). Each input lights a glyph; unlocking plays a jackpot. A
   sandbox with infinite sparks: its Settings row (page 3) turns it off, and
   turning it off or restarting restores the real sparks and items.
-- **Clock mode (on USB power):** when the pet sleeps while plugged in and the
-  time is known (Wi-Fi), the screen shows a dim clock instead of going black:
-  big pixel digits with Bitsy's eyes as the blinking colon (they hop on the
-  hour and doze at night), the date and today's steps. It drifts a few pixels
-  each minute to protect the AMOLED. Tap to wake.
-- **Pocket mode (on battery):** a few seconds after the screen goes dark,
-  Wi-Fi stops and the game loop naps (one tick a second) so the CPU idles; the
-  BMI270 keeps counting steps. Press the AI button to wake it. (It does not use
-  ESP-IDF light sleep: on this ESP32-S31 IDF, light sleep aborted in the clock
-  driver and rebooted the board.) On USB power it stays awake.
+- **Idle, with a clock:** when the screen times out or you press the AI
+  button once, Bitsy idles. Everything keeps running, and when the time is
+  known the screen shows a clock instead of going black: big pixel digits with
+  Bitsy's eyes as the colon, the date and today's steps, drifting a few pixels
+  each minute to protect the AMOLED. On USB it is a bedside glow and the eyes
+  blink, hop on the hour and doze at night. On battery it is dimmer, changes
+  once a minute, and Wi-Fi and sound switch off. A tap or the AI button wakes
+  it.
+- **Pocket mode (deep sleep, on battery):** hold the AI button 1.5 s, or leave
+  Bitsy idle for 10 minutes. It saves and sleeps with only the step counter
+  running. The AI button cannot wake the chip on this board, so a tap restarts
+  it and shows the clock with PRESS AI BUTTON: press it within 8 seconds to
+  wake Bitsy, or it goes back to sleep (a bump in a pocket costs only that).
+  Steps walked meanwhile are added. There is no deep sleep on USB: there a
+  long press only turns the screen fully off.
 - **Battery:** percentage in the pull-down menu; a top-bar icon appears while
   charging or when the battery is low.
 - **Wi-Fi setup:** first time, pull down the menu and tap **SET UP WIFI**. The

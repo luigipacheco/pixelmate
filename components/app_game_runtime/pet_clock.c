@@ -66,7 +66,11 @@ void screens_draw_clock(const draw_ctx_t *d, const pet_clock_t *t)
         snprintf(text, sizeof(text), "%s %d%%", s->battery_charging ? "CHARGING" : "POWER", s->battery_pct);
         px_text_center(text, 240 + ox, 380 + oy, 2, d->dim, false);
     }
-    px_text_center("TAP TO WAKE", 240 + ox, 420 + oy, 2, px_scale(d->dim, 0.7f), false);
+    if (t->footer) {
+        px_text_center(t->footer, 240 + ox, 420 + oy, 2, d->accent, false);   /* An instruction: readable. */
+    } else {
+        px_text_center("TAP TO WAKE", 240 + ox, 420 + oy, 2, px_scale(d->dim, 0.7f), false);
+    }
     if (t->month == 0 && t->mday == 1 && t->hour == 0 && t->minute < 10) {
         /* Easter egg: New Year fireworks for the first ten minutes. */
         static const Color sparks[4] = {

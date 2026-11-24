@@ -106,6 +106,7 @@ enum {
                                    * for the awake clock, then adds a minute per press. */
     GAME_ACTION_DEBUG_UNLOCK = 9, /* Host: replay action 9 owns everything (screenshots). */
     GAME_ACTION_DEBUG_USB = 8,    /* Host: replay action 8 toggles pretend USB power. */
+    GAME_ACTION_DEBUG_IDLE = 11,  /* Host: replay action 11 cycles the idle clock preview (dim, dim + hint, off). */
     DEBUG_STEPS = 50,
     HOST_BATTERY_PCT = 76,
     HOST_FIRST_DAY = 20000,
@@ -120,6 +121,7 @@ typedef struct {
     bool debug_key_down, debug_day_down, debug_camera_down;
     int host_clock;               /* Host: pretend minute of the day, 0 = not started. */
     bool host_usb;                /* Host: action 8 pretends USB power (clock mode). */
+    uint8_t host_idle;            /* Host: action 11 previews the idle clock (1) and its wake hint (2). */
     int clock_drawn_second;       /* Clock mode: second last drawn, -1 none. */
     int8_t new_year_cued;         /* New Year chime already played (weekday + 1). */
     uint32_t tool_ticks;          /* Ticks with a tool open. */
@@ -161,12 +163,14 @@ typedef struct {
     uint32_t net_timer;
     bool net_started;
     char stats_json[STATS_JSON_MAX];   /* Instance-owned buffer for /api/stats. */
-    uint32_t pocket_ticks;        /* Ticks the screen has been dark (pocket mode countdown). */
-    bool pocket_radio_off;        /* Pocket mode suspended Wi-Fi. */
+    uint32_t pocket_ticks;        /* Ticks idle on battery (deep sleep countdown). */
+    bool pocket_radio_off;        /* Idle or pocket mode suspended Wi-Fi. */
+    bool idle_quiet;              /* Idle on battery: sound closed. */
+    bool idle_dark;               /* Long press on USB: idle with the screen fully off. */
+    bool deep_now;                /* Deep sleep as soon as the button is released. */
     pet_head_t head;              /* Head pose for boards with a neck (StackChan). */
     uint32_t clock_timer;
-    uint16_t pocket_after;        /* Dark ticks before pocket mode (shorter after the AI button). */
-    uint16_t pocket_grace;        /* After a pocket wake: ticks left for a touch before sleeping again. */
+    uint16_t pocket_grace;        /* After a deep-sleep wake not by the button: ticks left to press it. */
     uint8_t ai_down_ticks;        /* AI button held this many ticks (debounce). */
     bool ai_swallow;              /* Ignore the AI button until it is released. */
     bool ai_ready;                /* GPIO input enabled. */
@@ -928,12 +932,19 @@ static int initialize(void *value, const char *asset_root)
         ++s_pocket_log.timer_wakes;   /* Deep-sleep wakes (touch or backstop timer). */
         app_game_add_sensor_delta(state->game, slept_steps);
         ESP_LOGI(TAG, "pocket: woke from deep sleep, %lu steps counted while asleep", (unsigned long)slept_steps);
-        /* A wake by the sleep button is on purpose; a touch or the backstop
-         * timer may not be, so those go back to sleep unless touched. */
+        /* A wake by the button is on purpose. A touch (the Mosaico's only wake
+         * source besides the timer) or the backstop timer may not be: the pet
+         * stays idle with the clock, touches are ignored, and unless the
+         * button is pressed it goes back to deep sleep. */
         app_sleep_report_t wake = {0};
         const bool by_button = app_sleep_hw_report(&wake) && !wake.touch_wake
                                && (wake.wake_causes & BIT(ESP_SLEEP_WAKEUP_EXT1));
         state->pocket_grace = by_button ? 0 : POCKET_GRACE_TICKS;
+        if (by_button) {
+            state->ai_swallow = true;   /* Its release is not another press. */
+        } else {
+            app_game_sleep(state->game);
+        }
     }
     load_timezone();
     if (time(NULL) < VALID_EPOCH && app_rtc_hw_load() == ESP_OK) {
@@ -987,8 +998,8 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
             }
 #endif
 #if defined(RAYLIB_LITE_GAME_NATIVE)
-            if (event->pressed) {
-                state->pocket_grace = 0;   /* Someone is using it: stay awake. */
+            if (state->pocket_grace) {
+                break;   /* After a deep-sleep wake only the button wakes it. */
             }
 #endif
             app_game_set_pointer(state->game, event->x, event->y, event->pressed);
@@ -1034,6 +1045,9 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
         if (event->code == GAME_ACTION_DEBUG_USB && event->pressed) {
             state->host_usb = !state->host_usb;
         }
+        if (event->code == GAME_ACTION_DEBUG_IDLE && event->pressed) {
+            state->host_idle = (uint8_t)((state->host_idle + 1U) % 3U);
+        }
         if (event->code == GAME_ACTION_DEBUG_UNLOCK && event->pressed) {
             app_game_record_t r;
             app_game_export(state->game, &r);
@@ -1061,22 +1075,31 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
 }
 
 #if defined(RAYLIB_LITE_GAME_NATIVE)
-/* ---- Pocket mode --------------------------------------------------------
- * Once the screen has been dark a few seconds on battery, save and send the
- * chip to deep sleep: the panel goes to Deep Standby, the 3.3 V rail stays on
- * so the BMI270 keeps counting steps and the touch controller can wake us. A
- * tap on the screen restarts the chip (the AI button cannot wake it: held at
- * boot it starts Vibe Mode); the steps counted meanwhile are read before the
- * board re-inits the sensor and credited at boot. A long backstop timer wakes
- * it if a tap never comes through. If deep sleep cannot start, the old deep
- * doze (game loop napping, AI button polled) takes over. */
+/* ---- Idle and pocket mode ------------------------------------------------
+ * Three power levels on boards with pocket mode (the Mosaico, the StopWatch):
+ *   awake       everything on.
+ *   idle        the model's DOZE: the screen timed out or the button was
+ *               pressed once. Everything keeps running; on battery Wi-Fi and
+ *               sound switch off after a moment and the screen shows a dim
+ *               clock (TAP TO WAKE). A tap or the button wakes it at once.
+ *   deep sleep  on battery only: a long press (1.5 s), or 10 minutes of idle.
+ *               Save, credit the steps, then deep sleep with only the step
+ *               counter running. The button wakes it (on the Mosaico, whose
+ *               AI button cannot wake the chip, a tap restarts it and the AI
+ *               button must follow within a few seconds). The steps counted
+ *               meanwhile are read before the sensor is re-initialised and
+ *               credited at boot. A long backstop timer wakes it too.
+ * On USB there is no deep sleep: idle keeps Wi-Fi and shows the full clock,
+ * and a long press only turns the screen fully off. If deep sleep cannot
+ * start, the old deep doze (game loop napping, button polled) takes over. */
 enum {
-    POCKET_AFTER_TICKS = 90,           /* 3 s of dark screen first. */
     POCKET_NAP_MS = 1000,              /* Deep doze: one game tick a second. */
-    POCKET_POLL_MS = 20,               /* AI button check while napping. */
+    POCKET_POLL_MS = 20,               /* Button check while napping. */
     POCKET_WATCH_MS = 3000,            /* No new frame this long after waking: restart. */
-    POCKET_SOON_TICKS = 30,            /* After the AI button: pocket mode in 1 s. */
-    POCKET_BACKSTOP_S = 12 * 60 * 60,  /* Deep sleep backstop wake (a tap wakes it sooner). */
+    POCKET_BACKSTOP_S = 12 * 60 * 60,  /* Deep sleep backstop wake. */
+    IDLE_QUIET_TICKS = 2 * GAME_TICK_HZ,          /* Idle this long on battery: Wi-Fi and sound off. */
+    IDLE_DEEP_TICKS = 10 * 60 * GAME_TICK_HZ,     /* Idle this long on battery: deep sleep. */
+    BUTTON_LONG_TICKS = 3 * GAME_TICK_HZ / 2,     /* Held 1.5 s: a long press. */
 };
 #if defined(PIXELMATE_SLEEP_BUTTON_GPIO)
 #define POCKET_BUTTON_GPIO ((gpio_num_t)PIXELMATE_SLEEP_BUTTON_GPIO)   /* The board's sleep button. */
@@ -1136,20 +1159,25 @@ static void pocket_deep_sleep(host_state_t *state)
     (void)app_net_suspend(false);   /* Sound reopens on its own at the next cue. */
 }
 
-/* A pocket wake (a tap, maybe just the pocket) that nobody follows up with
- * another touch puts the pet straight back into pocket mode. */
+/* After a deep-sleep wake that was not the button (a tap on the Mosaico, maybe
+ * just the pocket, or the backstop timer): idle with the clock, touches
+ * ignored, and back to deep sleep unless the button is pressed in time. */
 static void pocket_grace_tick(host_state_t *state)
 {
-    if (!state->pocket_grace || --state->pocket_grace) {
+    if (!state->pocket_grace) {
         return;
     }
-    if (!state->battery_ok || on_external_power(state)) {
-        return;   /* On USB: stay up. */
+    if (state->battery_ok && on_external_power(state)) {
+        state->pocket_grace = 0;   /* Plugged in: a normal idle, a tap wakes it. */
+        return;
+    }
+    if (--state->pocket_grace || !state->battery_ok) {
+        return;
     }
     ++s_pocket_log.resleeps;
-    ESP_LOGI(TAG, "pocket: woke but untouched, back to sleep");
+    ESP_LOGI(TAG, "pocket: woke without the button, back to deep sleep");
     app_game_sleep(state->game);
-    state->pocket_after = POCKET_SOON_TICKS;
+    state->deep_now = true;
 }
 
 static void pocket_resume_radio(host_state_t *state)
@@ -1165,23 +1193,43 @@ static void pocket_resume_radio(host_state_t *state)
 
 static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s)
 {
-    if (s->power != APP_POWER_DOZE || !state->blanked) {
+    /* On USB power stay reachable for installs, the stats page and the brain. */
+    const bool battery = state->battery_ok && !on_external_power(state);
+    if (s->power != APP_POWER_DOZE || !battery) {
+        if (s->power != APP_POWER_DOZE) {
+            state->idle_dark = false;
+        }
         state->pocket_ticks = 0;
+        state->idle_quiet = false;
+        state->deep_now = false;
         pocket_resume_radio(state);
         return;
     }
-    if (++state->pocket_ticks < (state->pocket_after ? state->pocket_after : POCKET_AFTER_TICKS)) {
+    if (state->pocket_ticks < UINT32_MAX) {
+        ++state->pocket_ticks;
+    }
+    if (state->pocket_ticks >= IDLE_QUIET_TICKS) {
+        if (!state->idle_quiet) {
+            state->idle_quiet = true;
+            app_sfx_close();   /* Reopens on its own at the next sound. */
+        }
+        if (!state->pocket_radio_off && app_net_suspend(true) == ESP_OK) {
+            state->pocket_radio_off = true;   /* Tried again each tick until Wi-Fi is up. */
+        }
+    }
+    if (!state->deep_now && state->pocket_ticks < IDLE_DEEP_TICKS) {
         return;
     }
-    /* On USB power stay reachable for installs and the stats page. A held
-     * button would wake us at once, so wait for its release. */
-    if (!state->battery_ok || on_external_power(state) || gpio_get_level(POCKET_BUTTON_GPIO) == 0) {
-        return;
+    if (gpio_get_level(POCKET_BUTTON_GPIO) == 0) {
+        return;   /* A held button would wake it at once: wait for the release. */
     }
     if (!state->pocket_deep_failed) {
+        ESP_LOGI(TAG, "pocket: %s", state->deep_now ? "deep sleep" : "idle 10 min, deep sleep");
         pocket_deep_sleep(state);   /* Returns only if deep sleep could not start. */
         state->pocket_deep_failed = true;
+        state->pocket_radio_off = false;   /* pocket_deep_sleep turned Wi-Fi back on. */
     }
+    state->deep_now = false;
     if (!state->pocket_radio_off && app_net_suspend(true) == ESP_OK) {
         state->pocket_radio_off = true;
         ++s_pocket_log.sleeps;
@@ -1197,7 +1245,6 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
             ++s_pocket_log.button_wakes;
             ESP_LOGI(TAG, "pocket: AI button woke the pet");
             state->pocket_ticks = 0;
-            state->pocket_after = 0;
             state->ai_swallow = true;   /* The press that woke us must not put it back to sleep. */
             app_game_wake(state->game);
             pocket_resume_radio(state);
@@ -1207,35 +1254,50 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
     ++s_pocket_log.timer_wakes;
 }
 
-/* The engine does not report the AI button on this board, so read it here:
- * a press puts the pet to sleep (pocket mode follows a second later on
- * battery), and a press while asleep wakes it, on battery or USB. */
+/* The engine does not report the board's button (the Mosaico's AI button, the
+ * StopWatch's yellow one), so read it here. A short press (on release) idles
+ * the pet, or wakes it from idle. A long press (held 1.5 s) turns it off: deep
+ * sleep on battery, the screen fully off on USB. */
 static void poll_ai_button(host_state_t *state)
 {
     if (!state->ai_ready) {
         gpio_input_enable(POCKET_BUTTON_GPIO);
         state->ai_ready = true;
     }
-    if (gpio_get_level(POCKET_BUTTON_GPIO) != 0) {
-        state->ai_down_ticks = 0;
-        state->ai_swallow = false;
+    if (gpio_get_level(POCKET_BUTTON_GPIO) == 0) {
+        if (state->ai_down_ticks < UINT8_MAX) {
+            ++state->ai_down_ticks;
+        }
+        if (state->ai_down_ticks == BUTTON_LONG_TICKS && !state->ai_swallow) {
+            state->ai_swallow = true;
+            state->pocket_grace = 0;
+            if (state->battery_ok && !on_external_power(state)) {
+                ESP_LOGI(TAG, "button held: deep sleep on release");
+                state->deep_now = true;
+            } else {
+                ESP_LOGI(TAG, "button held: screen off");
+                state->idle_dark = true;
+            }
+            app_game_sleep(state->game);
+        }
         return;
     }
-    if (state->ai_down_ticks < UINT8_MAX) {
-        ++state->ai_down_ticks;
+    const uint8_t held = state->ai_down_ticks;
+    state->ai_down_ticks = 0;
+    if (state->ai_swallow) {
+        state->ai_swallow = false;   /* Released after a long press or a wake. */
+        return;
     }
-    if (state->ai_down_ticks != 2 || state->ai_swallow) {
-        return;   /* Debounced: act once per press. */
+    if (held < 2) {
+        return;   /* Debounce. */
     }
-    state->ai_swallow = true;
+    state->pocket_grace = 0;
     if (app_game_read(state->game).power == APP_POWER_DOZE) {
-        ESP_LOGI(TAG, "AI button: wake");
+        ESP_LOGI(TAG, "button: wake");
         app_game_wake(state->game);
-        state->pocket_after = 0;
     } else {
-        ESP_LOGI(TAG, "AI button: sleep");
+        ESP_LOGI(TAG, "button: idle");
         app_game_sleep(state->game);
-        state->pocket_after = POCKET_SOON_TICKS;
     }
 }
 #else
@@ -1561,27 +1623,48 @@ static void update(void *value)
 #endif
 }
 
-/* Clock mode: the pet sleeps on outside power (USB) and the time is known.
- * The Host simulator stands in with action 8 and a fixed time. */
+/* The clock shown while the pet sleeps (idle), when the time is known: on USB
+ * at full glow, redrawn every second; on battery (boards with pocket mode)
+ * dimmer and redrawn once a minute, its eyes shut (asleep). After a deep-sleep wake
+ * that needs the button, its footer says so. The Host simulator stands in
+ * with action 8 (USB), action 11 (battery idle) and a fixed time. */
+#define IDLE_CLOCK_GLOW 0.5f
+#if defined(PIXELMATE_SLEEP_BUTTON_GPIO)
+#define WAKE_BUTTON_HINT "PRESS BUTTON TO WAKE"
+#else
+#define WAKE_BUTTON_HINT "PRESS AI BUTTON"
+#endif
 static bool clock_mode(host_state_t *state, pet_clock_t *out)
 {
 #if defined(RAYLIB_LITE_GAME_NATIVE)
-    if (!on_external_power(state)) {
-        return false;   /* On battery: dark screen (and pocket mode) instead. */
+    if (state->idle_dark) {
+        return false;   /* Long press on USB: screen fully off. */
     }
+    const bool usb = on_external_power(state);
+#if !defined(APP_POCKET_MODE)
+    if (!usb) {
+        return false;   /* On battery: dark screen. */
+    }
+#endif
     const time_t now = time(NULL);
     struct tm t;
     if (now < VALID_EPOCH || !localtime_r(&now, &t)) {
         return false;
     }
-    *out = (pet_clock_t) {t.tm_hour, t.tm_min, t.tm_sec, t.tm_wday, t.tm_mday, t.tm_mon};
+    *out = (pet_clock_t) {
+        t.tm_hour, t.tm_min, usb ? t.tm_sec : 30, t.tm_wday, t.tm_mday, t.tm_mon,
+        .glow = usb ? 1.0f : IDLE_CLOCK_GLOW, .footer = state->pocket_grace ? WAKE_BUTTON_HINT : NULL,
+    };
     return true;
 #else
-    if (!state->host_usb) {
+    if (!state->host_usb && !state->host_idle) {
         return false;
     }
     const uint32_t secs = app_game_read(state->game).tick / 30U;
-    *out = (pet_clock_t) {10, (int)(41 + secs / 60U) % 60, (int)(secs % 60U), 6, 21, 10};
+    *out = (pet_clock_t) {
+        10, (int)(41 + secs / 60U) % 60, state->host_usb ? (int)(secs % 60U) : 30, 6, 21, 10,
+        .glow = state->host_usb ? 1.0f : IDLE_CLOCK_GLOW, .footer = state->host_idle == 2 ? WAKE_BUTTON_HINT : NULL,
+    };
     return true;
 #endif
 }
@@ -1596,9 +1679,10 @@ static int render(void *value)
     const bool screen_off = snapshot.power == APP_POWER_DOZE;
     pet_clock_t clock;
     if (screen_off && clock_mode(state, &clock)) {
-        /* Sleeping on USB power with the time known: a clock instead of black,
-         * redrawn once a second (the panel keeps the frame in between). */
-        if (clock.second == state->clock_drawn_second) {
+        /* Idle with the time known: a clock instead of black, redrawn when
+         * what it shows changes (the panel keeps the frame in between). */
+        const int shown = clock.minute * 60 + clock.second + (clock.footer ? 10000 : 0);
+        if (shown == state->clock_drawn_second) {
             return 0;
         }
         BeginDrawing();
@@ -1613,7 +1697,7 @@ static int render(void *value)
         }
         pet_view_draw_clock(&state->view, &snapshot, &clock);
         EndDrawing();
-        state->clock_drawn_second = clock.second;
+        state->clock_drawn_second = shown;
         state->blanked = false;   /* Not black: pocket mode stays off. */
         state->drawn_power = snapshot.power;
 #if defined(RAYLIB_LITE_GAME_NATIVE)

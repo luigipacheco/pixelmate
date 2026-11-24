@@ -11,8 +11,8 @@ cable, no reflash. How the whole system works is in
 
 **You need:** PixelMate firmware built from `main` (any board: ESP-Mosaico,
 StackChan or StopWatch), and Bitsy awake on the same Wi-Fi as your computer. On USB power it stays
-reachable even while it shows the clock. In pocket deep sleep it is not: tap it
-awake first.
+reachable even while it shows the clock. On battery, Wi-Fi is off while Bitsy
+idles and in pocket deep sleep: wake it first.
 
 ## Quick start
 

@@ -891,7 +891,8 @@ void pet_view_tool_aps(pet_view_t *v, const pet_tool_ap_t *aps, int count)
 void pet_view_draw_clock(const pet_view_t *v, const app_game_snapshot_t *s, const pet_clock_t *clock)
 {
     const px_grid_t grid = px_grid(s->pixel_style);
-    const float level = CLOCK_LEVEL * (float)s->brightness_pct / 100.0f;   /* A bedside glow. */
+    const float glow = clock->glow > 0.0f ? clock->glow : 1.0f;
+    const float level = CLOCK_LEVEL * glow * (float)s->brightness_pct / 100.0f;   /* A bedside glow. */
     const Color c = px_scale(px_color(s->color_index), level);
     const draw_ctx_t d = {
         .view = v, .snap = s, .grid = grid, .gap = grid.gap > 0,
