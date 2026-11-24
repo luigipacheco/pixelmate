@@ -5,6 +5,9 @@ sysmeta,   data, nvs,     0xc000,   0x14000,
 vibe_mode, app,  test,    0x20000,  0x1c0000,
 coredump,  data, coredump,0x1e0000, 0x20000,
 nvs,       data, nvs,     0x200000, 0x10000,
-main_app,  app,  ota_0, 0x210000, 0x9f0000,
-# Photo booth gallery (FAT + wear levelling), formatted on first mount.
-photos,    data, fat,   0xc00000, 0x400000,
+main_app,  app,  ota_0, 0x210000, 0x2f0000,
+# Photo booth gallery (FAT + wear levelling), formatted on first mount. It sits
+# where fab_mosaico (same board) writes nothing: an install erases only its
+# app image (~2.2 MB from 0x210000) and its data areas from 0x910000, so
+# switching firmwares keeps the photos. Keep it below 0x910000.
+photos,    data, fat,   0x500000, 0x400000,

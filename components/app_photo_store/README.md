@@ -44,8 +44,11 @@ if (app_photo_store_init() == APP_PHOTO_STORE_OK) {
 ### Files (ESP-Mosaico)
 
 - `esp_vfs_fat_spiflash_mount_rw_wl` mounts the `photos` partition
-  (0xc00000, 4 MB, after `main_app`) at `/photos`, formatting it on the first
-  mount (4 KB clusters); no data image is flashed. Items live in
+  (0x500000, 4 MB, after `main_app`) at `/photos`, formatting it on the first
+  mount (4 KB clusters); no data image is flashed. It sits where fab_mosaico,
+  tested on the same board, writes nothing (its install erases only its app
+  image from 0x210000 and its data areas from 0x910000), so switching
+  firmwares keeps the photos; `main_app` is 2.9 MB for that. Items live in
   `/photos/ROLL` with 8.3 names: `P0001234.PXP` is an `app_photo` record
   exactly as NVS stored it, seq 1234.
 - Every file is written under a temporary name (`.TMP`), synced, then
