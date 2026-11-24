@@ -234,8 +234,9 @@ void booth_media_update(booth_media_t *m, app_game_handle_t game, app_photo_rgb_
     run_feed(m, &s);
     app_game_set_camera(game, m->present);
     serve_request(m, game, base);
-    uint8_t photos = 0, gifs = 0;
-    app_photo_store_counts(&photos, &gifs);
-    app_game_set_booth(game, m->camera == BOOTH_CAMERA_LIVE && m->live_seq != 0, photos, gifs);
+    app_photo_store_usage_t use;
+    app_photo_store_usage(&use);
+    app_game_set_booth(game, m->camera == BOOTH_CAMERA_LIVE && m->live_seq != 0,
+                       (uint8_t)(use.photos > 255 ? 255 : use.photos), (uint8_t)(use.gifs > 255 ? 255 : use.gifs));
     cache_gallery(m, &s);
 }

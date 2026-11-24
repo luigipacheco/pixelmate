@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 /* Photo booth gallery on the web: GET /photos (page), GET /api/photos (JSON
  * list, newest first) and GET /photo?id=<seq>[&px=<side>] (a photo as PNG, a
- * GIF as GIF, encoded on the fly, upscaled by whole pixels to about px). Handlers run on the httpd task and only read the
- * thread-safe app_photo_store; buffers are per request, in PSRAM. */
+ * GIF as GIF, encoded on the fly, upscaled by whole pixels to about px).
+ * Handlers run on the httpd task and only read the thread-safe
+ * app_photo_store; buffers are per request, in PSRAM. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,7 +18,8 @@ static const char *TAG = "app_net_photos";
 
 enum {
     QUERY_MAX = 32,
-    LIST_JSON_MAX = 64 + APP_PHOTO_STORE_SLOTS * 96,
+    JSON_HEAD_MAX = 160,
+    JSON_ITEM_MAX = 96,             /* One list item; the longest is about 80. */
     DEFAULT_PX = 256,               /* A sensible size to save. */
     GIF_FRAME_MS = 133,             /* Recorded at 7.5 frames per second. */
     OUT_CAP = 128 * 1024,           /* Real GIFs at 4x are ~20 KB; retry at 1x if not. */
@@ -42,8 +44,8 @@ static const char PAGE[] =
     "let last='';"
     "async function load(){try{const g=await(await fetch('/api/photos')).json(),k=JSON.stringify(g);"
     "if(k===last)return;last=k;"
-    "document.getElementById('count').textContent=g.photos+'/'+g.max_photos+' PHOTOS  '"
-    "+g.gifs+'/'+g.max_gifs+' GIFS';"
+    "document.getElementById('count').textContent=g.max_photos?g.photos+'/'+g.max_photos+' PHOTOS  '"
+    "+g.gifs+'/'+g.max_gifs+' GIFS':g.photos+' PHOTOS  '+g.gifs+' GIFS  '+g.free_kb+' KB FREE';"
     "document.getElementById('grid').innerHTML=g.items.map(p=>{const e=p.gif?'gif':'png';"
     "return '<a href=\"/photo?id='+p.id+'\" download=\"pixelmate-'+p.id+'.'+e+'\">'"
     "+'<img loading=lazy src=\"/photo?id='+p.id+'&px=128\" alt=\"'+p.filter+'\"><span>'"
@@ -58,30 +60,42 @@ static esp_err_t get_page(httpd_req_t *req)
     return httpd_resp_send(req, PAGE, sizeof(PAGE) - 1);
 }
 
+static void *psram(size_t size)
+{
+    void *p = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return p ? p : malloc(size);
+}
+
 static esp_err_t get_list(httpd_req_t *req)
 {
-    app_photo_entry_t entries[APP_PHOTO_STORE_SLOTS];
-    const int n = app_photo_store_list(entries, APP_PHOTO_STORE_SLOTS);
-    uint8_t photos = 0, gifs = 0;
-    app_photo_store_counts(&photos, &gifs);
-    char *json = malloc(LIST_JSON_MAX);
-    if (!json) {
+    /* Buffers sized by the store's cap: 14 items on NVS boards, 300 on files. */
+    app_photo_store_usage_t use;
+    app_photo_store_usage(&use);
+    const int max = use.max_items ? use.max_items : 1;
+    const int json_max = JSON_HEAD_MAX + max * JSON_ITEM_MAX;
+    app_photo_entry_t *entries = psram((size_t)max * sizeof(*entries));
+    char *json = psram((size_t)json_max);
+    if (!entries || !json) {
+        free(entries);
+        free(json);
         return httpd_resp_send_500(req);
     }
-    int len = snprintf(json, LIST_JSON_MAX, "{\"photos\":%u,\"gifs\":%u,\"max_photos\":%d,\"max_gifs\":%d,\"items\":[",
-                       photos, gifs, APP_PHOTO_STORE_PHOTOS, APP_PHOTO_STORE_GIFS);
-    for (int i = 0; i < n && len > 0 && len < LIST_JSON_MAX; ++i) {
-        len += snprintf(json + len, LIST_JSON_MAX - (size_t)len,
+    const int n = app_photo_store_list(entries, max);
+    int len = snprintf(json, (size_t)json_max,
+                       "{\"photos\":%u,\"gifs\":%u,\"max_photos\":%u,\"max_gifs\":%u,\"free_kb\":%lu,\"items\":[",
+                       use.photos, use.gifs, use.max_photos, use.max_gifs, (unsigned long)(use.free_bytes / 1024));
+    for (int i = 0; i < n && len > 0 && len < json_max; ++i) {
+        len += snprintf(json + len, (size_t)json_max - (size_t)len,
                         "%s{\"id\":%lu,\"gif\":%s,\"filter\":\"%s\",\"res\":\"%s\",\"color\":%s}",
                         i ? "," : "", (unsigned long)entries[i].seq, entries[i].frames > 1 ? "true" : "false",
                         app_photo_filter_name(entries[i].filter), app_photo_res_name(entries[i].res),
                         entries[i].color ? "true" : "false");
     }
-    if (len > 0 && len < LIST_JSON_MAX) {
-        len += snprintf(json + len, LIST_JSON_MAX - (size_t)len, "]}");
+    if (len > 0 && len < json_max) {
+        len += snprintf(json + len, (size_t)json_max - (size_t)len, "]}");
     }
     esp_err_t err;
-    if (len <= 0 || len >= LIST_JSON_MAX) {
+    if (len <= 0 || len >= json_max) {
         err = httpd_resp_send_500(req);
     } else {
         httpd_resp_set_type(req, "application/json");
@@ -89,6 +103,7 @@ static esp_err_t get_list(httpd_req_t *req)
         err = httpd_resp_send(req, json, len);
     }
     free(json);
+    free(entries);
     return err;
 }
 
@@ -102,12 +117,6 @@ static long query_long(httpd_req_t *req, const char *key, long fallback)
     char *end = NULL;
     const long v = strtol(value, &end, 10);
     return end != value && !*end ? v : fallback;
-}
-
-static void *psram(size_t size)
-{
-    void *p = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    return p ? p : malloc(size);
 }
 
 /* Encode at the requested scale; a GIF that does not fit falls back to 1x. */

@@ -173,7 +173,7 @@ IDF_EXTRA_ACTIONS_PATH=projects/pixel_pal/managed_components/espressif__esp_boar
 | `components/app_net` | Wi-Fi, network time, mDNS, stats web server (device only) |
 | `components/app_sfx` | 8-bit sound effects from model events (device only) |
 | `components/app_photo` | Photo lenses, looks, palettes, PNG/GIF encoders (pure C) |
-| `components/app_photo_store` | Photo/GIF gallery in NVS (RAM in the simulator) |
+| `components/app_photo_store` | Photo/GIF gallery: files on the Mosaico's `photos` partition, NVS on the S3 boards, RAM in the simulator |
 | `components/app_camera_hw` | Hot-pluggable left-slot camera, 128x128 feed (device only) |
 | `assets_src/generate_sfx.py` | Generates the sound clips at build time |
 | `main/game_entry.c` | Selects the runtime module for the Engine |

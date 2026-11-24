@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
-/* The photo booth's gallery: up to APP_PHOTO_STORE_PHOTOS photos and
- * APP_PHOTO_STORE_GIFS GIFs. Device: NVS namespace "pp_photos" (one blob per
- * slot); Host simulator: RAM only. Thread-safe; contracts in ../README.md. */
+/* The photo booth's gallery: pixel photos and GIFs. ESP-Mosaico: files on the
+ * "photos" FAT partition, limited by space and APP_PHOTO_STORE_MAX_ITEMS;
+ * StackChan / StopWatch: NVS namespace "pp_photos", APP_PHOTO_STORE_PHOTOS +
+ * APP_PHOTO_STORE_GIFS slots; Host simulator: RAM. Thread-safe; contracts in
+ * ../README.md. */
 #include <stdbool.h>
 #include <stdint.h>
 /* Relative: the Host simulator compiles without component include paths. */
@@ -13,16 +15,17 @@ extern "C" {
 #endif
 
 enum {
-    APP_PHOTO_STORE_PHOTOS = 12,
-    APP_PHOTO_STORE_GIFS = 2,
+    APP_PHOTO_STORE_PHOTOS = 12,       /**< Photo slots of the NVS store. */
+    APP_PHOTO_STORE_GIFS = 2,          /**< GIF slots of the NVS store. */
     APP_PHOTO_STORE_SLOTS = APP_PHOTO_STORE_PHOTOS + APP_PHOTO_STORE_GIFS,
+    APP_PHOTO_STORE_MAX_ITEMS = 300,   /**< Most items any store keeps (size list buffers with it). */
 };
 
 typedef enum {
     APP_PHOTO_STORE_OK = 0,
     APP_PHOTO_STORE_ERR_ARG,
     APP_PHOTO_STORE_ERR_NOT_FOUND,
-    APP_PHOTO_STORE_ERR_FULL,       /**< No free slot, or storage too full to stay safe. */
+    APP_PHOTO_STORE_ERR_FULL,       /**< No free slot, the item cap, or storage too full to stay safe. */
     APP_PHOTO_STORE_ERR_IO,         /**< Storage unavailable or a write failed. */
     APP_PHOTO_STORE_ERR_NO_MEM,
 } app_photo_store_err_t;
@@ -35,11 +38,24 @@ typedef struct {
     bool color;        /**< Color film. */
 } app_photo_entry_t;
 
-/** Load the index (device: reads every stored blob once). Idempotent. */
+typedef struct {
+    uint16_t photos, gifs;            /**< Items stored of each kind. */
+    uint16_t max_items;               /**< Cap on all items together (0 before init). */
+    uint16_t max_photos, max_gifs;    /**< Fixed slots (NVS); 0 = only space and the cap limit them. */
+    uint32_t free_bytes;              /**< Room left for new items, after the safety reserve. */
+} app_photo_store_usage_t;
+
+/** Mount / load the index (device: reads every stored header once; the first
+ * boot with a "photos" partition also moves NVS photos there). Idempotent. */
 app_photo_store_err_t app_photo_store_init(void);
 /** Entries newest first; returns how many were written (<= max). */
 int app_photo_store_list(app_photo_entry_t *out, int max);
-void app_photo_store_counts(uint8_t *photos, uint8_t *gifs);
+/** Counts per kind, the limits and free space. */
+void app_photo_store_usage(app_photo_store_usage_t *out);
+/** True when a capture with this header (frames, lens, color film) would be
+ * saved now: a free slot of its kind, under the item cap, and room for its
+ * size with the reserve kept. False before init or for a bad header. */
+bool app_photo_store_fits(const app_photo_header_t *header);
 /** Increments on every save or delete. */
 uint32_t app_photo_store_revision(void);
 /** Store a capture (header.frames picks the kind); assigns header.seq. */

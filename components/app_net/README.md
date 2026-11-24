@@ -87,8 +87,12 @@ network can change the Wi-Fi.
   - At most 5 open sockets, leaving lwIP sockets for captive DNS and ESP-Iris,
     and up to 16 routes (`max_uri_handlers`).
   - Photo booth gallery (`app_net_photos.c`): `GET /photos` is a page that
-    lists `/api/photos` (`{"photos","gifs","max_photos","max_gifs","items":
-    [{"id","gif","filter","res"}]}`, newest first) every 10 s;
+    lists `/api/photos` (`{"photos","gifs","max_photos","max_gifs","free_kb",
+    "items":[{"id","gif","filter","res","color"}]}`, newest first) every 10 s.
+    The counts line reads `3/12 PHOTOS  1/2 GIFS` on the NVS boards and
+    `40 PHOTOS  5 GIFS  3200 KB FREE` on the ESP-Mosaico, where `max_*` are 0
+    (only space and the 300-item cap limit the roll; list buffers are sized
+    by that cap);
     `GET /photo?id=<seq>` returns a photo as PNG or a GIF as an animated GIF,
     encoded on the fly from `app_photo_store`, upscaled by whole pixels to about
     `&px=` pixels (default 256, at most 512). Per-request
