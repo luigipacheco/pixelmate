@@ -75,14 +75,14 @@ static app_photo_store_err_t ram_write(photo_item_t *item, const app_photo_t *ph
     return APP_PHOTO_STORE_OK;
 }
 
-static app_photo_store_err_t ram_read(const photo_item_t *item, app_photo_t *out, size_t *len)
+static app_photo_store_err_t ram_read(const photo_item_t *item, app_photo_t *out, size_t cap, size_t *len)
 {
     const ram_slot_t *slot = &s_slots[item->slot];
     if (!slot->data) {
         return APP_PHOTO_STORE_ERR_NOT_FOUND;
     }
-    if (slot->len > sizeof(*out)) {
-        return APP_PHOTO_STORE_ERR_IO;
+    if (slot->len > cap) {
+        return APP_PHOTO_STORE_ERR_NO_MEM;
     }
     memcpy(out, slot->data, slot->len);
     *len = slot->len;
@@ -103,6 +103,7 @@ static const photo_backend_t s_ram_backend = {
     .max_items = APP_PHOTO_STORE_MAX_ITEMS,
     .photo_slots = 0,
     .gif_slots = 0,
+    .big_records = true,
     .init = ram_init,
     .scan = ram_scan,
     .has_room = ram_has_room,

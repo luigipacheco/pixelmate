@@ -16,7 +16,7 @@ extern "C" {
 typedef enum {
     APP_PHOTO_RES_LOW = 0,     /**< 32x32: a very low-res camera. */
     APP_PHOTO_RES_MID,         /**< 64x64. */
-    APP_PHOTO_RES_HIGH,        /**< 128x128 (photos only; GIFs record at MID). */
+    APP_PHOTO_RES_HIGH,        /**< 128x128 (GIFs too where the store keeps big records). */
     APP_PHOTO_RES_COUNT,
 } app_photo_res_t;
 
@@ -27,12 +27,16 @@ enum {
     APP_PHOTO_SHADES = 4,                           /**< B&W film: 2 bits per pixel. */
     APP_PHOTO_COLORS = 16,                          /**< Color film: 4 bits per pixel. */
     APP_PHOTO_GIF_FRAMES = 8,
-    APP_PHOTO_GIF_MAX_RES = APP_PHOTO_RES_MID,      /**< B&W GIFs above this record at it. */
-    APP_PHOTO_GIF_MAX_RES_COLOR = APP_PHOTO_RES_LOW,/**< Color GIFs above this record at it. */
-    APP_PHOTO_DATA_MAX = 8192,                      /**< 8 MID B&W GIF frames = 1 HI color photo. */
+    APP_PHOTO_GIF_MAX_RES = APP_PHOTO_RES_MID,      /**< Small stores: B&W GIFs above this record at it. */
+    APP_PHOTO_GIF_MAX_RES_COLOR = APP_PHOTO_RES_LOW,/**< Small stores: color GIFs above this record at it. */
+    APP_PHOTO_HEADER_BYTES = 12,
+    APP_PHOTO_SMALL_DATA_MAX = 8192,                /**< Version 3 records: 8 MID B&W GIF frames = 1 HI color photo. */
+    APP_PHOTO_DATA_MAX = 65536,                     /**< 8 HI color GIF frames (version 4). */
+    APP_PHOTO_SMALL_RECORD_MAX = APP_PHOTO_HEADER_BYTES + APP_PHOTO_SMALL_DATA_MAX,
+    APP_PHOTO_RECORD_MAX = APP_PHOTO_HEADER_BYTES + APP_PHOTO_DATA_MAX,
     APP_PHOTO_MAX_OUT = 512,                        /**< Largest encoded side in pixels. */
     APP_PHOTO_MAGIC = 0x50,                         /**< 'P' */
-    APP_PHOTO_VERSION = 3,                          /**< 2: lens byte; 3: color flag in it. */
+    APP_PHOTO_VERSION = 4,                          /**< 2: lens byte; 3: color flag in it; 4: GIFs at every lens. */
     APP_PHOTO_RES_MASK = 0x7F,                      /**< header.res: lens ... */
     APP_PHOTO_COLOR_FLAG = 0x80,                    /**< ... and color film (v3). */
 };
@@ -69,10 +73,16 @@ typedef struct {
     uint32_t seq;              /**< Capture order; larger is newer. */
 } app_photo_header_t;
 
+/** A stored record. Its size varies (app_photo_record_size): allocate
+ * APP_PHOTO_RECORD_MAX bytes for any record, or the store's max_record. */
 typedef struct {
     app_photo_header_t header;
-    uint8_t data[APP_PHOTO_DATA_MAX];   /**< Frames back to back, see app_photo_frame(). */
+    uint8_t data[];            /**< Frames back to back, see app_photo_frame(). */
 } app_photo_t;
+
+#ifndef __cplusplus
+_Static_assert(sizeof(app_photo_header_t) == APP_PHOTO_HEADER_BYTES, "stored header is 12 bytes");
+#endif
 
 static inline int app_photo_side(int res)
 {
@@ -128,8 +138,21 @@ static inline uint8_t app_photo_pixel_at(const uint8_t *packed, int side, bool c
     return (uint8_t)((packed[i >> 2] >> (6 - 2 * (i & 3))) & 3U);
 }
 
-/** True for a known version (2 or 3), lens and frame count whose data fits. */
+/** The lens a GIF records at. `big`: the store keeps big records (version
+ * 4, ESP-Mosaico): every lens. Otherwise B&W GIFs stop at MID and color at LO. */
+static inline int app_photo_gif_lens(int res, bool color, bool big)
+{
+    const int cap = big ? APP_PHOTO_RES_COUNT - 1 : (color ? APP_PHOTO_GIF_MAX_RES_COLOR : APP_PHOTO_GIF_MAX_RES);
+    return res > cap ? cap : res;
+}
+
+/** True when the header follows its version's rules: frames 1 or 8, lens up
+ * to HI; in versions 2 and 3 GIFs at most MID B&W or LO color (no color in 2);
+ * in version 4 GIFs at every lens. */
 bool app_photo_header_valid(const app_photo_header_t *header);
+/** The version a capture is stored with: 3 when it follows the version 3
+ * rules (so older firmware and small stores can read it), else 4. */
+uint8_t app_photo_header_version(const app_photo_header_t *header);
 
 /** Names for UI and the web page (upper case), "" when out of range. */
 const char *app_photo_filter_name(int filter);

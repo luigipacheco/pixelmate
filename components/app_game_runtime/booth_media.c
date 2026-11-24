@@ -9,6 +9,7 @@
 #if defined(RAYLIB_LITE_GAME_NATIVE)
 #include "app_cam_stream.h"
 #include "app_camera_hw.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 static const char *TAG = "booth";
 #endif
@@ -18,6 +19,16 @@ enum {
     NO_FILTER_YET = 0xFF,
 };
 
+static app_photo_t *record_alloc(size_t size)
+{
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    void *p = heap_caps_calloc(1, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return p ? p : calloc(1, size);
+#else
+    return calloc(1, size);
+#endif
+}
+
 void booth_media_init(booth_media_t *m)
 {
     memset(m, 0, sizeof(*m));
@@ -25,6 +36,23 @@ void booth_media_init(booth_media_t *m)
     m->live_filter = NO_FILTER_YET;
     m->host_present = true;   /* Host: the right key unplugs/replugs the fake camera. */
     m->store_ready = app_photo_store_init() == APP_PHOTO_STORE_OK;
+    /* Records as big as the store keeps: 64 KB (an 8-frame HI color GIF) on
+     * files and RAM, 8 KB on NVS. Allocated once, touched only by captures,
+     * saves and gallery loads, never per tick. */
+    app_photo_store_usage_t use;
+    app_photo_store_usage(&use);
+    m->big = m->store_ready && use.big_records;
+    m->record_cap = use.max_record ? use.max_record : APP_PHOTO_SMALL_RECORD_MAX;
+    m->capture = record_alloc(m->record_cap);
+    m->shown = record_alloc(m->record_cap);
+    if (!m->capture || !m->shown) {
+        free(m->capture);
+        free(m->shown);
+        m->capture = m->shown = NULL;
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+        ESP_LOGE(TAG, "no memory for two %u B photo records", (unsigned)m->record_cap);
+#endif
+    }
 }
 
 #if !defined(RAYLIB_LITE_GAME_NATIVE)
@@ -132,26 +160,30 @@ static void run_feed(booth_media_t *m, const app_game_snapshot_t *s)
     }
 }
 
-/* One packed frame of the current feed at a lens, look and film. Captures are
- * made fresh (not from `live`) so a GIF can record at its capped lens. */
-static void make_frame(booth_media_t *m, int res, int filter, bool color, uint8_t *packed)
+/* One packed frame of the capture's lens, look and film. The viewfinder's
+ * picture is reused when it matches (run_feed has just made it from the
+ * newest feed frame), so a GIF at the viewfinder's lens costs only the
+ * packing; otherwise (a GIF capped to a smaller lens) the frame is made fresh. */
+static void make_frame(booth_media_t *m, uint8_t *packed)
 {
-    const int side = app_photo_side(res);
-    filter_frame(m, res, filter, color, m->work_shades);
+    const app_photo_header_t *h = &m->capture->header;
+    const int res = app_photo_lens(h), side = app_photo_side(res);
+    const bool color = app_photo_is_color(h);
+    const uint8_t *indices = m->live;
+    if (m->live_seq != m->luma_seq || m->live_res != res || m->live_filter != h->filter
+            || m->live_color != color) {
+        filter_frame(m, res, h->filter, color, m->work_shades);
+        indices = m->work_shades;
+    }
     if (color) {
-        app_photo_pack4(m->work_shades, side * side, packed);
+        app_photo_pack4(indices, side * side, packed);
     } else {
-        app_photo_pack(m->work_shades, side * side, packed);
+        app_photo_pack(indices, side * side, packed);
     }
 }
 
-static app_booth_result_t save_capture(booth_media_t *m)
+static app_booth_result_t result_of(app_photo_store_err_t err)
 {
-    const app_photo_store_err_t err = app_photo_store_save(&m->capture);
-#if defined(RAYLIB_LITE_GAME_NATIVE)
-    ESP_LOGI(TAG, "saved %s seq %lu: %d", m->capture.header.frames > 1 ? "gif" : "photo",
-             (unsigned long)m->capture.header.seq, (int)err);
-#endif
     switch (err) {
     case APP_PHOTO_STORE_OK: return APP_BOOTH_RESULT_SAVED;
     case APP_PHOTO_STORE_ERR_FULL: return APP_BOOTH_RESULT_FULL;
@@ -159,21 +191,37 @@ static app_booth_result_t save_capture(booth_media_t *m)
     }
 }
 
-/* The header a capture gets: look, frame count, lens (GIFs capped) and film. */
-static app_photo_header_t capture_header(uint8_t filter, uint8_t res, bool color, uint8_t frames,
-                                         app_photo_rgb_t base)
+static void save_capture(booth_media_t *m, app_game_handle_t game)
 {
-    const uint8_t cap = color ? APP_PHOTO_GIF_MAX_RES_COLOR : APP_PHOTO_GIF_MAX_RES;
-    const uint8_t lens = frames > 1 && res > cap ? cap : res;
+    const app_photo_store_err_t err = app_photo_store_save(m->capture);
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+    ESP_LOGI(TAG, "saved %s seq %lu: %d", m->capture->header.frames > 1 ? "gif" : "photo",
+             (unsigned long)m->capture->header.seq, (int)err);
+#endif
+    app_game_booth_result(game, result_of(err));
+}
+
+/* The header a capture gets: look, frame count, lens and film. GIFs keep to
+ * the store's limits: every lens on big stores (ESP-Mosaico), else B&W up to
+ * MID and color LO. */
+static app_photo_header_t capture_header(const booth_media_t *m, uint8_t filter, uint8_t res, bool color,
+                                         uint8_t frames, app_photo_rgb_t base)
+{
+    const int lens = frames > 1 ? app_photo_gif_lens(res, color, m->big) : res;
     return (app_photo_header_t) {
         .filter = filter, .frames = frames, .base = base,
         .res = (uint8_t)(lens | (color ? APP_PHOTO_COLOR_FLAG : 0)),
     };
 }
 
-static void begin_capture(booth_media_t *m, const app_booth_request_t *req, uint8_t frames, app_photo_rgb_t base)
+/* Start a capture; false when it cannot be held (no record memory). */
+static bool begin_capture(booth_media_t *m, const app_booth_request_t *req, uint8_t frames, app_photo_rgb_t base)
 {
-    m->capture.header = capture_header(req->filter, req->res, req->color, frames, base);
+    if (!m->capture) {
+        return false;
+    }
+    m->capture->header = capture_header(m, req->filter, req->res, req->color, frames, base);
+    return app_photo_record_size(&m->capture->header) <= m->record_cap;
 }
 
 static void serve_request(booth_media_t *m, app_game_handle_t game, app_photo_rgb_t base)
@@ -185,28 +233,26 @@ static void serve_request(booth_media_t *m, app_game_handle_t game, app_photo_rg
     const bool have_frame = m->luma_seq != 0;
     switch (req.kind) {
     case APP_BOOTH_REQ_PHOTO:
-        if (!have_frame) {
+        if (!have_frame || !begin_capture(m, &req, 1, base)) {
             app_game_booth_result(game, APP_BOOTH_RESULT_FAILED);
             return;
         }
-        begin_capture(m, &req, 1, base);
-        make_frame(m, app_photo_lens(&m->capture.header), req.filter, req.color, app_photo_frame(&m->capture, 0));
-        app_game_booth_result(game, save_capture(m));
+        make_frame(m, app_photo_frame(m->capture, 0));
+        save_capture(m, game);
         return;
-    case APP_BOOTH_REQ_GIF_FRAME:
-        if (req.frame == 0) {
-            begin_capture(m, &req, APP_PHOTO_GIF_FRAMES, base);
-        }
-        if (!have_frame || req.frame >= APP_PHOTO_GIF_FRAMES) {
+    case APP_BOOTH_REQ_GIF_FRAME: {
+        const bool ok = req.frame != 0 || begin_capture(m, &req, APP_PHOTO_GIF_FRAMES, base);
+        if (!have_frame || !ok || !m->capture || m->capture->header.frames != APP_PHOTO_GIF_FRAMES
+                || req.frame >= APP_PHOTO_GIF_FRAMES) {
             app_game_booth_result(game, APP_BOOTH_RESULT_FAILED);
             return;
         }
-        make_frame(m, app_photo_lens(&m->capture.header), req.filter, req.color,
-                   app_photo_frame(&m->capture, req.frame));
+        make_frame(m, app_photo_frame(m->capture, req.frame));
         if (req.frame == APP_PHOTO_GIF_FRAMES - 1) {
-            app_game_booth_result(game, save_capture(m));
+            save_capture(m, game);
         }
         return;
+    }
     case APP_BOOTH_REQ_DELETE:
         app_game_booth_result(game, app_photo_store_delete(req.index) == APP_PHOTO_STORE_OK
                               ? APP_BOOTH_RESULT_DELETED : APP_BOOTH_RESULT_FAILED);
@@ -219,7 +265,7 @@ static void serve_request(booth_media_t *m, app_game_handle_t game, app_photo_rg
 
 static void cache_gallery(booth_media_t *m, const app_game_snapshot_t *s)
 {
-    if (s->booth.phase != APP_BOOTH_GALLERY) {
+    if (s->booth.phase != APP_BOOTH_GALLERY || !m->shown) {
         return;
     }
     const uint32_t revision = app_photo_store_revision();
@@ -228,7 +274,7 @@ static void cache_gallery(booth_media_t *m, const app_game_snapshot_t *s)
     }
     m->shown_revision = revision;
     m->shown_index = s->booth.index;
-    m->shown_valid = app_photo_store_load(s->booth.index, &m->shown) == APP_PHOTO_STORE_OK;
+    m->shown_valid = app_photo_store_load(s->booth.index, m->shown, m->record_cap) == APP_PHOTO_STORE_OK;
 }
 
 /* Ask the store about the roll again when it changes or the booth does
@@ -251,8 +297,8 @@ static void refresh_roll(booth_media_t *m, const app_game_snapshot_t *s)
     app_photo_store_usage(&use);
     const uint32_t free_kb = use.free_bytes / 1024U;
     const app_photo_rgb_t base = {0, 0, 0};
-    const app_photo_header_t photo = capture_header(b->filter, b->res, color, 1, base);
-    const app_photo_header_t gif = capture_header(b->filter, b->res, color, APP_PHOTO_GIF_FRAMES, base);
+    const app_photo_header_t photo = capture_header(m, b->filter, b->res, color, 1, base);
+    const app_photo_header_t gif = capture_header(m, b->filter, b->res, color, APP_PHOTO_GIF_FRAMES, base);
     m->roll = (app_booth_roll_t) {
         .photos = use.photos, .gifs = use.gifs,
         .max_photos = use.max_photos, .max_gifs = use.max_gifs,

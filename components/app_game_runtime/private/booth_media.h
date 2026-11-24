@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
-/* Photo booth pixels, owned by the runtime: the live 64x64 feed (camera on the
- * device, a synthetic scene on the Host), the capture being recorded or
+/* Photo booth pixels, owned by the runtime: the live 128x128 feed (camera on
+ * the device, a synthetic scene on the Host), the capture being recorded or
  * reviewed, and the gallery item on screen. Serves the model's booth requests
- * and reports results back. Game-loop only; instance-owned, no heap. */
+ * and reports results back. Game-loop only; instance-owned. The two records
+ * are allocated once by booth_media_init, sized by the store's largest record
+ * (64 KB on the ESP-Mosaico, 8 KB on NVS boards; PSRAM on the device). */
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "../../app_game/include/app_game.h"
 
@@ -28,8 +31,10 @@ typedef struct {
     bool live_color;                    /* `live` holds color-film indices (0..15). */
     uint8_t work_yuv[3 * APP_PHOTO_MAX_PIXELS];  /* Feed scaled to a lens. */
     uint8_t work_shades[APP_PHOTO_MAX_PIXELS];   /* A capture's frame before packing. */
-    app_photo_t capture;                /* Being recorded, then shown in REVIEW. */
-    app_photo_t shown;                  /* Gallery item on screen. */
+    app_photo_t *capture;               /* Being recorded, then shown in REVIEW (NULL: no memory). */
+    app_photo_t *shown;                 /* Gallery item on screen. */
+    size_t record_cap;                  /* Bytes of `capture` and `shown`: the store's largest record. */
+    bool big;                           /* The store keeps version 4 records (GIFs at every lens). */
     int shown_index;                    /* Gallery index last loaded, -1 = reload. */
     bool shown_valid;                   /* `shown` holds that item. */
     uint32_t shown_revision;            /* Store revision when `shown` was loaded. */

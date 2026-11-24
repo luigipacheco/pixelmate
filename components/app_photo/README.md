@@ -14,12 +14,13 @@ store, the camera component and the web server.
 uint8_t small[64 * 64], shades[64 * 64];
 app_photo_downscale(feed128, 128, small, 64);                 /* MID lens */
 app_photo_filter(small, 64, APP_FILTER_HALFTONE, shades);
-app_photo_t photo = {.header = {.filter = APP_FILTER_HALFTONE, .frames = 1,
-                                .res = APP_PHOTO_RES_MID, .base = {217, 255, 0}}};
-app_photo_pack(shades, 64 * 64, app_photo_frame(&photo, 0));
+app_photo_t *photo = calloc(1, APP_PHOTO_RECORD_MAX);   /* or the store's max_record */
+photo->header = (app_photo_header_t) {.filter = APP_FILTER_HALFTONE, .frames = 1,
+                                      .res = APP_PHOTO_RES_MID, .base = {217, 255, 0}};
+app_photo_pack(shades, 64 * 64, app_photo_frame(photo, 0));
 
 uint8_t *png = malloc(app_photo_png_bound(APP_PHOTO_RES_MID, 4));
-size_t size = app_photo_encode_png(&photo, 4, png, app_photo_png_bound(APP_PHOTO_RES_MID, 4));   /* 256x256 */
+size_t size = app_photo_encode_png(photo, 4, png, app_photo_png_bound(APP_PHOTO_RES_MID, 4));   /* 256x256 */
 ```
 
 ## Lenses and looks
@@ -30,7 +31,7 @@ A photo is a lens (resolution) plus a look; any look works at any lens.
 | --- | --- | --- | --- |
 | LO RES | 32 | 256 | Free default: a very low-res camera |
 | MID RES | 64 | 1024 | Store item |
-| HI RES | 128 | 4096 | Store item; photos only (GIFs record at MID) |
+| HI RES | 128 | 4096 | Store item; GIFs too where the store keeps big records |
 
 All looks first stretch contrast to the frame's own 4th..96th luminance
 percentile (THERMAL: 10th..90th), so a dim room still uses all four shades.
@@ -57,20 +58,46 @@ except GAME-GREEN (fixed greens) and THERMAL (indigo/magenta/orange/yellow).
 contrast stretch and chroma a 1.5x boost. SCANLINES darkens odd rows, EYE
 STICKERS uses white/black, ASCII and HALFTONE paint each cell in its own hue.
 GAME-GREEN and THERMAL have no color version. Color frames are 4 bits per
-pixel: 512 / 2048 / 8192 bytes at LO / MID / HI, so color GIFs (8 frames)
-record at LO.
+pixel: 512 / 2048 / 8192 bytes at LO / MID / HI, so an 8-frame HI color GIF
+is 64 KB.
+
+## GIF lenses
+
+GIFs are always 8 frames. Where they may record is a store capability, not a
+board name: `app_photo_gif_lens(res, color, big)` gives the lens a GIF
+records at. On a big store (`app_photo_store` usage `big_records`: the
+ESP-Mosaico's files, the Host's RAM) every lens, LO to HI, in B&W and color.
+On a small one (NVS: StackChan, StopWatch) B&W GIFs stop at MID and color
+GIFs at LO, as before (`APP_PHOTO_GIF_MAX_RES`, `APP_PHOTO_GIF_MAX_RES_COLOR`).
+
+| GIF (8 frames) | LO | MID | HI |
+| --- | --- | --- | --- |
+| B&W record | 2060 B | 8204 B | 32780 B (big stores) |
+| Color record | 4108 B | 16396 B (big stores) | 65548 B (big stores) |
 
 ## Format
 
 - Frames are square, 4 shades (2 bits per pixel), packed MSB-first, row-major.
 - `app_photo_header_t` (12 bytes, little-endian `seq`) precedes the frames:
-  magic `0x50`, version 3, look, frame count (1, or 8 for a GIF), the pet's
+  magic `0x50`, version, look, frame count (1, or 8 for a GIF), the pet's
   color at capture (RGB), the lens (bit 7 = `APP_PHOTO_COLOR_FLAG`) and a
-  capture sequence number. Version 2 photos (no color) stay readable.
-  `app_photo_record_size()` gives 268 / 1036 / 4108 bytes for LO / MID / HI
-  photos and 2060 / 8204 for LO / MID GIFs. `app_photo_t.data` holds 8 KB.
+  capture sequence number.
+- Versions: 2 (no color flag), 3 (color; GIFs at most MID B&W or LO color)
+  and 4 (GIFs at every lens up to HI). All three are read with their own
+  rules. `app_photo_header_version()` picks what a capture is written as: 3
+  whenever it follows the version 3 rules, so photos and small GIFs stay
+  readable by older firmware and by the NVS boards; 4 only for the GIFs
+  version 3 does not allow (MID/HI color, HI B&W).
+- `app_photo_record_size()` gives 268 / 1036 / 4108 bytes for LO / MID / HI
+  B&W photos and up to 65548 for an 8-frame HI color GIF
+  (`APP_PHOTO_RECORD_MAX`); version 3 records are at most 8204
+  (`APP_PHOTO_SMALL_RECORD_MAX`).
+- `app_photo_t` ends in a flexible `data[]`: allocate a record's size,
+  `APP_PHOTO_RECORD_MAX`, or the store's `max_record` (64 KB on the
+  ESP-Mosaico, 8 KB on the NVS boards). The device puts the big ones in
+  PSRAM.
 - `app_photo_header_valid()` rejects unknown versions, lenses, looks, frame
-  counts and HI-res GIFs.
+  counts, and GIFs above their version's lens limit.
 
 ## Encoders
 

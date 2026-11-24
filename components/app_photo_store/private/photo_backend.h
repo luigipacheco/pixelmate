@@ -29,6 +29,7 @@ typedef struct {
     uint16_t max_items;   /**< Index capacity. */
     uint8_t photo_slots;  /**< Fixed photo / GIF slots; 0 = only space limits them. */
     uint8_t gif_slots;
+    bool big_records;     /**< Keeps version 4 records (any size up to APP_PHOTO_RECORD_MAX). */
     app_photo_store_err_t (*init)(void);
     /** Every valid item, any order (frees broken ones); *max_seq = largest seq
      * seen. -1 when the store could not be read (out of memory). */
@@ -38,7 +39,8 @@ typedef struct {
     uint32_t (*free_bytes)(void);
     /** Store a record under item->seq; sets item->slot. Never leaves half a record. */
     app_photo_store_err_t (*write)(photo_item_t *item, const app_photo_t *photo, size_t len);
-    app_photo_store_err_t (*read)(const photo_item_t *item, app_photo_t *out, size_t *len);
+    /** Read a record into `out` (`cap` bytes); ERR_NO_MEM when it is bigger. */
+    app_photo_store_err_t (*read)(const photo_item_t *item, app_photo_t *out, size_t cap, size_t *len);
     app_photo_store_err_t (*erase)(const photo_item_t *item);
 } photo_backend_t;
 

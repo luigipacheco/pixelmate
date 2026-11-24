@@ -254,10 +254,10 @@ static void draw_review(const draw_ctx_t *d, int ox)
     center_text(d, label, ox, LABEL_Y, 3, c);
     if (b->result == APP_BOOTH_RESULT_FULL) {
         view_message(d, ox, "DELETE SOME", "IN THE ROLL", d->color);
-    } else if (m && m->capture.header.frames) {
+    } else if (m && m->capture && m->capture->header.frames) {
         /* A white print border around the fresh capture. */
         DrawRectangle(r.x + ox - BEZEL, r.y - BEZEL, r.w + 2 * BEZEL, r.h + 2 * BEZEL, px_scale(PAPER, d->level));
-        draw_stored(d, &m->capture, r.x + ox, r.y, d->view->t);
+        draw_stored(d, m->capture, r.x + ox, r.y, d->view->t);
     }
     px_text_center("TAP TO GO ON", 240 + ox, 398 + 18, 2, d->dim, false);
 }
@@ -273,11 +273,11 @@ static void draw_gallery(const draw_ctx_t *d, int ox)
         center_text(d, "ROLL", ox, LABEL_Y, 3, d->color);
         view_message(d, ox, "NO PHOTOS YET", "SNAP ONE!", d->color);
     } else {
-        const bool gif = m && m->shown_valid && m->shown.header.frames > 1;
+        const bool gif = m && m->shown_valid && m->shown->header.frames > 1;
         snprintf(text, sizeof(text), "%s %d/%d", gif ? "GIF" : "PIC", (int)b->index + 1, count);
         center_text(d, text, ox, LABEL_Y, 3, d->color);
         if (m && m->shown_valid) {
-            draw_stored(d, &m->shown, r.x + ox, r.y, d->view->t);
+            draw_stored(d, m->shown, r.x + ox, r.y, d->view->t);
         }
         draw_arrows(d, ox, count > 1 ? d->color : d->dim);
     }

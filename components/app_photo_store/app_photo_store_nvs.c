@@ -108,7 +108,7 @@ static app_photo_store_err_t erase_slot(int slot)
 
 static int nvs_scan(photo_item_t *items, int max, uint32_t *max_seq)
 {
-    app_photo_t *tmp = malloc(sizeof(*tmp));
+    app_photo_t *tmp = malloc(APP_PHOTO_SMALL_RECORD_MAX);
     int n = 0;
     *max_seq = 0;
     if (!tmp) {
@@ -117,7 +117,7 @@ static int nvs_scan(photo_item_t *items, int max, uint32_t *max_seq)
     for (int s = 0; s < APP_PHOTO_STORE_SLOTS; ++s) {
         size_t len = 0;
         s_used[s] = false;
-        if (read_slot(s, tmp, sizeof(*tmp), &len) != APP_PHOTO_STORE_OK) {
+        if (read_slot(s, tmp, APP_PHOTO_SMALL_RECORD_MAX, &len) != APP_PHOTO_STORE_OK) {
             continue;
         }
         photo_item_t it;
@@ -189,9 +189,9 @@ static app_photo_store_err_t nvs_write(photo_item_t *item, const app_photo_t *ph
     return APP_PHOTO_STORE_OK;
 }
 
-static app_photo_store_err_t nvs_read(const photo_item_t *item, app_photo_t *out, size_t *len)
+static app_photo_store_err_t nvs_read(const photo_item_t *item, app_photo_t *out, size_t cap, size_t *len)
 {
-    return read_slot(item->slot, out, sizeof(*out), len);
+    return read_slot(item->slot, out, cap, len);
 }
 
 static app_photo_store_err_t nvs_erase(const photo_item_t *item)
@@ -204,6 +204,7 @@ const photo_backend_t photo_backend_nvs = {
     .max_items = APP_PHOTO_STORE_SLOTS,
     .photo_slots = APP_PHOTO_STORE_PHOTOS,
     .gif_slots = APP_PHOTO_STORE_GIFS,
+    .big_records = false,
     .init = nvs_init,
     .scan = nvs_scan,
     .has_room = nvs_has_room,

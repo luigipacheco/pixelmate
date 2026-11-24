@@ -136,13 +136,17 @@ static esp_err_t get_photo(httpd_req_t *req)
     if (id < 0) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "id required");
     }
-    app_photo_t *photo = psram(sizeof(*photo));
+    /* Sized by the store's largest record: 8 KB on NVS boards, 64 KB on files. */
+    app_photo_store_usage_t use;
+    app_photo_store_usage(&use);
+    const size_t cap = use.max_record ? use.max_record : APP_PHOTO_SMALL_RECORD_MAX;
+    app_photo_t *photo = psram(cap);
     uint8_t *out = psram(OUT_CAP);
     void *work = psram(APP_PHOTO_GIF_WORK_BYTES);
     esp_err_t err;
     if (!photo || !out || !work) {
         err = httpd_resp_send_500(req);
-    } else if (app_photo_store_load_seq((uint32_t)id, photo) != APP_PHOTO_STORE_OK) {
+    } else if (app_photo_store_load_seq((uint32_t)id, photo, cap) != APP_PHOTO_STORE_OK) {
         err = httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "no such photo");
     } else {
         const long side = app_photo_side(app_photo_lens(&photo->header));

@@ -38,7 +38,7 @@ static void move_nvs_photos(void)
     }
     const photo_backend_t *from = &photo_backend_nvs, *to = &photo_backend_files;
     photo_item_t *items = malloc(from->max_items * sizeof(*items));
-    app_photo_t *record = malloc(sizeof(*record));
+    app_photo_t *record = malloc(APP_PHOTO_SMALL_RECORD_MAX);   /* NVS records are version 3. */
     uint32_t max_seq = 0;
     const int n = items && record && from->init() == APP_PHOTO_STORE_OK
                   ? from->scan(items, from->max_items, &max_seq) : -1;
@@ -48,9 +48,9 @@ static void move_nvs_photos(void)
     for (int i = 0; i < n; ++i) {
         photo_item_t item = items[i];
         size_t len = 0;
-        app_photo_store_err_t err = to->read(&item, record, &len);
+        app_photo_store_err_t err = to->read(&item, record, APP_PHOTO_SMALL_RECORD_MAX, &len);
         if (err != APP_PHOTO_STORE_OK) {
-            err = from->read(&items[i], record, &len);
+            err = from->read(&items[i], record, APP_PHOTO_SMALL_RECORD_MAX, &len);
             if (err == APP_PHOTO_STORE_OK) {
                 err = to->write(&item, record, len);
             }

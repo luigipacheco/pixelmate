@@ -1,13 +1,13 @@
 # app_photo_store
 
-The photo booth's gallery: pixel photos and GIFs (`app_photo` records, any
-lens; GIFs are LO or MID). One API, three backends:
+The photo booth's gallery: pixel photos and GIFs (`app_photo` records). One
+API, three backends:
 
-| Where | Backend | Limits |
-| --- | --- | --- |
-| ESP-Mosaico (`photos` partition) | files: FAT + wear levelling, `app_photo_store_files.c` | space (4 MB, 64 KB kept free) and at most `APP_PHOTO_STORE_MAX_ITEMS` (300) items |
-| StackChan, StopWatch (no `photos` partition) | NVS namespace `pp_photos`, `app_photo_store_nvs.c` | 12 photo slots, 2 GIF slots, NVS space |
-| Host simulator | RAM, `app_photo_store_ram.c` (listed only in `game.sim.json`) | 4 MB, 300 items, lost on exit |
+| Where | Backend | Limits | Records |
+| --- | --- | --- | --- |
+| ESP-Mosaico (`photos` partition) | files: FAT + wear levelling, `app_photo_store_files.c` | space (4 MB, 64 KB kept free) and at most `APP_PHOTO_STORE_MAX_ITEMS` (300) items | big: GIFs at every lens up to HI, B&W and color, up to 64 KB |
+| StackChan, StopWatch (no `photos` partition) | NVS namespace `pp_photos`, `app_photo_store_nvs.c` | 12 photo slots, 2 GIF slots, NVS space | small: version 3 only (GIFs at MID B&W or LO color), up to 8 KB |
+| Host simulator | RAM, `app_photo_store_ram.c` (listed only in `game.sim.json`) | 4 MB, 300 items, lost on exit | big |
 
 The device picks at boot: files when the partition table has a `photos` FAT
 partition and it mounts, otherwise NVS (`app_photo_store_device.c`).
@@ -19,7 +19,10 @@ if (app_photo_store_init() == APP_PHOTO_STORE_OK) {
     }
     app_photo_entry_t list[APP_PHOTO_STORE_MAX_ITEMS];   /* big: heap or PSRAM in a task */
     int n = app_photo_store_list(list, APP_PHOTO_STORE_MAX_ITEMS);   /* newest first */
-    app_photo_store_load_seq(list[0].seq, &photo);
+    app_photo_store_usage_t use;
+    app_photo_store_usage(&use);
+    app_photo_t *item = malloc(use.max_record);   /* 64 KB on files, 8 KB on NVS */
+    app_photo_store_load_seq(list[0].seq, item, use.max_record);
     app_photo_store_delete(0);                 /* gallery position 0 = newest */
 }
 ```
@@ -28,6 +31,15 @@ if (app_photo_store_init() == APP_PHOTO_STORE_OK) {
 
 - `header.frames` picks the kind: 1 = photo, 8 = GIF. Positions count both
   kinds, newest first.
+- What a store keeps is a capability, not a board name: `usage.big_records`
+  is true on files and RAM (version 4 records: MID/HI color and HI B&W GIFs)
+  and false on NVS (version 3 records only; saving a bigger one is
+  `ERR_ARG`, `fits()` says no). `usage.max_record` is the largest record it
+  keeps (65548 or 8204 bytes): size load buffers with it, and pass that size
+  to `app_photo_store_load()` / `_load_seq()` (a record bigger than the
+  buffer is `ERR_NO_MEM`). Saves write version 3 whenever the record follows
+  the version 3 rules, so photos and LO/MID GIFs stay readable by older
+  firmware.
 - `seq` continues from the largest stored one (ids stay unique across
   reboots; deleting the newest items and rebooting reuses their ids) and
   names the item in web URLs, never positions.
@@ -35,9 +47,10 @@ if (app_photo_store_init() == APP_PHOTO_STORE_OK) {
   kind (NVS), the item cap (300), or not enough space while keeping the
   reserve. `app_photo_store_fits(&header)` asks the same question before a
   capture, for the exact record size of that header (frames, lens, color
-  film). `app_photo_store_usage()` gives counts per kind, fixed slots (0 =
-  none, only space and the cap), the cap and free bytes; `revision` is bumped
-  on every save and delete.
+  film), and also says no to a record the store does not keep.
+  `app_photo_store_usage()` gives counts per kind, fixed slots (0 = none,
+  only space and the cap), the cap, free bytes, `max_record` and
+  `big_records`; `revision` is bumped on every save and delete.
 - `init` reads every stored header once and frees items whose header, kind or
   size is wrong.
 
@@ -57,7 +70,8 @@ if (app_photo_store_init() == APP_PHOTO_STORE_OK) {
 - A file takes whole 4 KB clusters, so a LO photo costs 4 KB and a HI color
   photo or a MID GIF 12 KB: about 1000 LO photos or 320 HI color photos
   would fit, so the 300-item cap usually comes first; a roll heavy in GIFs
-  and color fills by space.
+  and color fills by space. The biggest records: a HI B&W GIF takes 36 KB of
+  clusters (about 110 fit), a HI color GIF 68 KB (about 58 fit).
 - **Moving the old NVS photos.** On a boot with the files backend, if the NVS
   namespace `pp_photos` exists (checked read-only, so it is never created),
   every valid photo / GIF there is copied to a `P` file with its own seq, and

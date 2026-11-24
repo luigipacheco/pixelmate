@@ -126,6 +126,8 @@ void app_photo_store_usage(app_photo_store_usage_t *out)
         out->max_photos = s_be->photo_slots;
         out->max_gifs = s_be->gif_slots;
         out->free_bytes = s_be->free_bytes();
+        out->max_record = s_be->big_records ? APP_PHOTO_RECORD_MAX : APP_PHOTO_SMALL_RECORD_MAX;
+        out->big_records = s_be->big_records;
     }
     photo_backend_unlock();
 }
@@ -137,13 +139,14 @@ bool app_photo_store_fits(const app_photo_header_t *header)
     }
     app_photo_header_t h = *header;
     h.magic = APP_PHOTO_MAGIC;
-    h.version = APP_PHOTO_VERSION;
+    h.version = app_photo_header_version(&h);
     photo_item_t item;
     if (!photo_item_from_header(&h, app_photo_record_size(&h), &item)) {
         return false;
     }
     photo_backend_lock();
-    const bool fits = s_ready && s_count < s_max && s_be->has_room(item.kind, item.bytes);
+    const bool fits = s_ready && (s_be->big_records || h.version < 4) && s_count < s_max
+                      && s_be->has_room(item.kind, item.bytes);
     photo_backend_unlock();
     return fits;
 }
@@ -162,7 +165,7 @@ app_photo_store_err_t app_photo_store_save(app_photo_t *photo)
         return APP_PHOTO_STORE_ERR_ARG;
     }
     photo->header.magic = APP_PHOTO_MAGIC;
-    photo->header.version = APP_PHOTO_VERSION;
+    photo->header.version = app_photo_header_version(&photo->header);
     if (!app_photo_header_valid(&photo->header)) {
         return APP_PHOTO_STORE_ERR_ARG;
     }
@@ -171,6 +174,10 @@ app_photo_store_err_t app_photo_store_save(app_photo_t *photo)
     if (!s_ready) {
         photo_backend_unlock();
         return APP_PHOTO_STORE_ERR_IO;
+    }
+    if (!s_be->big_records && photo->header.version >= 4) {
+        photo_backend_unlock();
+        return APP_PHOTO_STORE_ERR_ARG;   /* A small store keeps version 3 records only. */
     }
     photo->header.seq = s_next_seq;
     photo_item_t item;
@@ -185,10 +192,13 @@ app_photo_store_err_t app_photo_store_save(app_photo_t *photo)
     return err;
 }
 
-static app_photo_store_err_t read_item(const photo_item_t *it, app_photo_t *out)
+static app_photo_store_err_t read_item(const photo_item_t *it, app_photo_t *out, size_t cap)
 {
+    if (it->bytes > cap) {
+        return APP_PHOTO_STORE_ERR_NO_MEM;
+    }
     size_t len = 0;
-    const app_photo_store_err_t err = s_be->read(it, out, &len);
+    const app_photo_store_err_t err = s_be->read(it, out, cap, &len);
     if (err != APP_PHOTO_STORE_OK) {
         return err;
     }
@@ -196,26 +206,26 @@ static app_photo_store_err_t read_item(const photo_item_t *it, app_photo_t *out)
            ? APP_PHOTO_STORE_OK : APP_PHOTO_STORE_ERR_IO;
 }
 
-app_photo_store_err_t app_photo_store_load(int index, app_photo_t *out)
+app_photo_store_err_t app_photo_store_load(int index, app_photo_t *out, size_t cap)
 {
-    if (!out) {
+    if (!out || cap < sizeof(app_photo_header_t)) {
         return APP_PHOTO_STORE_ERR_ARG;
     }
     photo_backend_lock();
     const photo_item_t *it = item_at(index);
-    const app_photo_store_err_t err = it ? read_item(it, out) : APP_PHOTO_STORE_ERR_NOT_FOUND;
+    const app_photo_store_err_t err = it ? read_item(it, out, cap) : APP_PHOTO_STORE_ERR_NOT_FOUND;
     photo_backend_unlock();
     return err;
 }
 
-app_photo_store_err_t app_photo_store_load_seq(uint32_t seq, app_photo_t *out)
+app_photo_store_err_t app_photo_store_load_seq(uint32_t seq, app_photo_t *out, size_t cap)
 {
-    if (!out) {
+    if (!out || cap < sizeof(app_photo_header_t)) {
         return APP_PHOTO_STORE_ERR_ARG;
     }
     photo_backend_lock();
     const photo_item_t *it = item_seq(seq);
-    const app_photo_store_err_t err = it ? read_item(it, out) : APP_PHOTO_STORE_ERR_NOT_FOUND;
+    const app_photo_store_err_t err = it ? read_item(it, out, cap) : APP_PHOTO_STORE_ERR_NOT_FOUND;
     photo_backend_unlock();
     return err;
 }

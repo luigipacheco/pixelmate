@@ -112,7 +112,7 @@ static bool parse_name(const char *name, char *letter, uint32_t *seq, char ext[4
     return true;
 }
 
-/* Read up to `cap` bytes of a file; ERR_IO when it is bigger than `cap`. */
+/* Read up to `cap` bytes of a file; ERR_NO_MEM when it is bigger than `cap`. */
 static app_photo_store_err_t read_file(const char *path, void *buf, size_t cap, size_t *len)
 {
     const int fd = open(path, O_RDONLY);
@@ -120,8 +120,8 @@ static app_photo_store_err_t read_file(const char *path, void *buf, size_t cap, 
         return errno == ENOENT ? APP_PHOTO_STORE_ERR_NOT_FOUND : APP_PHOTO_STORE_ERR_IO;
     }
     struct stat st;
-    app_photo_store_err_t err = fstat(fd, &st) == 0 && (size_t)st.st_size <= cap ? APP_PHOTO_STORE_OK
-                                : APP_PHOTO_STORE_ERR_IO;
+    app_photo_store_err_t err = fstat(fd, &st) != 0 ? APP_PHOTO_STORE_ERR_IO
+                                : ((size_t)st.st_size > cap ? APP_PHOTO_STORE_ERR_NO_MEM : APP_PHOTO_STORE_OK);
     size_t done = 0;
     while (err == APP_PHOTO_STORE_OK && done < (size_t)st.st_size) {
         const ssize_t got = read(fd, (uint8_t *)buf + done, (size_t)st.st_size - done);
@@ -273,11 +273,11 @@ static app_photo_store_err_t files_write(photo_item_t *item, const app_photo_t *
     return err;
 }
 
-static app_photo_store_err_t files_read(const photo_item_t *item, app_photo_t *out, size_t *len)
+static app_photo_store_err_t files_read(const photo_item_t *item, app_photo_t *out, size_t cap, size_t *len)
 {
     char path[PATH_LEN];
     item_path(path, 'P', item->seq, "PXP");
-    return read_file(path, out, sizeof(*out), len);
+    return read_file(path, out, cap, len);
 }
 
 static app_photo_store_err_t files_erase(const photo_item_t *item)
@@ -292,6 +292,7 @@ const photo_backend_t photo_backend_files = {
     .max_items = APP_PHOTO_STORE_MAX_ITEMS,
     .photo_slots = 0,
     .gif_slots = 0,
+    .big_records = true,
     .init = files_init,
     .scan = files_scan,
     .has_room = files_has_room,

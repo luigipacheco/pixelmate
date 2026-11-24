@@ -124,7 +124,10 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
   `app_booth_button_rect(0..2)`. SNAP: COUNTDOWN 3-2-1 (20 ticks each), FLASH
   (8 ticks) with an `APP_BOOTH_REQ_PHOTO` request, then REVIEW (75 ticks or a
   tap). GIF: the same countdown, then RECORD requests frames 0..7 every 4 ticks
-  (`APP_BOOTH_REQ_GIF_FRAME`; the runtime saves on frame 7). ROLL opens the
+  (`APP_BOOTH_REQ_GIF_FRAME`; the runtime saves on frame 7). The request
+  carries the selected lens; the runtime picks the lens the GIF records at
+  from what its store keeps (every lens on the ESP-Mosaico, B&W up to MID and
+  color LO on the NVS boards). ROLL opens the
   GALLERY: arrows browse (0 = newest), BACK returns, DELETE asks SURE? and then
   sends `APP_BOOTH_REQ_DELETE`; the position text is `PIC 3/40` (index is a
   `uint16_t`, enough for the store's 300-item cap). The model has no limits of

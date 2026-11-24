@@ -466,7 +466,7 @@ typedef enum {
 typedef struct {
     app_booth_request_kind_t kind;
     uint8_t filter;              /**< app_photo_filter_t to bake in. */
-    uint8_t res;                 /**< app_photo_res_t (GIFs are capped, see app_photo.h). */
+    uint8_t res;                 /**< app_photo_res_t (GIFs on small stores are capped, see app_photo.h). */
     bool color;                  /**< Color film for this capture (look permitting). */
     uint8_t frame;               /**< GIF frame 0..APP_PHOTO_GIF_FRAMES-1. */
     uint16_t index;              /**< Gallery item for DELETE. */

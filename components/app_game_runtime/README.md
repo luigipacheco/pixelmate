@@ -84,18 +84,24 @@ its event bits, advance the view, then save if due.
   Booth page and the booth's store items. Each new 128x128 feed frame is
   scaled to the selected lens and put through the selected look into
   `booth_media_t.live`, which the view draws to fill 256 px (8/4/2x for
-  LO/MID/HI, one rectangle per run of equal shades). A PHOTO request makes a
-  fresh frame at the lens and saves it with `app_photo_store`; GIF frames 0..7
-  are made at the lens capped to MID and saved on frame 7; DELETE removes a
-  gallery item. The
+  LO/MID/HI, one rectangle per run of equal shades). A PHOTO request packs
+  a frame at the lens and saves it with `app_photo_store`; GIF frames 0..7
+  are made at the lens `app_photo_gif_lens()` allows for the store (every
+  lens where `usage.big_records`, the ESP-Mosaico; B&W up to MID and color LO
+  on NVS) and saved on frame 7; DELETE removes a gallery item. A capture at
+  the viewfinder's lens, look and film reuses `live` (made from the newest
+  feed frame that same tick), so a HI GIF frame costs only the packing; a
+  capped GIF makes its frame fresh. The capture and the gallery item are two
+  records allocated once at start, sized by the store's `max_record` (64 KB
+  each on the ESP-Mosaico, 8 KB on NVS; PSRAM on the device), and touched
+  only on a capture, a save or a gallery load, never per tick. The
   result goes back with `app_game_booth_result()`, and the camera state and
   the roll with `app_game_set_booth()` every tick. The roll is asked of the
   store again only when its revision or the booth's `seq` changes: counts,
   limits (`max_*` 0 on the ESP-Mosaico), free KB, and `app_photo_store_fits()`
   for a photo and a GIF at the selected lens and film. The gallery's middle
   button shows `PICS 3/12` / `GIFS 1/2` with fixed slots and `40 PICS` /
-  `5 GIFS` without. Saves run on the game loop: a GIF (8 KB write) can stall
-  one frame. Captures store the pet's
+  `5 GIFS` without. Saves run on the game loop. Captures store the pet's
   color, so the gallery and web page keep the palette they were taken with.
 - Board buttons never reset the pet. Only the Engine's explicit reset control does.
 

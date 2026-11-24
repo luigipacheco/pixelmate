@@ -121,7 +121,10 @@ per board, see [boards/README.md](boards/README.md)):
 - **Photo booth (needs a camera module, 300 sparks):** plug an OV3640 or
   SC101IOT camera board into the **left** slot (any time; no reboot) and a
   Booth page appears after the Arcade. Tap SNAP for a 3-2-1 photo or GIF for
-  an 8-frame clip; ROLL browses and deletes them. A photo is a lens plus a
+  an 8-frame clip; ROLL browses and deletes them. On the ESP-Mosaico GIFs
+  record at the selected lens, up to HI RES, in B/W and COLOR film; on the
+  StackChan and StopWatch, whose NVS roll is small, B/W GIFs stop at MID RES
+  and color GIFs at LO RES. A photo is a lens plus a
   look: LO RES 32x32 is free, MID RES 64x64 (80) and HI RES 128x128 (180) are
   sold; COLOR FILM (200) adds real 16-color photos (B/W chip next to the lens);
   WEBCAM (250) adds an ON AIR chip that streams the camera over Wi-Fi to
@@ -131,7 +134,8 @@ per board, see [boards/README.md](boards/README.md)):
   ESP-Mosaico the roll lives on its own 4 MB `photos` partition and holds
   photos and GIFs until it is full or has 300 items (photos kept in NVS by an
   older firmware move there on the first boot); StackChan and StopWatch keep
-  up to 12 photos and 2 GIFs in NVS (HI RES photos fill it sooner). ROLL IS
+  up to 12 photos and 2 GIFs in NVS (HI RES photos fill it sooner; a HI
+  color GIF on the Mosaico takes 64 KB, about 58 fit). ROLL IS
   FULL appears only when the store has no room. The stats page links to a
   gallery (`/photos`) to save them as PNG/GIF. Without a camera the page and
   its store items are hidden; what you bought stays owned.

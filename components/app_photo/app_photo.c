@@ -42,23 +42,32 @@ const app_photo_rgb_t app_photo_color_palette[APP_PHOTO_COLORS] = {
     {88, 208, 232}, {128, 52, 160}, {244, 132, 180}, {200, 140, 100},
 };
 
-bool app_photo_header_valid(const app_photo_header_t *h)
+/* The rules of one record version: 2 (no color flag), 3 (color; GIFs at
+ * most MID B&W or LO color) or 4 (GIFs at every lens). Always 1 or 8 frames,
+ * lenses up to HI. */
+static bool version_rules(const app_photo_header_t *h, int version)
 {
-    if (!h || h->magic != APP_PHOTO_MAGIC || h->filter >= APP_FILTER_COUNT
-            || app_photo_lens(h) >= APP_PHOTO_RES_COUNT) {
-        return false;
-    }
-    /* v2 photos have no color flag; v3 may. */
-    if (h->version != APP_PHOTO_VERSION && !(h->version == 2 && !app_photo_is_color(h))) {
-        return false;
-    }
-    if (app_photo_is_color(h) && !app_photo_filter_has_color(h->filter)) {
+    const int lens = app_photo_lens(h);
+    const bool color = app_photo_is_color(h);
+    if (h->filter >= APP_FILTER_COUNT || lens >= APP_PHOTO_RES_COUNT
+            || (color && !app_photo_filter_has_color(h->filter)) || (version == 2 && color)) {
         return false;
     }
     if (h->frames == APP_PHOTO_GIF_FRAMES) {
-        return app_photo_lens(h) <= (app_photo_is_color(h) ? APP_PHOTO_GIF_MAX_RES_COLOR : APP_PHOTO_GIF_MAX_RES);
+        return version >= 4 || app_photo_gif_lens(lens, color, false) == lens;
     }
     return h->frames == 1;
+}
+
+bool app_photo_header_valid(const app_photo_header_t *h)
+{
+    return h && h->magic == APP_PHOTO_MAGIC && h->version >= 2 && h->version <= APP_PHOTO_VERSION
+           && version_rules(h, h->version);
+}
+
+uint8_t app_photo_header_version(const app_photo_header_t *h)
+{
+    return h && version_rules(h, 3) ? 3 : APP_PHOTO_VERSION;
 }
 
 int app_photo_header_palette(const app_photo_header_t *h, app_photo_rgb_t out[APP_PHOTO_COLORS])
