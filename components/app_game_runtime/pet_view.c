@@ -543,7 +543,7 @@ static void on_act(pet_view_t *v, const app_game_snapshot_t *s)
     const Color c = px_color(s->color_index), acc = px_accent(s->color_index);
     const app_eye_anchor_t a = current_anchor(v);
     if (s->act.step == 0 && s->act.text[0]) {
-        floater(v, s->act.text, 240, 150, acc);
+        floater(v, s->act.text, 240, s->clock ? 72 : 150, acc);   /* Clock mode: above the small eyes. */
     }
     if (step->hop) {
         pet_eyes_kick(&v->eyes, -(float)step->hop);

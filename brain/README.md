@@ -7,9 +7,10 @@ cable, no reflash. How the whole system works is in
 
 - `bitsy_brain.py`: the program (Python 3, nothing to install).
 - `acts/`: example acts to copy from: `wow.json`, `drowsy.json`, `lunch.json`.
+  WOW and DROWSY are also built into the firmware, on every board.
 
-**You need:** PixelMate firmware with learning (the `feat/learning` branch for
-now), and Bitsy awake on the same Wi-Fi as your computer. On USB power it stays
+**You need:** PixelMate firmware built from `main` (any board: ESP-Mosaico,
+StackChan or StopWatch), and Bitsy awake on the same Wi-Fi as your computer. On USB power it stays
 reachable even while it shows the clock. In pocket deep sleep it is not: tap it
 awake first.
 
@@ -20,10 +21,10 @@ panel of the pull-down menu, or try `pixelmate.local`.
 
 ```
 python brain/bitsy_brain.py --host 192.168.1.142 show
-python brain/bitsy_brain.py --host 192.168.1.142 add brain/acts/wow.json
+python brain/bitsy_brain.py --host 192.168.1.142 add brain/acts/lunch.json
 ```
 
-Now pat Bitsy three times. To skip `--host` every time, set it once:
+Bitsy now asks for lunch once between 12:30 and 13:30. To skip `--host` every time, set it once:
 `set BITSY_HOST=192.168.1.142` (cmd), `$env:BITSY_HOST = "192.168.1.142"`
 (PowerShell) or `export BITSY_HOST=192.168.1.142` (macOS, Linux).
 
@@ -31,7 +32,7 @@ Now pat Bitsy three times. To skip `--host` every time, set it once:
 
 1. **Copy an example**, for instance `acts/drowsy.json` to `acts/dance.json`.
 2. **Give it its own `id` and `name`.** The id is any number from 1 to 65535
-   that no other act uses (`show` lists the ones taken; 1 to 5 are built in).
+   that no other act uses (`show` lists the ones taken; 1 to 7 are built in).
    The name is up to 11 characters: A-Z, 0-9, `_` and `-`.
 3. **Pick when it plays** with `on` (see *Triggers*).
 4. **Write the steps**, up to 8. Each one is a pose that holds for `ticks`
@@ -120,7 +121,7 @@ python brain/bitsy_brain.py add FILE           # teach one act (or a file of sev
 python brain/bitsy_brain.py remove NAME        # forget one, by name or id
 python brain/bitsy_brain.py export pack.json   # save all of them to a file
 python brain/bitsy_brain.py push pack.json     # replace all of them with a file
-python brain/bitsy_brain.py defaults           # back to the five built-in acts
+python brain/bitsy_brain.py defaults           # back to the seven built-in acts
 ```
 
 Acts are saved on the board and survive restarts.

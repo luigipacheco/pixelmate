@@ -7,9 +7,15 @@ react to how much you walk, what you feed it and how you play with it.
 (Formerly "Pixel Pal". The project folder, CMake target and save storage keep
 the `pixel_pal` name so existing pets carry over.)
 
-There is also a build for the **M5Stack StackChan** (CoreS3), where Bitsy is a
-desk pet that earns sparks from pats instead of steps: see
-[boards/stackchan/README.md](boards/stackchan/README.md).
+The same game also builds for two M5Stack devices (one codebase, one firmware
+per board, see [boards/README.md](boards/README.md)):
+
+- **M5Stack StackChan** (CoreS3): Bitsy is a desk pet with a neck that earns
+  sparks from pats instead of steps
+  ([boards/stackchan/README.md](boards/stackchan/README.md)).
+- **M5Stack StopWatch** (round AMOLED watch): a walking pet like the Mosaico,
+  with a round layout and pocket mode on its yellow button
+  ([boards/stopwatch/README.md](boards/stopwatch/README.md)).
 
 - **Steps → sparks:** the BMI270's on-chip step counter keeps counting while
   the pet is idle; every 20 steps earns 1 spark. Daily goal: 8000 steps by

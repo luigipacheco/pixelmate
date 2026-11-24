@@ -15,8 +15,8 @@ It builds the same game sources as the ESP-Mosaico project in the repo root
 
 ## What is different from the Mosaico build
 
-Bitsy is a **desk pet** here (`app_game_config_t.desk`, set for every board
-that is not the ESP-Mosaico):
+Bitsy is a **desk pet** here (`pixelmate_feature(DESK_PET)` in `board.cmake`,
+which sets `app_game_config_t.desk`):
 
 - No step counting. Steps reported by any source are ignored.
 - Daily health is paused: no hearts lost, no fainting.
@@ -34,10 +34,10 @@ that is not the ESP-Mosaico):
   touched or a menu or game is open. Asleep, it goes home and the servos let go.
 
 Stack-chan drivers live next to the Mosaico ones in the shared components and
-are picked by chip (`esp32s3`); boards without the hardware get do-nothing
-stand-ins (`*_none.c`):
+are picked by this board's parts list (`board.cmake`, see `../README.md`);
+boards without the hardware get do-nothing stand-ins (`*_none.c`):
 
-| Component | Stack-chan (esp32s3) |
+| Component | Stack-chan |
 |---|---|
 | `app_camera_hw` | Built-in GC0308 through the Board Manager camera device: photo booth. No Wi-Fi webcam yet (no hardware JPEG). |
 | `app_power_hw` | INA226 on the body (I2C 0x41): voltage, current, estimated percent, supply connected. |
@@ -47,8 +47,9 @@ stand-ins (`*_none.c`):
 
 Mosaico-only features that are switched off here:
 
-- **Pocket mode** (light sleep on battery, woken by the Mosaico's AI button on
-  GPIO7). On the Stack-chan GPIO7 is the neck-servo line.
+- **Pocket mode** (deep sleep on battery with steps still counted). A desk
+  robot is not carried, and on the Stack-chan GPIO7, the Mosaico's AI button,
+  is the neck-servo line.
 - **Vibe Mode Wi-Fi**: Wi-Fi comes only from the app's own SET UP WIFI hotspot.
 
 ### Neck safety and calibration
@@ -60,7 +61,7 @@ The tilt axis is easy to destroy by driving it into its stops, so the driver:
 - clamps every write to that band and to the aim limits (pan 40, tilt 16 degrees);
 - releases a servo that stops following its goal for 2 s.
 
-Home and the tilt band are per robot. The defaults in `app_neck_hw_cores3.c`
+Home and the tilt band are per robot. The defaults in `app_neck_hw_scs0009.c`
 were measured on Luis's unit (home 512/743 ticks, tilt band 592..894); another
 robot needs its own values in NVS namespace `neck` (`home_pan`, `home_tilt`,
 `tilt_lo`, `tilt_hi`, all u16). There is no calibration command yet.

@@ -8,7 +8,7 @@ needs that the others don't lives in its folder here; the game itself
 | --- | --- | --- | --- |
 | `mosaico` | ESP32-S31 | the repo root (links ESP-Iris, Vibe Mode, Recovery) | walking pet |
 | `stackchan` | ESP32-S3 (M5Stack CoreS3) | `boards/stackchan` | desk pet with a neck |
-| `stopwatch` | ESP32-S3R8 (M5Stack StopWatch) | `boards/stopwatch` | first milestone: picture and touch (see its README) |
+| `stopwatch` | ESP32-S3R8 (M5Stack StopWatch) | `boards/stopwatch` | walking pet on a round screen |
 
 ## How a board says what it has
 
@@ -29,7 +29,8 @@ the board's choice: drivers are named after the part (`app_power_hw_ina226.c`),
 so two boards with the same chip share the driver. Nothing picks code by chip
 type (`IDF_TARGET`), because different boards share a chip.
 
-The game runtime gets `APP_DESK_PET` / `APP_POCKET_MODE` for the features and
+The game runtime gets `APP_DESK_PET` / `APP_POCKET_MODE` / `APP_ROUND_SCREEN`
+for the features and
 `PIXELMATE_HAS_<KIND>` for every part the board has, so the game asks "is
 there a neck?", never "is this a StackChan?".
 

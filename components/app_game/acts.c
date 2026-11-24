@@ -68,6 +68,26 @@ static const app_act_t s_defaults[] = {
             STEP(APP_MOOD_HAPPY, APP_ACT_EYES_ROUND, APP_ACT_COLOR_PET, 0, 0, 4, APP_ACT_FX_NONE, 3, 12),
         },
     },
+    {   /* Every third pat: a jump and rainbow star eyes. */
+        .id = 6, .name = "WOW", .text = "WOW!", .trigger = APP_ACT_ON_PAT, .param = 3, .chance = 100,
+        .step_count = 4,
+        .steps = {
+            STEP(APP_MOOD_SURPRISED, APP_ACT_EYES_ROUND, APP_ACT_COLOR_PET, 0, -14, 10, APP_ACT_FX_NONE, 4, 8),
+            STEP(APP_MOOD_HAPPY, APP_ACT_EYES_STARS, APP_ACT_COLOR_RAINBOW, -16, 0, 0, APP_ACT_FX_SPARKS, 6, 14),
+            STEP(APP_MOOD_HAPPY, APP_ACT_EYES_STARS, APP_ACT_COLOR_RAINBOW, 16, 0, 6, APP_ACT_FX_BOLTS, 0, 14),
+            STEP(APP_MOOD_HAPPY, APP_ACT_EYES_STARS, APP_ACT_COLOR_RAINBOW, 0, 0, 4, APP_ACT_FX_SPARKS, 5, 20),
+        },
+    },
+    {   /* Left alone a little longer: nods off, starts awake, droops again. */
+        .id = 7, .name = "DROWSY", .text = "YAWN", .trigger = APP_ACT_ON_IDLE, .param = 14, .cooldown_min = 3,
+        .chance = 100, .step_count = 4,
+        .steps = {
+            STEP(APP_MOOD_SLEEPY, APP_ACT_EYES_ROUND, APP_ACT_COLOR_PET, 0, 8, 0, APP_ACT_FX_ZZZ, 0, 26),
+            STEP(APP_MOOD_SLEEPY, APP_ACT_EYES_ROUND, APP_ACT_COLOR_PET, -8, 14, 0, APP_ACT_FX_NONE, 0, 22),
+            STEP(APP_MOOD_SURPRISED, APP_ACT_EYES_ROUND, APP_ACT_COLOR_PET, 0, -8, 4, APP_ACT_FX_NONE, 3, 8),
+            STEP(APP_MOOD_SLEEPY, APP_ACT_EYES_ROUND, APP_ACT_COLOR_PET, 0, 14, 0, APP_ACT_FX_ZZZ, 0, 34),
+        },
+    },
 };
 
 int app_acts_defaults(app_act_t *out, int max)

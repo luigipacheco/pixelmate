@@ -51,6 +51,10 @@ sound and how long it lasts. The pet has up to 12 acts. The built-in pack:
 | 3 | BORED | After 12 s left alone on the home screen (60 % of the time) |
 | 4 | PURR | Every fifth pat |
 | 5 | PEEK | About every 3 minutes |
+| 6 | WOW | Every third pat |
+| 7 | DROWSY | After 14 s left alone on the home screen, at most every 3 minutes |
+
+Every board (ESP-Mosaico, StackChan, StopWatch) starts with this same pack.
 
 Acts play on the home screen only, one at a time, and a touch cuts one short.
 The hard-coded behaviours from v1 (the dance, star eyes, easter eggs) are
