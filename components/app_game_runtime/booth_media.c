@@ -7,10 +7,14 @@
 #include "../app_photo_store/include/app_photo_store.h"
 
 #if defined(RAYLIB_LITE_GAME_NATIVE)
+#include <stdatomic.h>
 #include "app_cam_stream.h"
 #include "app_camera_hw.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 static const char *TAG = "booth";
 #endif
 
@@ -191,14 +195,85 @@ static app_booth_result_t result_of(app_photo_store_err_t err)
     }
 }
 
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+/* Device: a small task writes captures, so a HI GIF (32 or 64 KB of flash
+ * writes) never stalls the game loop. While it runs the game loop leaves the
+ * store alone (the writer holds the store's lock) and only reads `capture`
+ * to show it. */
+enum { SAVER_STACK = 6144, SAVER_PRIORITY = 2 };
+static TaskHandle_t s_saver;
+static app_photo_t *_Atomic s_save_record;
+static _Atomic int s_save_err;
+static _Atomic bool s_save_done;
+
+static void saver(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        app_photo_t *record = atomic_load(&s_save_record);
+        const int64_t start = esp_timer_get_time();
+        const app_photo_store_err_t err = app_photo_store_save(record);
+        ESP_LOGI(TAG, "saved %s seq %lu, %u B in %lu ms: %d", record->header.frames > 1 ? "gif" : "photo",
+                 (unsigned long)record->header.seq, (unsigned)app_photo_record_size(&record->header),
+                 (unsigned long)((esp_timer_get_time() - start) / 1000), (int)err);
+        atomic_store(&s_save_err, (int)err);
+        atomic_store(&s_save_done, true);
+    }
+}
+
+/* Report a finished background save. */
+static void poll_save(booth_media_t *m, app_game_handle_t game)
+{
+    if (m->saving && atomic_load(&s_save_done)) {
+        m->saving = false;
+        app_game_booth_result(game, result_of((app_photo_store_err_t)atomic_load(&s_save_err)));
+    }
+}
+
+/* Before anything that writes `capture` or uses the store; waits only when a
+ * request comes during a save (it takes about a second at most). */
+static void wait_save(booth_media_t *m, app_game_handle_t game)
+{
+    while (m->saving) {
+        poll_save(m, game);
+        if (m->saving) {
+            vTaskDelay(1);
+        }
+    }
+}
+#else
+static void poll_save(booth_media_t *m, app_game_handle_t game)
+{
+    (void)m;
+    (void)game;
+}
+
+static void wait_save(booth_media_t *m, app_game_handle_t game)
+{
+    (void)m;
+    (void)game;
+}
+#endif
+
+/* Save the capture; the result reaches the model now (Host) or when the save
+ * task is done (device). */
 static void save_capture(booth_media_t *m, app_game_handle_t game)
 {
-    const app_photo_store_err_t err = app_photo_store_save(m->capture);
 #if defined(RAYLIB_LITE_GAME_NATIVE)
-    ESP_LOGI(TAG, "saved %s seq %lu: %d", m->capture->header.frames > 1 ? "gif" : "photo",
-             (unsigned long)m->capture->header.seq, (int)err);
+    if (!s_saver && xTaskCreate(saver, "photo_save", SAVER_STACK, NULL, SAVER_PRIORITY, &s_saver) != pdPASS) {
+        s_saver = NULL;
+        ESP_LOGW(TAG, "no save task; saving on the game loop");
+    }
+    if (s_saver) {
+        atomic_store(&s_save_done, false);
+        atomic_store(&s_save_record, m->capture);
+        m->saving = true;
+        xTaskNotifyGive(s_saver);
+        return;
+    }
 #endif
-    app_game_booth_result(game, result_of(err));
+    app_game_booth_result(game, result_of(app_photo_store_save(m->capture)));
 }
 
 /* The header a capture gets: look, frame count, lens and film. GIFs keep to
@@ -230,6 +305,7 @@ static void serve_request(booth_media_t *m, app_game_handle_t game, app_photo_rg
     if (!app_game_take_booth_request(game, &req)) {
         return;
     }
+    wait_save(m, game);   /* Normally long done: a new capture starts with a countdown. */
     const bool have_frame = m->luma_seq != 0;
     switch (req.kind) {
     case APP_BOOTH_REQ_PHOTO:
@@ -313,8 +389,13 @@ void booth_media_update(booth_media_t *m, app_game_handle_t game, app_photo_rgb_
     app_game_snapshot_t s = app_game_read(game);
     run_feed(m, &s);
     app_game_set_camera(game, m->present);
+    poll_save(m, game);
     serve_request(m, game, base);
-    refresh_roll(m, &s);
+    if (!m->saving) {   /* The save task holds the store's lock meanwhile. */
+        refresh_roll(m, &s);
+    }
     app_game_set_booth(game, m->camera == BOOTH_CAMERA_LIVE && m->live_seq != 0, &m->roll);
-    cache_gallery(m, &s);
+    if (!m->saving) {
+        cache_gallery(m, &s);
+    }
 }

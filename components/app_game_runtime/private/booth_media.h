@@ -35,6 +35,7 @@ typedef struct {
     app_photo_t *shown;                 /* Gallery item on screen. */
     size_t record_cap;                  /* Bytes of `capture` and `shown`: the store's largest record. */
     bool big;                           /* The store keeps version 4 records (GIFs at every lens). */
+    bool saving;                        /* Device: the save task is writing `capture`. */
     int shown_index;                    /* Gallery index last loaded, -1 = reload. */
     bool shown_valid;                   /* `shown` holds that item. */
     uint32_t shown_revision;            /* Store revision when `shown` was loaded. */

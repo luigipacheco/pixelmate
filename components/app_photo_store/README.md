@@ -95,9 +95,11 @@ if (app_photo_store_init() == APP_PHOTO_STORE_OK) {
 
 ## Threading
 
-One gallery per device. Every call takes a mutex, so the game loop (captures,
-deletes) and the HTTP server (listing, encoding) can use it at once; reads and
-writes happen under the lock (a GIF write blocks readers for its flash time,
-about 0.1 s). Call `app_photo_store_init()` from the game loop before the web
+One gallery per device. Every call takes a mutex, so the game loop (deletes,
+gallery loads), the booth's save task (captures) and the HTTP server
+(listing, encoding) can use it at once; reads and writes happen under the
+lock (a write blocks readers for its flash time: about 0.1 s for an 8 KB
+GIF, longer for a 32-64 KB HI GIF, so the booth does not call the store
+while its save task runs). Call `app_photo_store_init()` from the game loop before the web
 server starts using the store (on the first Mosaico boot it formats the
 partition and moves the NVS photos, a second or two). Not for ISRs.

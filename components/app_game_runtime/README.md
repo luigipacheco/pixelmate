@@ -101,7 +101,14 @@ its event bits, advance the view, then save if due.
   limits (`max_*` 0 on the ESP-Mosaico), free KB, and `app_photo_store_fits()`
   for a photo and a GIF at the selected lens and film. The gallery's middle
   button shows `PICS 3/12` / `GIFS 1/2` with fixed slots and `40 PICS` /
-  `5 GIFS` without. Saves run on the game loop. Captures store the pet's
+  `5 GIFS` without. On the device a small task (`photo_save`, created on
+  the first capture) writes each capture, so a HI GIF (32 or 64 KB of flash
+  writes) does not stall the game; the review shows SAVING... until its
+  result comes back. While it runs the game loop does not call the store
+  (the writer holds its lock): the roll and the gallery item are refreshed
+  after it, and a new request waits for it (it only can if the user is
+  quicker than the save). The Host saves on the game loop. Captures store
+  the pet's
   color, so the gallery and web page keep the palette they were taken with.
 - Board buttons never reset the pet. Only the Engine's explicit reset control does.
 
