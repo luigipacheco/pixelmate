@@ -93,11 +93,13 @@ network can change the Wi-Fi.
     `40 PHOTOS  5 GIFS  3200 KB FREE` on the ESP-Mosaico, where `max_*` are 0
     (only space and the 300-item cap limit the roll; list buffers are sized
     by that cap);
-    `GET /photo?id=<seq>` returns a photo as PNG or a GIF as an animated GIF,
-    encoded on the fly from `app_photo_store`, upscaled by whole pixels to about
-    `&px=` pixels (default 256, at most 512). Per-request
-    buffers (about 170 KB) come from PSRAM; a GIF too big at the requested
-    scale is sent at 1x. The stats page links to it.
+    `GET /photo?id=<seq>` returns a photo as PNG or a GIF as an animated GIF
+    (any lens, HI GIFs included), encoded on the fly from `app_photo_store`
+    and sent in 4 KB chunks as it is encoded (no whole-file buffer), upscaled
+    by whole pixels to about `&px=` pixels (default 256, at most 512).
+    Per-request buffers come from PSRAM: the record (the store's
+    `max_record`: 64 KB on the ESP-Mosaico, 8 KB on NVS boards), 30 KB of GIF
+    work memory and the 4 KB chunk. The stats page links to it.
 
 ## Threading
 

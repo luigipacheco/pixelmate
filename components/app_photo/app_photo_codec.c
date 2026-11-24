@@ -1,22 +1,57 @@
 // SPDX-License-Identifier: Apache-2.0
 /* PNG (indexed, 2 bpp, stored deflate) and GIF89a (LZW, looping) encoders for
- * photo records. Output goes to a caller buffer; nothing is allocated. */
+ * photo records. Output goes to a caller buffer, whole or streamed through a
+ * sink; nothing is allocated. */
 #include <string.h>
 #include "include/app_photo.h"
 
 typedef struct {
     uint8_t *p;
-    size_t n, cap;
-    bool overflow;
+    size_t n, cap;              /* Bytes waiting in p; its size. */
+    size_t total;               /* Bytes produced so far. */
+    bool overflow;              /* No room left (no sink), or the sink stopped. */
+    app_photo_sink_t sink;      /* NULL: p must hold the whole file. */
+    void *ctx;
+    uint32_t crc;               /* Running CRC of the PNG chunk being written. */
+    bool crc_on;
 } writer_t;
+
+static uint32_t crc_byte(uint32_t crc, uint8_t b)
+{
+    crc ^= b;
+    for (int k = 0; k < 8; ++k) {
+        crc = (crc >> 1) ^ (0xEDB88320U & (0U - (crc & 1U)));
+    }
+    return crc;
+}
 
 static void put(writer_t *w, uint8_t b)
 {
-    if (w->n < w->cap) {
-        w->p[w->n++] = b;
-    } else {
-        w->overflow = true;
+    if (w->overflow) {
+        return;
     }
+    if (w->n == w->cap) {
+        if (!w->sink || !w->sink(w->ctx, w->p, w->n)) {
+            w->overflow = true;
+            return;
+        }
+        w->n = 0;
+    }
+    w->p[w->n++] = b;
+    ++w->total;
+    if (w->crc_on) {
+        w->crc = crc_byte(w->crc, b);
+    }
+}
+
+/* Hand the rest to the sink; the byte count, or 0 when anything failed. */
+static size_t finish(writer_t *w)
+{
+    if (!w->overflow && w->sink && w->n) {
+        w->overflow = !w->sink(w->ctx, w->p, w->n);
+        w->n = 0;
+    }
+    return w->overflow ? 0 : w->total;
 }
 
 static void put_bytes(writer_t *w, const void *data, size_t len)
@@ -55,18 +90,6 @@ static bool scale_ok(const app_photo_t *photo, int scale)
 
 enum { DEFLATE_STORED_MAX = 65535 };
 
-static uint32_t crc32_update(uint32_t crc, const uint8_t *data, size_t len)
-{
-    crc = ~crc;
-    for (size_t i = 0; i < len; ++i) {
-        crc ^= data[i];
-        for (int k = 0; k < 8; ++k) {
-            crc = (crc >> 1) ^ (0xEDB88320U & (0U - (crc & 1U)));
-        }
-    }
-    return ~crc;
-}
-
 /* Filter byte + packed row, per row: 4 pixels per byte (B&W) or 2 (color). */
 static size_t png_raw_size(int res, int scale, bool color)
 {
@@ -85,21 +108,19 @@ size_t app_photo_png_bound(int res, int scale)
     return 8 + 25 + (12 + 3 * APP_PHOTO_COLORS) + 12 + 2 + raw + blocks * 5 + 4 + 12;
 }
 
-/* Begin a chunk; returns the offset of its type field for the CRC. */
-static size_t chunk_begin(writer_t *w, const char type[4], uint32_t len)
+/* Begin a chunk: the CRC runs over its type and data. */
+static void chunk_begin(writer_t *w, const char type[4], uint32_t len)
 {
     put_be32(w, len);
-    const size_t at = w->n;
+    w->crc = 0xFFFFFFFFU;
+    w->crc_on = true;
     put_bytes(w, type, 4);
-    return at;
 }
 
-static void chunk_end(writer_t *w, size_t type_at)
+static void chunk_end(writer_t *w)
 {
-    if (w->overflow) {
-        return;
-    }
-    put_be32(w, crc32_update(0, w->p + type_at, w->n - type_at));
+    w->crc_on = false;
+    put_be32(w, ~w->crc);
 }
 
 static uint8_t png_row_byte(const app_photo_t *photo, int scale, int y, int byte_index)
@@ -116,18 +137,17 @@ static uint8_t png_row_byte(const app_photo_t *photo, int scale, int y, int byte
     return b;
 }
 
-size_t app_photo_encode_png(const app_photo_t *photo, int scale, uint8_t *out, size_t cap)
+static size_t png(const app_photo_t *photo, int scale, writer_t w)
 {
-    if (!scale_ok(photo, scale) || !out) {
+    if (!scale_ok(photo, scale) || !w.p || !w.cap) {
         return 0;
     }
-    writer_t w = {out, 0, cap, false};
     static const uint8_t signature[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
     put_bytes(&w, signature, sizeof(signature));
 
     const bool color = app_photo_is_color(&photo->header);
     const uint32_t width = (uint32_t)app_photo_side(app_photo_lens(&photo->header)) * scale, height = width;
-    size_t at = chunk_begin(&w, "IHDR", 13);
+    chunk_begin(&w, "IHDR", 13);
     put_be32(&w, width);
     put_be32(&w, height);
     put(&w, color ? 4 : 2);   /* bit depth */
@@ -135,22 +155,22 @@ size_t app_photo_encode_png(const app_photo_t *photo, int scale, uint8_t *out, s
     put(&w, 0);
     put(&w, 0);
     put(&w, 0);
-    chunk_end(&w, at);
+    chunk_end(&w);
 
     app_photo_rgb_t palette[APP_PHOTO_COLORS];
     const int colors = app_photo_header_palette(&photo->header, palette);
-    at = chunk_begin(&w, "PLTE", (uint32_t)(3 * colors));
+    chunk_begin(&w, "PLTE", (uint32_t)(3 * colors));
     for (int i = 0; i < colors; ++i) {
         put(&w, palette[i].r);
         put(&w, palette[i].g);
         put(&w, palette[i].b);
     }
-    chunk_end(&w, at);
+    chunk_end(&w);
 
     /* zlib stream of stored (uncompressed) deflate blocks: the image is tiny. */
     const size_t raw = png_raw_size(app_photo_lens(&photo->header), scale, color);
     const size_t blocks = (raw + DEFLATE_STORED_MAX - 1) / DEFLATE_STORED_MAX;
-    at = chunk_begin(&w, "IDAT", (uint32_t)(2 + raw + blocks * 5 + 4));
+    chunk_begin(&w, "IDAT", (uint32_t)(2 + raw + blocks * 5 + 4));
     put(&w, 0x78);
     put(&w, 0x01);
     const size_t row_bytes = width / (color ? 2U : 4U);
@@ -174,10 +194,21 @@ size_t app_photo_encode_png(const app_photo_t *photo, int scale, uint8_t *out, s
         }
     }
     put_be32(&w, (b << 16) | a);
-    chunk_end(&w, at);
-    at = chunk_begin(&w, "IEND", 0);
-    chunk_end(&w, at);
-    return w.overflow ? 0 : w.n;
+    chunk_end(&w);
+    chunk_begin(&w, "IEND", 0);
+    chunk_end(&w);
+    return finish(&w);
+}
+
+size_t app_photo_encode_png(const app_photo_t *photo, int scale, uint8_t *out, size_t cap)
+{
+    return png(photo, scale, (writer_t) {.p = out, .cap = cap});
+}
+
+size_t app_photo_stream_png(const app_photo_t *photo, int scale, uint8_t *buf, size_t buf_len,
+                            app_photo_sink_t sink, void *ctx)
+{
+    return sink ? png(photo, scale, (writer_t) {.p = buf, .cap = buf_len, .sink = sink, .ctx = ctx}) : 0;
 }
 
 /* ---- GIF -------------------------------------------------------------- */
@@ -302,13 +333,11 @@ size_t app_photo_gif_bound(int res, int frames, int scale)
     return 13 + 3 * APP_PHOTO_COLORS + 19 + (size_t)frames * frame + 1;
 }
 
-size_t app_photo_encode_gif(const app_photo_t *photo, int scale, int frame_ms, void *work,
-                            uint8_t *out, size_t cap)
+static size_t gif(const app_photo_t *photo, int scale, int frame_ms, void *work, writer_t w)
 {
-    if (!scale_ok(photo, scale) || !work || !out) {
+    if (!scale_ok(photo, scale) || !work || !w.p || !w.cap) {
         return 0;
     }
-    writer_t w = {out, 0, cap, false};
     const int side = app_photo_side(app_photo_lens(&photo->header));
     const bool color = app_photo_is_color(&photo->header);
     const uint16_t width = (uint16_t)(side * scale), height = width;
@@ -353,5 +382,18 @@ size_t app_photo_encode_gif(const app_photo_t *photo, int scale, int frame_ms, v
         lzw_frame(&z, app_photo_frame_const(photo, f), side, color, scale);
     }
     put(&w, 0x3B);
-    return w.overflow ? 0 : w.n;
+    return finish(&w);
+}
+
+size_t app_photo_encode_gif(const app_photo_t *photo, int scale, int frame_ms, void *work,
+                            uint8_t *out, size_t cap)
+{
+    return gif(photo, scale, frame_ms, work, (writer_t) {.p = out, .cap = cap});
+}
+
+size_t app_photo_stream_gif(const app_photo_t *photo, int scale, int frame_ms, void *work,
+                            uint8_t *buf, size_t buf_len, app_photo_sink_t sink, void *ctx)
+{
+    return sink ? gif(photo, scale, frame_ms, work,
+                      (writer_t) {.p = buf, .cap = buf_len, .sink = sink, .ctx = ctx}) : 0;
 }

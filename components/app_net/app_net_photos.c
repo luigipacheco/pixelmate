@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 /* Photo booth gallery on the web: GET /photos (page), GET /api/photos (JSON
  * list, newest first) and GET /photo?id=<seq>[&px=<side>] (a photo as PNG, a
- * GIF as GIF, encoded on the fly, upscaled by whole pixels to about px).
- * Handlers run on the httpd task and only read the thread-safe
- * app_photo_store; buffers are per request, in PSRAM. */
+ * GIF as GIF, encoded on the fly, upscaled by whole pixels to about px, sent
+ * in chunks as it is encoded). Handlers run on the httpd task and only read
+ * the thread-safe app_photo_store; buffers are per request, in PSRAM: the
+ * record (up to 64 KB), 30 KB of GIF work memory and a 4 KB send buffer. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,7 +23,7 @@ enum {
     JSON_ITEM_MAX = 96,             /* One list item; the longest is about 80. */
     DEFAULT_PX = 256,               /* A sensible size to save. */
     GIF_FRAME_MS = 133,             /* Recorded at 7.5 frames per second. */
-    OUT_CAP = 128 * 1024,           /* Real GIFs at 4x are ~20 KB; retry at 1x if not. */
+    CHUNK = 4096,                   /* Encoder output is sent in pieces this big. */
 };
 
 static const char PAGE[] =
@@ -119,14 +120,9 @@ static long query_long(httpd_req_t *req, const char *key, long fallback)
     return end != value && !*end ? v : fallback;
 }
 
-/* Encode at the requested scale; a GIF that does not fit falls back to 1x. */
-static size_t encode(const app_photo_t *photo, int scale, void *work, uint8_t *out)
+static bool send_chunk(void *ctx, const uint8_t *data, size_t len)
 {
-    if (photo->header.frames == 1) {
-        return app_photo_encode_png(photo, scale, out, OUT_CAP);
-    }
-    const size_t size = app_photo_encode_gif(photo, scale, GIF_FRAME_MS, work, out, OUT_CAP);
-    return size || scale == 1 ? size : app_photo_encode_gif(photo, 1, GIF_FRAME_MS, work, out, OUT_CAP);
+    return httpd_resp_send_chunk(ctx, (const char *)data, (ssize_t)len) == ESP_OK;
 }
 
 static esp_err_t get_photo(httpd_req_t *req)
@@ -141,30 +137,33 @@ static esp_err_t get_photo(httpd_req_t *req)
     app_photo_store_usage(&use);
     const size_t cap = use.max_record ? use.max_record : APP_PHOTO_SMALL_RECORD_MAX;
     app_photo_t *photo = psram(cap);
-    uint8_t *out = psram(OUT_CAP);
+    uint8_t *buf = psram(CHUNK);
     void *work = psram(APP_PHOTO_GIF_WORK_BYTES);
     esp_err_t err;
-    if (!photo || !out || !work) {
+    if (!photo || !buf || !work) {
         err = httpd_resp_send_500(req);
     } else if (app_photo_store_load_seq((uint32_t)id, photo, cap) != APP_PHOTO_STORE_OK) {
         err = httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "no such photo");
     } else {
+        /* Whole pixels, at most APP_PHOTO_MAX_OUT: HI up to x4. */
         const long side = app_photo_side(app_photo_lens(&photo->header));
         long scale = px / side;
         scale = scale < 1 ? 1 : (scale * side > APP_PHOTO_MAX_OUT ? APP_PHOTO_MAX_OUT / side : scale);
-        const size_t size = encode(photo, (int)scale, work, out);
+        const bool gif = photo->header.frames > 1;
+        httpd_resp_set_type(req, gif ? "image/gif" : "image/png");
+        /* Ids restart when the whole roll is deleted and the pet reboots. */
+        httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+        const size_t size = gif ? app_photo_stream_gif(photo, (int)scale, GIF_FRAME_MS, work, buf, CHUNK, send_chunk, req)
+                                : app_photo_stream_png(photo, (int)scale, buf, CHUNK, send_chunk, req);
         if (!size) {
-            ESP_LOGW(TAG, "encode %ld failed", id);
-            err = httpd_resp_send_500(req);
+            ESP_LOGW(TAG, "send %ld failed", id);
+            err = ESP_FAIL;   /* Part of it may be out already: drop the connection. */
         } else {
-            httpd_resp_set_type(req, photo->header.frames > 1 ? "image/gif" : "image/png");
-            /* Ids restart when the whole roll is deleted and the pet reboots. */
-            httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-            err = httpd_resp_send(req, (const char *)out, (ssize_t)size);
+            err = httpd_resp_send_chunk(req, NULL, 0);
         }
     }
     free(work);
-    free(out);
+    free(buf);
     free(photo);
     return err;
 }

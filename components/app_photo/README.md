@@ -8,7 +8,7 @@ store, the camera component and the web server.
 | File | Responsibility |
 | --- | --- |
 | `app_photo.c` | Looks (luminance -> 4 shades), downscaling, palettes, 2 bpp packing |
-| `app_photo_codec.c` | Indexed PNG (stored deflate) and looping GIF89a (LZW) |
+| `app_photo_codec.c` | Indexed PNG (stored deflate) and looping GIF89a (LZW), whole or streamed |
 
 ```c
 uint8_t small[64 * 64], shades[64 * 64];
@@ -110,6 +110,12 @@ GIFs at LO, as before (`APP_PHOTO_GIF_MAX_RES`, `APP_PHOTO_GIF_MAX_RES_COLOR`).
   memory for the LZW hash table.
 - Both write only to the caller's buffer and return 0 if it is too small;
   `*_bound()` gives a safe size. Real GIFs are far smaller than the bound.
+- `app_photo_stream_png()` / `app_photo_stream_gif()` make the same bytes
+  through a small buffer (e.g. 4 KB) handed to a sink each time it fills, so
+  no whole-file buffer is needed: a HI color photo at 4x is a 129 KB PNG, and
+  a HI GIF at 4x is 70-90 KB (more for a noisy scene). The PNG chunk CRC is
+  kept as the bytes go out. A sink returning false stops the encoder (0 is
+  returned).
 
 ## Threading
 

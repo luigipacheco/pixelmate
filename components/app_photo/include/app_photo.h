@@ -204,6 +204,16 @@ enum { APP_PHOTO_GIF_WORK_BYTES = 5003 * 6 };
 size_t app_photo_encode_gif(const app_photo_t *photo, int scale, int frame_ms, void *work,
                             uint8_t *out, size_t cap);
 
+/** Streaming: the same files without a whole-file buffer. `buf` (any size,
+ * e.g. 4 KB) is filled and handed to `sink` each time it is full, and once
+ * more at the end. A sink returning false stops the encoder. Return the total
+ * byte count, or 0 on bad arguments or a stopped sink. */
+typedef bool (*app_photo_sink_t)(void *ctx, const uint8_t *data, size_t len);
+size_t app_photo_stream_png(const app_photo_t *photo, int scale, uint8_t *buf, size_t buf_len,
+                            app_photo_sink_t sink, void *ctx);
+size_t app_photo_stream_gif(const app_photo_t *photo, int scale, int frame_ms, void *work,
+                            uint8_t *buf, size_t buf_len, app_photo_sink_t sink, void *ctx);
+
 #ifdef __cplusplus
 }
 #endif
