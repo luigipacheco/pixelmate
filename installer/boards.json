@@ -1,0 +1,66 @@
+{
+  "boards": [
+    {
+      "id": "mosaico",
+      "name": "ESP-Mosaico",
+      "chip": "ESP32-S31",
+      "screen": "square",
+      "blurb": "480×480 touch screen. Walking pet: steps, camera slot, interaction module.",
+      "build": "repo root",
+      "note": "Writes only PixelMate's app slot and the partition table, like the Mosaico system update. The launcher, recovery and system data stay as they are.",
+      "files": [
+        { "role": "partition-table", "offset": "0x8000" },
+        { "role": "app", "offset": "0x210000" }
+      ],
+      "save": { "offset": "0x200000", "size": "0x10000" },
+      "connect": [
+        "Plug the ESP-Mosaico into this computer with a USB-C data cable.",
+        "Click Connect and pick the port that appears when you plug it in.",
+        "If no port appears or it won't connect, put the board in download mode (see the ESP-Mosaico guide) and try again."
+      ],
+      "after": "The board restarts into PixelMate. If it stays on the launcher, open PixelMate from it."
+    },
+    {
+      "id": "stackchan",
+      "name": "M5Stack StackChan",
+      "chip": "ESP32-S3",
+      "screen": "stackchan",
+      "blurb": "CoreS3 head, 320×240 touch screen. Desk pet with a neck and a camera.",
+      "build": "boards/stackchan",
+      "note": "Replaces the firmware on the CoreS3. The first install overwrites the factory firmware, so back it up first if you may want it back.",
+      "files": [
+        { "role": "bootloader", "offset": "0x0" },
+        { "role": "partition-table", "offset": "0x8000" },
+        { "role": "app", "offset": "0x20000" }
+      ],
+      "save": { "offset": "0x9000", "size": "0x10000" },
+      "connect": [
+        "Plug the StackChan's head (the CoreS3) into this computer with a USB-C data cable.",
+        "Click Connect and pick the port named USB JTAG/serial debug unit.",
+        "If it won't connect, hold the reset button on the side for about 3 seconds until the green LED lights, then try again."
+      ],
+      "after": "The CoreS3 restarts into PixelMate. If the screen stays dark, press the reset button once."
+    },
+    {
+      "id": "stopwatch",
+      "name": "M5Stack StopWatch",
+      "chip": "ESP32-S3",
+      "screen": "round",
+      "blurb": "Round touch screen. Walking pet: steps, clock, pocket mode.",
+      "build": "boards/stopwatch",
+      "note": "Replaces the firmware on the StopWatch. The first install overwrites the factory firmware, so back it up first if you may want it back.",
+      "files": [
+        { "role": "bootloader", "offset": "0x0" },
+        { "role": "partition-table", "offset": "0x8000" },
+        { "role": "app", "offset": "0x20000" }
+      ],
+      "save": { "offset": "0x9000", "size": "0x10000" },
+      "connect": [
+        "Plug the StopWatch into this computer with a USB-C data cable.",
+        "Click Connect and pick the port named USB JTAG/serial debug unit.",
+        "If it is asleep, press the yellow key (KEYA) to wake it, then try again."
+      ],
+      "after": "The StopWatch restarts into PixelMate. If the screen stays dark, press the yellow key."
+    }
+  ]
+}

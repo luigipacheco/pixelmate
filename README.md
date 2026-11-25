@@ -17,6 +17,9 @@ per board, see [boards/README.md](boards/README.md)):
   with a round layout and pocket mode on its yellow button
   ([boards/stopwatch/README.md](boards/stopwatch/README.md)).
 
+All three boards can be flashed from the browser over USB with the web installer in
+[installer/](installer/README.md).
+
 - **Steps → sparks:** the BMI270's on-chip step counter keeps counting while
   the pet is idle; every 20 steps earns 1 spark. Daily goal: 8000 steps by
   default, adjustable from 1000 to 30000 in the Goal panel.

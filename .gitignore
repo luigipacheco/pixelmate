@@ -58,3 +58,6 @@ bitsy_diary.state.json
 
 # Per-board firmware projects (boards/<name>): resolved dependencies
 boards/*/dependencies.lock
+
+# Web installer: firmware staged by tools/stage_installer_firmware.py (publish it with the site, not in git)
+/installer/firmware/

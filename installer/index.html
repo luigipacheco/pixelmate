@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PixelMate Installer</title>
+  <meta name="description" content="Install PixelMate on an ESP-Mosaico, M5Stack StackChan or M5Stack StopWatch from your browser over USB.">
+  <link rel="icon" href="icon.png">
+  <link rel="stylesheet" href="installer.css">
+  <script type="module" src="installer.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i></span>
+      <span>PIXELMATE <b>INSTALLER</b></span>
+    </a>
+    <a class="topbar-link" href="https://github.com/luigipacheco/pixelmate">Source ↗</a>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="kicker">Web installer · ESP32 over USB</p>
+      <h1>Put Bitsy on your&nbsp;board.</h1>
+      <p class="lede">Plug your device in, pick it below and click install. Everything runs in this
+        page with Web Serial: no drivers, no toolchain, nothing to download.</p>
+      <div id="unsupported" class="banner banner-warn" hidden>
+        <strong>This browser can't talk to USB devices.</strong>
+        Open this page in Chrome, Edge or another Chromium browser on a computer
+        (not on a phone, and not in Safari or Firefox).
+      </div>
+    </section>
+
+    <ol class="steps">
+      <li class="step" id="step-board">
+        <div class="step-head"><span class="step-n">1</span><h2>Choose your board</h2></div>
+        <div class="board-grid" id="boards" role="radiogroup" aria-label="Board"></div>
+      </li>
+
+      <li class="step" id="step-firmware" aria-disabled="true">
+        <div class="step-head"><span class="step-n">2</span><h2>Choose firmware</h2></div>
+        <div class="card" id="firmware">
+          <p class="muted">Pick a board first.</p>
+        </div>
+        <label class="check">
+          <input type="checkbox" id="fresh">
+          <span><b>Fresh start.</b> Also clear Bitsy's save on the device (the pet, its sparks and
+            the Wi-Fi setup). Leave this off to keep your pet.</span>
+        </label>
+        <details class="advanced">
+          <summary>Advanced: install my own build</summary>
+          <p>Writes a PixelMate app image (<code>build/pixel_pal.bin</code> or similar) to the app slot only.
+            Use it for builds of your own; the bootloader and partition table stay as they are.</p>
+          <label class="file">
+            <input type="file" id="custom" accept=".bin,application/octet-stream">
+            <span id="custom-name">No file chosen</span>
+          </label>
+        </details>
+      </li>
+
+      <li class="step" id="step-flash" aria-disabled="true">
+        <div class="step-head"><span class="step-n">3</span><h2>Connect &amp; install</h2></div>
+        <div class="card">
+          <ol class="connect-tips" id="connect-tips"></ol>
+          <p class="board-note" id="board-note"></p>
+          <div class="actions">
+            <button class="btn btn-primary" id="install" disabled>Connect &amp; install</button>
+            <button class="btn" id="backup" disabled>Back up current firmware</button>
+          </div>
+        </div>
+
+        <div class="card progress" id="progress" hidden aria-live="polite">
+          <h3 id="progress-title">Installing</h3>
+          <ul class="checklist" id="checklist"></ul>
+          <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="bar"><span></span></div>
+          <p class="status" id="status"></p>
+          <details class="log">
+            <summary>Show device log</summary>
+            <pre id="log"></pre>
+          </details>
+        </div>
+      </li>
+    </ol>
+  </main>
+
+  <footer class="footer">
+    <p>PixelMate by Luis Arturo Pacheco. The install flow follows
+      <a href="https://github.com/crosspoint-reader/crosspoint-tools">CrossPoint Reader's installer</a>
+      (MIT). Flashing by <a href="https://github.com/espressif/esptool-js">esptool-js</a> 0.7.1 (Apache-2.0).</p>
+  </footer>
+</body>
+</html>
