@@ -4,7 +4,7 @@
 
 **PixelMate** turns your ESP-Mosaico into **Bitsy**, a pixel-art robot pet that
 lives on your steps. Walk and Bitsy gets fed; skip a day and it gets hungry.
-Every 20 steps earns a **spark**, and sparks buy everything else: six arcade
+Every 10 steps earns a **spark**, and sparks buy everything else: six arcade
 games, eye colors, pixel styles, animations, a photo booth with retro looks
 and even a Wi-Fi webcam.
 
@@ -124,7 +124,7 @@ keys work as arcade buttons.
 ## Getting started
 
 1. Install PixelMate from Mosaico Ideas and open it.
-2. Walk! Sparks arrive as you go (20 steps = 1 spark). Pull down from the top
+2. Walk! Sparks arrive as you go (10 steps = 1 spark). Pull down from the top
    edge for the menu: STORE, STYLE and SETTINGS.
 3. Swipe left and right between Bitsy, the steps ring, feeding, the arcade,
    TOOLS and (with a camera plugged in) the photo booth.

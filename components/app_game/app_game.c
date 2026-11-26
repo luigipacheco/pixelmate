@@ -60,7 +60,7 @@ static const app_food_t s_foods[APP_FOOD_COUNT] = {
     {"MEGA", 60, 80, 20},
 };
 
-/* Prices in sparks (20 steps each): the priciest item is ~6000 steps. */
+/* Prices in sparks (10 steps each): the priciest item is ~3000 steps. */
 static const app_store_item_t s_store[] = {
     {APP_ITEM_COLOR, 1, 40, "ORANGE", "MOSAICO ORANGE EYES"},
     {APP_ITEM_COLOR, 2, 60, "CYAN", "COOL CYAN EYES"},

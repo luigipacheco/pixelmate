@@ -21,7 +21,7 @@ All three boards can be flashed from the browser over USB with the web installer
 [installer/](installer/README.md).
 
 - **Steps → sparks:** the BMI270's on-chip step counter keeps counting while
-  the pet is idle; every 20 steps earns 1 spark. Daily goal: 8000 steps by
+  the pet is idle; every 10 steps earns 1 spark. Daily goal: 8000 steps by
   default, adjustable from 1000 to 30000 in the Goal panel.
 - **Walking is food:** the pet needs half your daily goal in steps each day.
   Fed days add a health heart (max 5), missed days take one; at 0 the pet

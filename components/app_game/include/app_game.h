@@ -151,7 +151,7 @@ enum {
     APP_COLOR_COUNT = 6,
     APP_FOOD_COUNT = 3,
     APP_CARDS_DEAL_COST = 5,     /**< Sparks. */
-    APP_STEPS_PER_SPARK = 20,
+    APP_STEPS_PER_SPARK = 10,
     APP_GOAL_DEFAULT = 8000,     /**< Steps per day. */
     APP_GOAL_MIN = 1000,
     APP_GOAL_MAX = 30000,

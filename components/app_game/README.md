@@ -33,7 +33,7 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
 ## Units and rules
 
 - Ticks are 30 Hz updates and wrap modulo 2^32. Coordinates are panel pixels, clamped.
-- 20 steps earn 1 spark. The daily goal defaults to 8000 steps and is set in the
+- 10 steps earn 1 spark. The daily goal defaults to 8000 steps and is set in the
   Goal panel (1000..30000 in 1000-step taps); reaching it gives friendship and
   full happiness once per day. Changing the goal never re-awards the same day.
 - Walking is the pet's food. `food_need` = step goal / 2; fullness is today's
