@@ -1,13 +1,11 @@
-# Builds the firmware, stages it into installer/ and publishes the web installer
-# on GitHub Pages. Enable once: Settings > Pages > Source: GitHub Actions.
+# Builds the firmware for every board, stages it into installer/ and publishes
+# the web installer on GitHub Pages. Enable once: Settings > Pages > Source:
+# GitHub Actions.
 #
-# The build needs the esp-mosaico-vibe workspace around this repo
+# Each build needs the esp-mosaico-vibe workspace around this repo
 # (projects/pixel_pal) and Raylib Lite Engine at submodule/raylib-lite-engine,
-# the same layout as a local checkout.
-#
-# Boards: StopWatch. StackChan needs its Board Manager files generated first
-# (boards/stackchan/README.md) and the ESP-Mosaico needs the pinned ESP-IDF
-# master, so both still show "No firmware staged" on the hosted page.
+# the same layout as a local checkout. Boards build in parallel; a board that
+# fails to build is left out and shows "No firmware staged" on the page.
 name: Web installer
 
 on:
@@ -26,9 +24,16 @@ concurrency:
 
 env:
   ENGINE_REF: 040b84e75640c325bca45515a4135f4b1640fd82   # raylib-lite-engine 0.1.1
+  BMGR_VERSION: 0.7.6                                     # espressif/esp_board_manager (StackChan)
+  MOSAICO_IDF_REF: 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe  # esp-mosaico-vibe's pinned ESP-IDF master
 
 jobs:
-  build:
+  # M5Stack StopWatch and StackChan: ESP32-S3, ESP-IDF 6.2.
+  s3:
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [stopwatch, stackchan]
     runs-on: ubuntu-latest
     container: espressif/idf:release-v6.2
     defaults:
@@ -49,29 +54,130 @@ jobs:
 
       - name: Raylib Lite Engine
         run: |
+          git config --global --add safe.directory '*'
           git clone https://github.com/espressif2022/raylib-lite-engine.git ws/submodule/raylib-lite-engine
           git -C ws/submodule/raylib-lite-engine checkout --quiet "$ENGINE_REF"
 
-      - name: Build StopWatch
-        working-directory: ws/projects/pixel_pal/boards/stopwatch
+      # StackChan's board files come from ESP Board Manager's 'idf.py bmgr',
+      # which has to run before the first configure (boards/stackchan/README.md).
+      - name: Board Manager files
+        if: matrix.board == 'stackchan'
+        working-directory: ws/projects/pixel_pal/boards/stackchan
         run: |
-          git config --global --add safe.directory '*'
-          . "$IDF_PATH/export.sh"
+          . "$IDF_PATH/export.sh" > /dev/null
+          curl -fsSL -o "$RUNNER_TEMP/bmgr.zip" \
+            "https://components-file.espressif.com/components/espressif/esp_board_manager/$BMGR_VERSION/espressif__esp_board_manager-v$BMGR_VERSION.zip"
+          python -m zipfile -e "$RUNNER_TEMP/bmgr.zip" "$RUNNER_TEMP/bmgr"
+          IDF_EXTRA_ACTIONS_PATH="$RUNNER_TEMP/bmgr" idf.py bmgr -c ./bmgr -b m5stack_cores3
+
+      - name: Build
+        working-directory: ws/projects/pixel_pal/boards/${{ matrix.board }}
+        run: |
+          . "$IDF_PATH/export.sh" > /dev/null
           python -m pip install --quiet pillow
           idf.py -B build -DIDF_TARGET=esp32s3 build
 
-      - name: Stage firmware
+      - name: Stage
         working-directory: ws/projects/pixel_pal
         run: |
           . "$IDF_PATH/export.sh" > /dev/null
-          python tools/stage_installer_firmware.py stopwatch boards/stopwatch/build
+          python tools/stage_installer_firmware.py ${{ matrix.board }} boards/${{ matrix.board }}/build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.board }}
+          path: ws/projects/pixel_pal/installer/firmware/${{ matrix.board }}
+
+  # ESP-Mosaico: ESP32-S31 on the workspace's pinned ESP-IDF master, built the
+  # way the README says (mosaico.py game build prepares Board Manager itself).
+  mosaico:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Workspace
+        uses: actions/checkout@v4
+        with:
+          repository: esp-mosaico/esp-mosaico-vibe
+          path: ws
+          submodules: true   # esp-mosaico-utils and esp-mosaico-bsp
+
+      - name: PixelMate
+        uses: actions/checkout@v4
+        with:
+          path: ws/projects/pixel_pal
+          fetch-depth: 0
+
+      - name: Raylib Lite Engine
+        run: |
+          git clone https://github.com/espressif2022/raylib-lite-engine.git ws/submodule/raylib-lite-engine
+          git -C ws/submodule/raylib-lite-engine checkout --quiet "$ENGINE_REF"
+
+      - name: ESP-IDF (pinned master)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq git wget flex bison gperf python3 python3-pip python3-venv \
+            cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
+          git init -q "$RUNNER_TEMP/esp-idf"
+          cd "$RUNNER_TEMP/esp-idf"
+          git remote add origin https://github.com/espressif/esp-idf.git
+          git fetch -q --depth 1 origin "$MOSAICO_IDF_REF"
+          git checkout -q FETCH_HEAD
+          git submodule update -q --init --recursive --depth 1
+          ./install.sh esp32s31
+          echo "IDF_PATH=$RUNNER_TEMP/esp-idf" >> "$GITHUB_ENV"
+
+      - name: Build
+        working-directory: ws
+        run: |
+          . "$IDF_PATH/export.sh" > /dev/null
+          python -m pip install --quiet pillow numpy
+          python mosaico.py game build --project projects/pixel_pal --idf-path "$IDF_PATH"
+
+      - name: Stage
+        working-directory: ws/projects/pixel_pal
+        run: |
+          . "$IDF_PATH/export.sh" > /dev/null
+          python tools/stage_installer_firmware.py mosaico build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-mosaico
+          path: ws/projects/pixel_pal/installer/firmware/mosaico
+
+  # Publish whatever built: the page shows "No firmware staged" for the rest.
+  pages:
+    needs: [s3, mosaico]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: installer
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: firmware-*
+          path: firmware
+
+      - name: Assemble
+        run: |
+          shopt -s nullglob
+          for dir in firmware/firmware-*; do
+            board="${dir##*/firmware-}"
+            mkdir -p "installer/firmware/$board"
+            cp -r "$dir"/. "installer/firmware/$board/"
+            echo "staged $board"
+          done
+          test -n "$(ls installer/firmware 2>/dev/null)" || { echo "no board built"; exit 1; }
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: ws/projects/pixel_pal/installer
+          path: installer
 
   deploy:
-    needs: build
+    needs: pages
     runs-on: ubuntu-latest
     environment:
       name: github-pages

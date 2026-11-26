@@ -48,5 +48,6 @@ Open <http://localhost:8000> in Chrome or Edge (Web Serial needs `localhost` or 
 
 Any static host over HTTPS works: publish this folder with the staged `firmware/` in it.
 On GitHub Pages, `.github/workflows/installer-pages.yml` does this on every push to `main`:
-it builds the StopWatch in the `espressif/idf:release-v6.2` image, stages it and publishes
-`installer/`. Turn it on once with Settings > Pages > Source: GitHub Actions.
+it builds the StopWatch and StackChan in the `espressif/idf:release-v6.2` image and the
+ESP-Mosaico on the workspace's pinned ESP-IDF master, stages them and publishes
+`installer/`. A board that fails to build is left out of that deploy. Turn it on once with Settings > Pages > Source: GitHub Actions.
