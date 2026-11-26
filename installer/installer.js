@@ -227,6 +227,14 @@ async function connect() {
     }
   } catch (e) {
     await transport.disconnect().catch(() => {});
+    // An Espressif port that is not the chip's own USB-Serial-JTAG (PID 0x1001) belongs
+    // to the running firmware (e.g. the Mosaico's "Iris" ports, PID 0x4002), which
+    // cannot reset the chip into the ROM loader. Say how to get there instead.
+    const { usbVendorId, usbProductId } = port.getInfo();
+    if (usbVendorId === 0x303a && usbProductId !== 0x1001 && !/is an /.test(e?.message || "")) {
+      throw new Error("This port belongs to the firmware that is running, not the chip's download mode. "
+        + (state.board.download || "Put the board in download mode and pick the new port."));
+    }
     throw e;
   }
   return { loader, transport };

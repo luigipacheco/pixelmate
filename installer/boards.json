@@ -14,11 +14,12 @@
       ],
       "save": { "offset": "0x200000", "size": "0x10000" },
       "connect": [
-        "Plug the ESP-Mosaico into this computer with a USB-C data cable.",
-        "Click Connect and pick the port that appears when you plug it in.",
-        "If no port appears or it won't connect, put the board in download mode (see the ESP-Mosaico guide) and try again."
+        "Put the board in download mode: unplug it, hold the Boot button (left of the USB-C port, not the AI button), plug it into this computer with a USB-C data cable, then release Boot. The screen stays dark.",
+        "Click Connect and pick the new port. The two Iris ports (Iris data, Iris console) belong to the running firmware and cannot install.",
+        "If the port doesn't appear, try another cable or USB port and repeat the Boot-button step."
       ],
-      "after": "The board restarts into PixelMate. If it stays on the launcher, open PixelMate from it."
+      "download": "Unplug the ESP-Mosaico, hold the Boot button (left of the USB-C port), plug it back in, release Boot, then click Connect again and pick the new port (not Iris data or Iris console).",
+      "after": "The board restarts into PixelMate (if the screen stays dark, unplug and replug it). If it stays on the launcher, open PixelMate from it."
     },
     {
       "id": "stackchan",
