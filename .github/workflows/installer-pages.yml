@@ -1,0 +1,81 @@
+# Builds the firmware, stages it into installer/ and publishes the web installer
+# on GitHub Pages. Enable once: Settings > Pages > Source: GitHub Actions.
+#
+# The build needs the esp-mosaico-vibe workspace around this repo
+# (projects/pixel_pal) and Raylib Lite Engine at submodule/raylib-lite-engine,
+# the same layout as a local checkout.
+#
+# Boards: StopWatch. StackChan needs its Board Manager files generated first
+# (boards/stackchan/README.md) and the ESP-Mosaico needs the pinned ESP-IDF
+# master, so both still show "No firmware staged" on the hosted page.
+name: Web installer
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  ENGINE_REF: 040b84e75640c325bca45515a4135f4b1640fd82   # raylib-lite-engine 0.1.1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:release-v6.2
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Workspace
+        uses: actions/checkout@v4
+        with:
+          repository: esp-mosaico/esp-mosaico-vibe
+          path: ws
+
+      - name: PixelMate
+        uses: actions/checkout@v4
+        with:
+          path: ws/projects/pixel_pal
+          fetch-depth: 0   # git describe names the staged version
+
+      - name: Raylib Lite Engine
+        run: |
+          git clone https://github.com/espressif2022/raylib-lite-engine.git ws/submodule/raylib-lite-engine
+          git -C ws/submodule/raylib-lite-engine checkout --quiet "$ENGINE_REF"
+
+      - name: Build StopWatch
+        working-directory: ws/projects/pixel_pal/boards/stopwatch
+        run: |
+          git config --global --add safe.directory '*'
+          . "$IDF_PATH/export.sh"
+          python -m pip install --quiet pillow
+          idf.py -B build -DIDF_TARGET=esp32s3 build
+
+      - name: Stage firmware
+        working-directory: ws/projects/pixel_pal
+        run: |
+          . "$IDF_PATH/export.sh" > /dev/null
+          python tools/stage_installer_firmware.py stopwatch boards/stopwatch/build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ws/projects/pixel_pal/installer
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

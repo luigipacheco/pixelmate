@@ -47,5 +47,6 @@ Open <http://localhost:8000> in Chrome or Edge (Web Serial needs `localhost` or 
 ## Host it
 
 Any static host over HTTPS works: publish this folder with the staged `firmware/` in it.
-On GitHub Pages, deploy it from a GitHub Actions workflow (upload `installer/` as the Pages
-artifact after staging the firmware), since `firmware/` is not committed.
+On GitHub Pages, `.github/workflows/installer-pages.yml` does this on every push to `main`:
+it builds the StopWatch in the `espressif/idf:release-v6.2` image, stages it and publishes
+`installer/`. Turn it on once with Settings > Pages > Source: GitHub Actions.

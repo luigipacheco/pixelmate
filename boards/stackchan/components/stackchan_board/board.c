@@ -295,6 +295,14 @@ failed:
     }
 }
 
+/* Engine 0.1.1+ asks for this; it is only used by adaptive games. PixelMate
+ * draws a fixed 480 px picture that cores3_video scales onto the 320x240 LCD. */
+void raylib_lite_example_board_panel_size(uint16_t *width, uint16_t *height)
+{
+    if (width) *width = 480;
+    if (height) *height = 480;
+}
+
 const raylib_lite_platform_t *raylib_lite_example_board_services(
     raylib_lite_example_board_t *board)
 {
