@@ -10,7 +10,7 @@
 #define PEDO_REARM_G 0.02f       /* Signal must fall back below this to re-arm. */
 #define PEDO_MIN_GAP_TICKS 8U    /* ~0.27 s */
 #define PEDO_MAX_GAP_TICKS 60U   /* ~2.0 s */
-#define PEDO_CONFIRM_STEPS 4U
+#define PEDO_CONFIRM_STEPS 2U   /* Credited together once the second one comes. */
 
 void pedometer_reset(pedometer_t *pedo)
 {

@@ -1915,7 +1915,7 @@ void app_game_add_accel(app_game_handle_t g, float x_g, float y_g, float z_g)
     if (g->has_sensor) {
         return;
     }
-    credit_steps(g, pedometer_sample(&g->pedometer, x_g, y_g, z_g, g->tick));
+    app_game_add_sensor_delta(g, pedometer_sample(&g->pedometer, x_g, y_g, z_g, g->tick));   /* STEP CAL too. */
 }
 
 void app_game_set_sensor_steps(app_game_handle_t g, uint32_t cumulative)

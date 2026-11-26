@@ -788,8 +788,9 @@ void app_game_reset(app_game_handle_t handle);
 void app_game_set_paused(app_game_handle_t handle, bool paused);
 /** Feed one touch sample (pixels, clamped). Release completes taps and swipes. */
 void app_game_set_pointer(app_game_handle_t handle, int32_t x, int32_t y, bool pressed);
-/** Feed one accelerometer sample in g (25..100 Hz). Software step detection,
- * used when no hardware pedometer reading is available. */
+/** Feed one accelerometer sample in g, once per model tick. Software step
+ * detection (STEP CAL applied), the awake step source on every board; off once
+ * app_game_set_sensor_steps() has been called. */
 void app_game_add_accel(app_game_handle_t handle, float x_g, float y_g, float z_g);
 /** Report the hardware pedometer's cumulative count. The first reading after
  * boot (or a counter that went backwards) is only a baseline; later increases

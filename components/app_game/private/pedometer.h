@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 /* Software step detector over accelerometer magnitude. Private to app_game.
- * Rejects isolated shakes: a walk must show PEDO_CONFIRM_STEPS regular peaks
- * before any of them count, then each further peak counts immediately. */
+ * Rejects a single bump: a walk must show PEDO_CONFIRM_STEPS (2) regular peaks,
+ * which are then all credited, and each further peak counts immediately. */
 #include <stdbool.h>
 #include <stdint.h>
 

@@ -150,6 +150,9 @@ typedef struct {
     uint32_t saved_seq;
     uint64_t save_due_ms;
     bool sensor_ready;
+    bool imu_events;              /* The board sends accelerometer samples itself. */
+    bool napping;                 /* Deep doze: the chip's counter has the steps. */
+    uint32_t nap_steps;           /* The chip's count at the last nap tick. */
     uint8_t sensor_attempts;
     uint32_t sensor_timer, day_timer, battery_timer;
     bool pocket_deep_failed;      /* Deep sleep refused once: use the doze. */
@@ -336,9 +339,20 @@ static void poll_sensor(host_state_t *state)
             return;
         }
     }
-    uint32_t steps = 0;
-    if (app_pedometer_hw_read(&steps) == ESP_OK) {
-        app_game_set_sensor_steps(state->game, steps);
+}
+
+/* Awake, steps come from the model's own detector, which counts a walk from
+ * its second step; the chip's counter waits for a longer walk before counting
+ * and is kept for deep sleep only. A board that sends no accelerometer
+ * samples of its own (the StopWatch) gets one from the step sensor each tick. */
+static void poll_motion(host_state_t *state)
+{
+    if (!state->sensor_ready || state->imu_events || state->napping) {
+        return;   /* One tick a second in deep doze is too slow for the detector. */
+    }
+    float acc[3], gyr[3];
+    if (app_pedometer_hw_motion(acc, gyr) == ESP_OK) {
+        app_game_add_accel(state->game, acc[0], acc[1], acc[2]);
     }
 }
 
@@ -1006,6 +1020,9 @@ static void input(void *value, const raylib_lite_game_input_v1_t *event)
         }
         break;
     case RAYLIB_LITE_GAME_INPUT_IMU:
+#if defined(RAYLIB_LITE_GAME_NATIVE)
+        state->imu_events = true;
+#endif
         app_game_add_accel(state->game, event->value_x, event->value_y, event->value_z);
         break;
     case RAYLIB_LITE_GAME_INPUT_CONTROL:
@@ -1111,14 +1128,12 @@ enum {
 
 
 
-/* Save, credit the last steps and deep-sleep until a tap. */
+/* Save and deep-sleep until a tap. The chip's count now is the mark that
+ * the steps walked while asleep are measured from. */
 static void pocket_deep_sleep(host_state_t *state)
 {
     uint32_t raw = 0;
     const bool have_steps = app_pedometer_hw_read(&raw) == ESP_OK;
-    if (have_steps) {
-        app_game_set_sensor_steps(state->game, raw);   /* Credit what is counted so far. */
-    }
     if (state->save_ready) {   /* The wake is a restart: save first. */
         app_game_record_t record;
         app_game_export(state->game, &record);
@@ -1202,6 +1217,7 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
         state->pocket_ticks = 0;
         state->idle_quiet = false;
         state->deep_now = false;
+        state->napping = false;
         pocket_resume_radio(state);
         return;
     }
@@ -1238,13 +1254,22 @@ static void pocket_maybe_sleep(host_state_t *state, const app_game_snapshot_t *s
      * aborted in the clock driver (rtc_clk_apb_freq_get) and rebooted the board.
      * Instead the game loop naps here, so the CPU idles between ticks; the AI
      * button is checked every few milliseconds. Steps, the day and saving still
-     * run on every (now rare) tick. */
+     * run on every (now rare) tick; the steps from the chip's counter. */
+    uint32_t chip = 0;
+    if (app_pedometer_hw_read(&chip) == ESP_OK) {
+        if (state->napping && chip >= state->nap_steps) {
+            app_game_add_sensor_delta(state->game, chip - state->nap_steps);
+        }
+        state->nap_steps = chip;
+        state->napping = true;
+    }
     for (int i = 0; i < POCKET_NAP_MS / POCKET_POLL_MS; ++i) {
         vTaskDelay(pdMS_TO_TICKS(POCKET_POLL_MS));
         if (gpio_get_level(POCKET_BUTTON_GPIO) == 0) {
             ++s_pocket_log.button_wakes;
             ESP_LOGI(TAG, "pocket: AI button woke the pet");
             state->pocket_ticks = 0;
+            state->napping = false;
             state->ai_swallow = true;   /* The press that woke us must not put it back to sleep. */
             app_game_wake(state->game);
             pocket_resume_radio(state);
@@ -1591,6 +1616,7 @@ static void update(void *value)
     poll_ai_button(state);
     pocket_grace_tick(state);
     poll_sensor(state);
+    poll_motion(state);
     poll_day(state);
     poll_clock(state);
     poll_battery(state);

@@ -144,9 +144,12 @@ if (app_game_create(&config, &game) == APP_GAME_OK) {
   still works). Leaving the booth (swipe, a panel, screen off, unplug) cancels a
   countdown or recording; a partial GIF is never saved. Capturing keeps the
   screen awake.
-- Step sources: `app_game_set_sensor_steps()` (a cumulative hardware count; the
-  first reading is a baseline) disables the software detector fed by
-  `app_game_add_accel()`. `app_game_add_steps()` credits directly.
+- Step sources: the software detector fed by `app_game_add_accel()` counts a
+  walk from its second step (both credited, STEP CAL applied); the device
+  runtime uses it whenever the pet is awake. `app_game_add_sensor_delta()`
+  credits the chip's steps from deep sleep. `app_game_set_sensor_steps()` (a
+  cumulative hardware count; the first reading is a baseline) disables the
+  software detector. `app_game_add_steps()` credits directly.
 - A new `app_game_set_day()` value resets `steps_today`. Values <= 0 mean the
   clock is unknown and are ignored.
 

@@ -39,9 +39,12 @@ its event bits, advance the view, then save if due.
 
 ## Device behavior
 
-- Steps: the BMI270 on-chip counter via `app_pedometer_hw`, so walking counts
-  even while the pet is idle. Start is retried 6 times (every 5 s); if it
-  never succeeds the model's software detector uses the board's IMU events.
+- Steps: awake (idle included), the model's software detector, which counts a
+  walk from its second step; the BMI270's own counter waits for a longer walk.
+  It is fed the board's IMU events, or on a board without them (the StopWatch)
+  an accelerometer reading from `app_pedometer_hw` every tick. The BMI270
+  counter (started up to 6 times, every 5 s) covers deep sleep and the
+  one-tick-a-second deep doze.
 - Save: NVS namespace `pixel_pal`, key `pet`, version 6 (v2..v5 records migrate
   by prefix, v2 with full health, before v6 with no photo looks or lenses; v1
   records are ignored since early builds could store an all-zero pet), the 76-byte
