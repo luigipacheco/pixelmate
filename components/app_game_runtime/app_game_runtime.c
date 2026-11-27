@@ -49,13 +49,14 @@ static const char *TAG = "pixel_pal";
 
 /* What pocket mode did, kept across a software restart (RTC memory) so a
  * stuck wake can be diagnosed afterwards: logged at boot and in /api/stats. */
-#define POCKET_LOG_MAGIC 0x504B4C32U
+#define POCKET_LOG_MAGIC 0x504B4C33U
 #define POCKET_GRACE_TICKS (8 * GAME_TICK_HZ)   /* A pocket wake nobody follows up: back to sleep. */
 typedef struct {
     uint32_t magic;
     uint32_t sleeps, timer_wakes, poll_wakes, button_wakes, stuck_restarts;
     uint32_t sleep_s, sleep_mah;   /* Deep sleep: time asleep and charge used (not charging). */
     uint32_t resleeps;             /* Woke, nobody touched it: straight back to sleep. */
+    uint32_t bumps;                /* Button wakes the wake stub rejected (too short: a bump). */
 } pocket_log_t;
 static RTC_NOINIT_ATTR pocket_log_t s_pocket_log;
 static volatile uint32_t s_frames_drawn;     /* Frames submitted (render). */
@@ -382,15 +383,17 @@ static void publish_sleep_report(host_state_t *state)
                                      app_sleep_probe_addrs[i]);
         }
     }
-    char json[600];
+    char json[720];
     const int n = snprintf(json, sizeof(json),
                            "{\"valid\":1,\"woke\":%d,\"reset_reason\":%u,\"wake_causes\":%lu,\"rail\":\"%s\","
-                           "\"touch_wake\":%d,\"plain\":%d,\"mask\":%u,\"pins_57_60\":[%u,%u],\"from_crumb\":%d,\"board\":\"%s\",\"asked_s\":%lu,\"slept_s\":%lu,"
+                           "\"touch_wake\":%d,\"button_wake\":%d,\"button_confirmed\":%d,\"ext1_pins\":%u,"
+                           "\"stub_runs\":%lu,\"stub_resleeps\":%lu,\"plain\":%d,\"mask\":%u,\"pins_57_60\":[%u,%u],\"from_crumb\":%d,\"board\":\"%s\",\"asked_s\":%lu,\"slept_s\":%lu,"
                            "\"steps_before\":%lu,\"steps_at_wake\":%ld,\"imu_answered_rail_off\":%d,"
                            "\"imu_chip_id\":%u,\"imu_status\":%u,\"alive_rail_off\":[%s],"
                            "\"mah_before\":%u,\"mah_after\":%u,\"mv_before\":%u,\"mv_after\":%u}",
                            r.woke, r.reset_reason, (unsigned long)r.wake_causes, r.rail_off ? "off" : "on",
-                           r.touch_wake, r.plain, r.mask, r.pin57, r.pin60, r.from_crumb, r.v1_0 ? "v1.0" : "v1.1+", (unsigned long)r.asked_s,
+                           r.touch_wake, r.button_wake, r.button_confirmed, r.ext1_pins,
+                           (unsigned long)r.stub_runs, (unsigned long)r.stub_resleeps, r.plain, r.mask, r.pin57, r.pin60, r.from_crumb, r.v1_0 ? "v1.0" : "v1.1+", (unsigned long)r.asked_s,
                            (unsigned long)r.slept_s, (unsigned long)r.steps_before, (long)r.steps_at_wake,
                            r.imu_answered_rail_off, r.imu_chip_id, r.imu_status, alive, r.mah_before,
                            state->battery.remaining_mah, r.mv_before, state->battery.voltage_mv);
@@ -574,7 +577,7 @@ static int build_stats_json(const host_state_t *state, const app_game_snapshot_t
                       "],\"power_mv\":%u,\"power_ma\":%d,\"power_avg_ma\":%d,\"power_mah\":%u,"
                       "\"power_full_mah\":%u,\"power_design_mah\":%u,\"gauge_profile\":\"%s\","
                       "\"power_tte_min\":%u,\"drain_ma\":[%ld,%ld,%ld],"
-                      "\"pocket\":[%lu,%lu,%lu,%lu,%lu],\"pocket_sleep\":[%lu,%lu,%lu]}",
+                      "\"pocket\":[%lu,%lu,%lu,%lu,%lu],\"pocket_sleep\":[%lu,%lu,%lu,%lu]}",
                       state->battery_ok ? b->voltage_mv : 0U, state->battery_ok ? b->current_ma : 0,
                       state->battery_ok ? b->avg_current_ma : 0, state->battery_ok ? b->remaining_mah : 0U,
                       state->battery_ok ? b->full_mah : 0U, state->battery_ok ? b->design_mah : 0U,
@@ -585,7 +588,8 @@ static int build_stats_json(const host_state_t *state, const app_game_snapshot_t
                       (unsigned long)s_pocket_log.sleeps, (unsigned long)s_pocket_log.timer_wakes,
                       (unsigned long)s_pocket_log.poll_wakes, (unsigned long)s_pocket_log.button_wakes,
                       (unsigned long)s_pocket_log.stuck_restarts, (unsigned long)s_pocket_log.sleep_s,
-                      (unsigned long)s_pocket_log.sleep_mah, (unsigned long)s_pocket_log.resleeps);
+                      (unsigned long)s_pocket_log.sleep_mah, (unsigned long)s_pocket_log.resleeps,
+                      (unsigned long)s_pocket_log.bumps);
     }
     return n > 0 && (size_t)n < cap ? n : -1;
 }
@@ -943,16 +947,21 @@ static int initialize(void *value, const char *asset_root)
     uint32_t slept_steps = 0;
     const bool pocket_woke = app_sleep_hw_take_steps(&slept_steps);
     if (pocket_woke) {
-        ++s_pocket_log.timer_wakes;   /* Deep-sleep wakes (touch or backstop timer). */
+        ++s_pocket_log.timer_wakes;   /* Deep-sleep wakes (button or backstop timer). */
         app_game_add_sensor_delta(state->game, slept_steps);
         ESP_LOGI(TAG, "pocket: woke from deep sleep, %lu steps counted while asleep", (unsigned long)slept_steps);
-        /* A wake by the button is on purpose. A touch (the Mosaico's only wake
-         * source besides the timer) or the backstop timer may not be: the pet
-         * stays idle with the clock, touches are ignored, and unless the
-         * button is pressed it goes back to deep sleep. */
+        /* A wake by the button is on purpose (on the Mosaico the wake stub has
+         * already confirmed the press and waited for its release). The
+         * backstop timer is not: the pet stays idle with the clock, touches
+         * are ignored, and unless the button is pressed it goes back to deep
+         * sleep. */
         app_sleep_report_t wake = {0};
-        const bool by_button = app_sleep_hw_report(&wake) && !wake.touch_wake
-                               && (wake.wake_causes & BIT(ESP_SLEEP_WAKEUP_EXT1));
+        const bool reported = app_sleep_hw_report(&wake);
+        const bool by_button = reported && !wake.touch_wake && (wake.wake_causes & BIT(ESP_SLEEP_WAKEUP_EXT1))
+                               && (!wake.button_wake || wake.button_confirmed);
+        if (reported) {
+            s_pocket_log.bumps += wake.stub_resleeps;
+        }
         state->pocket_grace = by_button ? 0 : POCKET_GRACE_TICKS;
         if (by_button) {
             state->ai_swallow = true;   /* Its release is not another press. */
@@ -1128,7 +1137,7 @@ enum {
 
 
 
-/* Save and deep-sleep until a tap. The chip's count now is the mark that
+/* Save and deep-sleep until the button is pressed. The chip's count now is the mark that
  * the steps walked while asleep are measured from. */
 static void pocket_deep_sleep(host_state_t *state)
 {
@@ -1160,7 +1169,7 @@ static void pocket_deep_sleep(host_state_t *state)
     }
     const app_sleep_request_t request = {
         .seconds = POCKET_BACKSTOP_S,
-        .touch_wake = true,
+        .button_wake = true,   /* Taps do nothing while asleep. */
         .mask = APP_SLEEP_STEP_PANEL | APP_SLEEP_STEP_HOLD_RAIL | (have_steps ? APP_SLEEP_STEP_CAPTURE : 0),
         .steps = raw,
         .remaining_mah = state->battery_ok ? state->battery.remaining_mah : 0,
@@ -1168,15 +1177,15 @@ static void pocket_deep_sleep(host_state_t *state)
     };
     ++s_pocket_log.sleeps;
     (void)app_net_suspend(true);
-    ESP_LOGI(TAG, "pocket: deep sleep (tap to wake), %lu steps so far", (unsigned long)raw);
+    ESP_LOGI(TAG, "pocket: deep sleep (AI button to wake), %lu steps so far", (unsigned long)raw);
     const esp_err_t err = app_sleep_hw_enter(&request);
     ESP_LOGE(TAG, "pocket: deep sleep did not start (%s): dozing instead", esp_err_to_name(err));
     (void)app_net_suspend(false);   /* Sound reopens on its own at the next cue. */
 }
 
-/* After a deep-sleep wake that was not the button (a tap on the Mosaico, maybe
- * just the pocket, or the backstop timer): idle with the clock, touches
- * ignored, and back to deep sleep unless the button is pressed in time. */
+/* After a deep-sleep wake that was not the button (the backstop timer): idle
+ * with the clock, touches ignored, and back to deep sleep unless the button
+ * is pressed in time. */
 static void pocket_grace_tick(host_state_t *state)
 {
     if (!state->pocket_grace) {

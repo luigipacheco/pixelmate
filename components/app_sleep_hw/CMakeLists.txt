@@ -1,11 +1,14 @@
 # Driver chosen by the board (boards/<name>/board.cmake, pixelmate_part(SLEEP ...)).
 idf_build_get_property(part PIXELMATE_SLEEP)
 if(part STREQUAL "mosaico")
-    # ESP-Mosaico deep sleep: panel standby, rail holds, touch wake.
-    idf_component_register(SRCS "app_sleep_hw.c"
+    # ESP-Mosaico deep sleep: panel standby, rail holds, AI-button wake
+    # through a wake stub that keeps the Vibe Mode bootloader out of recovery.
+    idf_component_register(SRCS "app_sleep_hw.c" "rtc_wake_stub_ai_button.c"
         INCLUDE_DIRS "include"
         REQUIRES esp_common
-        PRIV_REQUIRES esp_board_manager esp_driver_gpio esp_driver_i2c esp_hw_support esp_lcd esp_system efuse log nvs_flash)
+        PRIV_REQUIRES esp_board_manager esp_driver_gpio esp_driver_i2c esp_hw_support esp_lcd esp_system efuse log nvs_flash
+                     # Register helpers for the wake stub (rtc_wake_stub_ai_button.c).
+                     esp_hal_clock esp_hal_gpio esp_hal_pmu esp_hal_rtc_timer esp_hal_timg esp_hal_wdt)
 elseif(part STREQUAL "m5stopwatch")
     # M5Stack StopWatch: display, touch and sound off through the M5IOE1,
     # wake on the sleep button; the BMI270 keeps counting.

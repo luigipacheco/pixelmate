@@ -93,11 +93,12 @@ keys work as arcade buttons.
   button to wake it.
 - **Pocket mode:** on battery, press the AI button (or just let the screen go
   dark) and a few seconds later Bitsy goes into **deep sleep**: screen, Wi-Fi
-  and processor off, while the step sensor keeps counting on its own. **Tap
-  the screen** to wake it: the board restarts in a few seconds and adds every
-  step you walked. If you don't touch it again within 8 seconds it goes back
-  to sleep, so a bump in your pocket costs almost nothing. Plugging in USB
-  doesn't wake it; tap first.
+  and processor off, while the step sensor keeps counting on its own. **Press
+  the AI button** to wake it: the board restarts in a few seconds and adds
+  every step you walked. Taps on the screen do nothing while it sleeps, so it
+  stays dark in your pocket. Plugging in USB doesn't wake it; press the
+  button first. Holding the button about 3 seconds while it sleeps starts
+  Vibe Mode instead.
 - **TAP STEPS** (Settings, off by default): an accessibility mode for people
   who can't walk. Every 10 pats on Bitsy count as one step, with no daily cap.
 - **Stats web page** on your network (`http://pixelmate.local`): today's
@@ -137,7 +138,7 @@ keys work as arcade buttons.
 - Version 1.0.0 is a one-person project, developed on one ESP-Mosaico board
   (with an SC101IOT camera module and the Interaction module) and in the host
   simulator. Checked on the board: step counting with the screen off, saving,
-  battery readout, dimming and sleep, pocket deep sleep with tap-to-wake and
+  battery readout, dimming and sleep, pocket deep sleep with button wake and
   steps counted while asleep, Wi-Fi with the stats page and daily health,
   sounds, the photo booth with hot-plugging, and Interaction module detection.
   Still to measure: real-world battery life in pocket mode. The TOOLS page is

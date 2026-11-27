@@ -1,3 +1,9 @@
+# Unreleased
+
+- ESP-Mosaico pocket mode: only the AI button wakes Bitsy from deep sleep.
+  Taps on the screen no longer restart the board (no more buzz and logo in a
+  pocket). Holding the button about 3 s while asleep still starts Vibe Mode.
+
 # PixelMate 1.0.0
 
 First public release of PixelMate, with Bitsy the walking pixel pet.

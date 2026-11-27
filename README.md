@@ -99,9 +99,12 @@ All three boards can be flashed from the browser over USB with the web installer
   it.
 - **Pocket mode (deep sleep, on battery):** hold the AI button 1.5 s, or leave
   Bitsy idle for 10 minutes. It saves and sleeps with only the step counter
-  running. The AI button cannot wake the chip on this board, so a tap restarts
-  it and shows the clock with PRESS AI BUTTON: press it within 8 seconds to
-  wake Bitsy, or it goes back to sleep (a bump in a pocket costs only that).
+  running. Only the AI button wakes it; taps do nothing while it sleeps. A
+  short wake stub checks the press and waits for the release before the
+  Vibe Mode bootloader looks at the button, so a press boots Pixel Mate,
+  while holding it about 3 s starts Vibe Mode. A brief bump of the button is
+  ignored without booting. The backstop timer wake shows the clock with
+  PRESS AI BUTTON: press it within 8 seconds, or it goes back to sleep.
   Steps walked meanwhile are added. There is no deep sleep on USB: there a
   long press only turns the screen fully off.
 - **Battery:** percentage in the pull-down menu; a top-bar icon appears while

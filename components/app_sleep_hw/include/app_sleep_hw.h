@@ -28,6 +28,7 @@ typedef struct {
     uint32_t seconds;         /* Timer wake after this long. */
     bool rail_off;            /* Cut the switched 3.3 V rail (display, codec, ...). */
     bool touch_wake;          /* Also wake on the touch interrupt (rail on only). */
+    bool button_wake;         /* Also wake on the AI button (ESP-Mosaico: through the wake stub). */
     bool plain;               /* Timer only: no panel standby, no pin holds, no rail. */
     uint8_t mask;             /* APP_SLEEP_STEP_* bits to run (plain: 0). */
     uint32_t steps;           /* Hardware step counter just before sleeping. */
@@ -38,7 +39,11 @@ typedef struct {
 typedef struct {
     bool valid;               /* A sleep attempt ended in this restart. */
     bool woke;                /* The restart was a deep-sleep wake (else: it crashed or was reset). */
-    bool rail_off, touch_wake;
+    bool rail_off, touch_wake, button_wake;
+    bool button_confirmed;    /* The wake stub saw a real press (not a bump) and let the app boot. */
+    uint8_t ext1_pins;        /* GPIO0..7 that caused an EXT1 wake, one bit each. */
+    uint32_t stub_runs;       /* Wake-stub runs during this sleep (wakes, bumps included). */
+    uint32_t stub_resleeps;   /* Bumps the stub rejected: back to sleep without booting. */
     bool v1_0;                /* Board revision 1.0 (different I2C pins, codec rail). */
     uint8_t reset_reason;     /* esp_reset_reason_t. */
     uint32_t wake_causes;     /* esp_sleep_get_wakeup_causes bit mask. */
